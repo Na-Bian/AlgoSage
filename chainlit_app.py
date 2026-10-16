@@ -45,6 +45,7 @@ WELCOME_TMPL = """### 🛡️ ExamGuard · 算法考试受限助教
 | 模式 | {mode_label}（服务端配置，{switch_note}） |
 | 后端 | `{backend}` |
 | 模型 | `{model}` |
+| 意图分类器 | `{classifier}` |
 
 **使用方式**
 - 直接提问算法概念或复杂度问题；
@@ -96,6 +97,12 @@ def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
         ("审核结论", "✅ 放行" if meta.get("approved") else f"⛔ 拦截降级（{meta.get('audit_reason')}）"),
         ("模型", f"`{meta.get('model')}`"),
     ]
+    confidence = meta.get("classify_confidence")
+    if confidence is not None:
+        rows.append(("分类置信度", f"{float(confidence):.2f}"))
+    flags = meta.get("risk_flags") or []
+    if flags:
+        rows.append(("风险标记", "、".join(f"`{f}`" for f in flags)))
     def _token(value) -> str:
         return str(value) if value is not None else "—"
 
@@ -141,6 +148,7 @@ async def on_chat_start() -> None:
             switch_note=switch_note,
             backend=settings.mode,
             model=settings.model,
+            classifier=settings.classifier_mode,
         )
     )
     if service.allow_policy_override:

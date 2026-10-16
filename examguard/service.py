@@ -21,6 +21,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from .config import Settings
+from .hybrid_classifier import HybridIntentClassifier
 from .llm import ChatBackend, make_backend
 from .pipeline import ExamGuardTutor
 from .schemas import TutorRequest, TutorResponse
@@ -58,7 +59,11 @@ class TutorService:
     ):
         self.settings = settings
         self.backend = backend if backend is not None else make_backend(settings)
-        self.tutor = ExamGuardTutor(self.backend, settings)
+        # P1：hybrid 模式下注入规则+LLM 混合分类器；LLM 不可用时自动回退正则。
+        classifier = None
+        if settings.classifier_mode == "hybrid":
+            classifier = HybridIntentClassifier(self.backend, settings)
+        self.tutor = ExamGuardTutor(self.backend, settings, classifier=classifier)
         if allow_policy_override is None:
             allow_policy_override = _env_flag("EG_ALLOW_POLICY_SWITCH")
         self.allow_policy_override = allow_policy_override
@@ -131,6 +136,8 @@ class TutorService:
             "intent": response.classification.intent.value,
             "classify_method": response.classification.method,
             "classify_reason": response.classification.reason,
+            "classify_confidence": response.classification.confidence,
+            "risk_flags": list(response.classification.risk_flags),
             "help_level": response.decision.max_help_level,
             "policy_reason": response.decision.reason,
             "approved": response.audit.approved,

@@ -14,7 +14,8 @@ app.py                      旧 Streamlit UI（回退方案）
 demo_cli.py                 dependency-free offline CLI (mock)
 examguard/config.py         settings via env
 examguard/schemas.py        stable request/response structures
-examguard/intent_classifier.py   5-way regex baseline
+examguard/intent_classifier.py   5-way regex baseline + risk-flag extraction
+examguard/hybrid_classifier.py   P1 规则+LLM 混合分类器（EG_CLASSIFIER_MODE=hybrid）
 examguard/policy.py         0–3 help-level policy and prompt builder
 examguard/llm.py            mock + remote API adapters
 examguard/output_guard.py   *basic* demo audit
@@ -24,6 +25,8 @@ examguard/service.py        TutorService：前端无关服务层（会话、服�
 public/custom.css           DeepSeek 风格轻量主题定制
 e2e_chainlit_check.py       E2E 冒烟：真实起服 + socket.io 完整会话
 datasets/smoke_tests.jsonl  5 starter categories for labeling
+datasets/intent_labeled_v0.jsonl  P1 42 例人工标注分类测试集（含歧义/攻击改写）
+report_classifier.py        P1 分类评测：混淆矩阵 + 逐类指标 + 错判清单 -> results/
 smoke_check.py              lightweight static sanity check
 README.md; docs/MODULE_INTERFACES.md; tests/
 ```
@@ -125,18 +128,41 @@ streamlit run app.py
 
 - Five example input categories are classified (heuristically, not reliably in adversarial cases).
 - Exam policy maps category to one of four help levels.
-- Mock mode runs and tests pass offline (34 tests: 10 原有 + 24 新增服务层/前端集成).
+- Mock mode runs and tests pass offline (58 tests: 10 原有 + 48 新增服务层/前端/分类器集成).
 - Real API can be enabled with `.env` credentials; model metadata and token counts (if present) are returned.
 - Basic code-block output audit can trigger a safe fallback.
-- Chainlit 学生端与教师评测页可运行；E2E 冒烟覆盖欢迎消息、正常问答、越权拒答与密钥不泄漏。
+- Chainlit 学生端与教师评测页可运行；E2E 冒烟覆盖欢迎消息、正常问答、越权拒答与密钥不泄漏.
+
+## P1：混合输入意图识别（已交付）
+
+- 正则基线**冻结**（`classify()` 判定逻辑不变），新增 `extract_risk_flags()` 提取
+  Prompt Injection / 变相索取特征（`instruction_override`、`roleplay_request`、
+  `system_prompt_probe`、`completion_disguise`、`translation_disguise` 等，含已有代码中的注入标记
+  `untrusted_code_injection`）；特征为预留信号，不改变帮助等级。
+- `HybridIntentClassifier`（`EG_CLASSIFIER_MODE=hybrid` 启用）：规则 + LLM 严格 JSON 输出；
+  超时 / 解析失败 / 字段非法一律回退正则（离线也可安全运行）；
+  冲突合并策略保守可解释——正则 knowledge 视为无信号，其余冲突取考试帮助等级更严格的一方
+  （伪装成调试的完整答案索取不会按 debug 放行）。
+- 分类评测（真实运行数据）：
+
+```bash
+python report_classifier.py          # 正则基线（离线）
+python report_classifier.py --mode hybrid   # 需 APP_MODE=api
+```
+
+  正则基线在 42 例人工标注集上 **accuracy=78.6%（33/42）**；9 条错判全部为改写/伪装类
+  （8 条落入 knowledge 兜底、1 条 jailbreak 降级为 request_solution——后者仍是保守方向），
+  详见 `results/classifier_intent_labeled_v0_regex.md` 与同名 CSV。
+  hybrid 模式的真实远端评测待 API 密钥后在 P4 Harness 统一进行（本仓库拒绝在 mock 下
+  生成冒充 hybrid 的报告）。
 
 ## What has NOT been completed
 
-No multi-turn answer-leakage detector, no LLM risk classifier, no batch harness, and no reliable semantic output guard. Do **not** report their presence in the experiment. See `docs/MODULE_INTERFACES.md` for subsequent milestones and ablation plan. `eval_page.py` 是开发调试入口，不是正式评测 Harness。
+No multi-turn answer-leakage detector, no reliable semantic output guard, and no batch harness. The hybrid classifier's remote-LLM path is implemented and unit-tested with a scripted backend, but has **not** been evaluated against the labeled dataset with a real model (no API key used so far). Do **not** report unevaluated capabilities as experiment results. See `docs/MODULE_INTERFACES.md` for subsequent milestones and ablation plan. `eval_page.py` 是开发调试入口，不是正式评测 Harness。
 
 ## Recommended next milestones
 
-1. Replace `intent_classifier.py` with a rule+LLM classifier and error analysis against human-labeled data.
+1. ~~Replace `intent_classifier.py` with a rule+LLM classifier~~（P1 已完成；真实远端评测并入 P4）.
 2. Add contextual `SessionGuard` and `LeakageJudge` (compare before/after, document false positives).
 3. Build Harness (JSONL cases; baseline A/B/C/D; same held-out test set, same model setup).
 4. Write methodology, complexity, metrics and a reproducibility report.

@@ -24,6 +24,12 @@ class Classification:
     intent: Intent
     method: str
     reason: str
+    # P1 起新增（带默认值，保持旧调用兼容）：
+    # confidence 仅在可可靠估计时给出（正则基线为 None，混合分类取 LLM 置信度）；
+    # risk_flags 为 Prompt Injection / 变相索取等风险特征标记，现阶段仅作
+    # 预留信号与审计展示，不直接改变策略等级。
+    confidence: Optional[float] = None
+    risk_flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

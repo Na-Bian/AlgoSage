@@ -20,9 +20,20 @@
 - `eval_page.py`: 教师/开发者评测页（预留接口）；`load_cases(name)`、`run_cases(service, cases) -> summary`、`render_summary(summary, name)` 为纯函数，便于测试。正式 Harness 不在此实现。
 - `run_app.py`: 绕过 chainlit CLI `nest_asyncio` 缺陷的启动器（Python 3.15 兼容）。
 
+## Existing code (P1 新增：混合意图识别)
+
+- `extract_risk_flags(question, existing_code="") -> tuple[str, ...]`（`examguard/intent_classifier.py`）：从不可信输入提取 Prompt Injection / 变相索取特征（`instruction_override`、`roleplay_request`、`system_prompt_probe`、`completion_disguise`、`translation_disguise`、`full_solution_request`、`output_encoding`、`untrusted_code_injection`）。**预留信号，不直接改变帮助等级**。
+- `Classification` 数据契约新增 `confidence: Optional[float]` 与 `risk_flags: tuple[str, ...]`（带默认值，旧调用兼容）。
+- `classify(request, history=None) -> Classification`：正则基线**判定逻辑冻结**（供 A/B/C/D 消融对照），但会填充 risk_flags。
+- `HybridIntentClassifier(backend, settings).classify(request, history=None) -> Classification`（`examguard/hybrid_classifier.py`）：
+  - LLM 输出严格 JSON（intent/confidence/reason/risk_flags）；解析失败、超时、字段非法一律回退正则（method=`regex-fallback(...)`）；
+  - `merge_intents(regex_intent, llm_intent) -> Intent`：正则 knowledge 视为无信号采纳 LLM；LLM knowledge 保留正则正向命中；其余冲突取考试帮助等级**更低（更严格）**的一方，solution/knowledge 平级取 solution；
+  - 通过 `EG_CLASSIFIER_MODE=hybrid` 启用（`Settings.classifier_mode`），由 `TutorService` 自动接线到 `ExamGuardTutor(classifier=...)`。
+- `report_classifier.py --mode regex|hybrid --dataset intent_labeled_v0`：混淆矩阵 + 逐类指标 + 错判清单，输出 `results/classifier_*.md/.csv`；hybrid 报告要求 APP_MODE=api（拒绝把回退结果冒充混合结果）。
+- 现状数据：正则基线在 42 例人工标注集上 accuracy=78.6%（见 `results/classifier_intent_labeled_v0_regex.md`）；hybrid 的真实远端评测待密钥后在 P4 Harness 中进行。
+
 ## Planned upgrades (not implemented)
 
-- `IntentClassifier.classify(request, history) -> Classification`: LLM + rules; return confidence, evidence, and ambiguity handling.
 - `HelpController.decide(classification, exam_config, state) -> PolicyDecision`: max help level and safe template; support per-question teacher policy.
 - `SessionGuard.update(question_id, history, prior_state) -> RiskState`: track accumulated *semantic* disclosures across same question and closely-related restatements. Should not reset on superficial paraphrases.
 - `LeakageJudge.review(question, answer, rubric, state) -> AuditResult`: content-aware leak detection (whole solution, proof, pseudocode, key steps); model-judge + human review, threshold tuning.

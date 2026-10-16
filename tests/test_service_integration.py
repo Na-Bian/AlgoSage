@@ -143,6 +143,7 @@ class DisplayMetadataTests(unittest.TestCase):
 
         expected_keys = {
             "intent", "classify_method", "classify_reason",
+            "classify_confidence", "risk_flags",
             "help_level", "policy_reason",
             "approved", "audit_reason",
             "model", "input_tokens", "output_tokens",
@@ -167,6 +168,21 @@ class DisplayMetadataTests(unittest.TestCase):
         meta = TutorService.display_metadata(response)
         self.assertFalse(meta["approved"])
         self.assertEqual(meta["audit_reason"], "code_block_over_limit")
+
+    def test_hybrid_mode_with_mock_backend_falls_back_to_regex(self):
+        # hybrid 模式 + Mock 后端：LLM 分类必然不可解析 -> 安全回退正则，
+        # 意图与等级与 regex 模式一致，链路不中断。
+        settings = Settings(
+            mode="mock", exam_mode=True, api_key="SECRET-KEY", classifier_mode="hybrid"
+        )
+        service = TutorService(settings, backend=MockChatBackend())
+        context = service.new_context("hybrid-1")
+        response = service.chat(context, "解释什么是动态规划的重叠子问题")
+        self.assertIn("regex-fallback", response.classification.method)
+        self.assertEqual(response.classification.intent.value, "knowledge")
+        self.assertEqual(response.decision.max_help_level, 1)
+        meta = TutorService.display_metadata(response)
+        self.assertIn("classify_confidence", meta)
 
 
 if __name__ == "__main__":
