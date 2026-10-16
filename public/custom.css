@@ -49,6 +49,12 @@
   margin-right: auto;
 }
 
+/* 新会话加载瞬间隐藏 Chainlit 默认欢迎屏的大 logo（避免"闪一下"第三方界面） */
+#welcome-screen img,
+#welcome-screen svg {
+  display: none;
+}
+
 /* ---------- 消息气泡 ---------- */
 #messages .mantine-Text-root {
   line-height: 1.75;

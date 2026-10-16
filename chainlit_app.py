@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 
@@ -48,9 +49,9 @@ WELCOME_TMPL = """### 🛡️ ExamGuard · 算法考试受限助教
 | 意图分类器 | `{classifier}` |
 
 **使用方式**
-- 直接提问算法概念或复杂度问题；
+- 直接提问算法概念或复杂度问题，回答会尽量讲透、配合具体例子；
 - 调试已有代码时，把代码放在 ``` 围栏代码块中一并粘贴（仅作文本分析，**不会执行**）；
-- 每条回答下方的 **安全审计与策略** 步骤可展开，查看意图、帮助等级上限与审核结论。
+- 每条回答下方有一行安全摘要（意图 · 帮助等级 · 审核结论）；完整审计明细可用 `EG_UI_DETAIL=full` 启动查看。
 """
 
 _service: TutorService | None = None
@@ -86,15 +87,30 @@ def split_question_and_code(message: str) -> tuple[str, str]:
 
 
 def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
-    """把白名单元数据渲染为前端展示表格（纯函数，便于测试）。
+    """把白名单元数据渲染为前端审计面板（纯函数，便于测试）。
 
-    只包含可展示字段；不含系统提示词、API Key 或用户原始输入。
+    展示密度由 EG_UI_DETAIL 控制（默认 brief 学生视图；full 供教师/研究用）：
+    - brief：一行摘要——意图 · 帮助等级 · 审核结论 ·（会话累计风险非零时）；
+    - full：完整表格（分类方法/置信度/风险标记/审核层/重生成/Token/耗时等）。
+    任何模式都不含系统提示词、API Key 或用户原始输入。
     """
     badge = _LEVEL_BADGES.get(meta.get("help_level"), f"L{meta.get('help_level')}")
+    if meta.get("approved"):
+        verdict = "✅ 审核放行"
+    else:
+        verdict = f"⛔ 已拦截（{meta.get('audit_reason')}）"
+    session_risk = meta.get("session_risk")
+
+    if os.environ.get("EG_UI_DETAIL", "brief").strip().lower() != "full":
+        parts = [f"意图 `{meta.get('intent')}`", badge, verdict]
+        if session_risk is not None and float(session_risk) > 0:
+            parts.append(f"会话累计风险 {float(session_risk):.2f}")
+        return " · ".join(parts)
+
     rows = [
         ("请求意图", f"`{meta.get('intent')}`（{meta.get('classify_method')}）"),
         ("允许帮助等级", badge),
-        ("审核结论", "✅ 放行" if meta.get("approved") else f"⛔ 拦截降级（{meta.get('audit_reason')}）"),
+        ("审核结论", verdict.replace("审核放行", "放行")),
         ("模型", f"`{meta.get('model')}`"),
     ]
     confidence = meta.get("classify_confidence")
@@ -109,12 +125,12 @@ def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
     regenerations = meta.get("regenerations")
     if regenerations:
         rows.append(("安全重生成", f"{regenerations} 次（首次回答未过审）"))
-    session_risk = meta.get("session_risk")
     if session_risk is not None:
         rows.append(("本会话该题累计风险", f"{float(session_risk):.2f}"))
     disclosures = meta.get("session_disclosures") or []
     if disclosures:
         rows.append(("已披露元素", "、".join(f"`{d}`" for d in disclosures)))
+
     def _token(value) -> str:
         return str(value) if value is not None else "—"
 

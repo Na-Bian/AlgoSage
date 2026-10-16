@@ -66,24 +66,32 @@ class ChainlitAppModuleTests(unittest.TestCase):
         self.assertTrue(question)
         self.assertIn("print(1)", code)
 
-    def test_render_audit_markdown_shows_whitelisted_fields_only(self):
+    def test_render_audit_markdown_brief_is_one_line(self):
         meta = {
-            "intent": "hint",
-            "classify_method": "regex-v0",
-            "classify_reason": "检测到方向性提示需求",
-            "help_level": 2,
-            "policy_reason": "考试策略：最高帮助等级 2",
-            "approved": False,
-            "audit_reason": "code_block_over_limit",
-            "model": "mock-offline",
-            "input_tokens": 12,
-            "output_tokens": 34,
+            "intent": "hint", "help_level": 2, "approved": False,
+            "audit_reason": "code_block_over_limit", "session_risk": 0.45,
         }
-        rendered = self.module.render_audit_markdown(meta, latency_ms=87)
+        rendered = self.module.render_audit_markdown(meta)
         self.assertIn("`hint`", rendered)
         self.assertIn("L2", rendered)
         self.assertIn("code_block_over_limit", rendered)
+        self.assertIn("0.45", rendered)
+        # brief 模式不展示耗时/Token/分类方法等细节
+        self.assertNotIn("ms", rendered)
+        self.assertNotIn("api_key", rendered)
+
+    def test_render_audit_markdown_full_mode_shows_details(self):
+        meta = {
+            "intent": "hint", "classify_method": "regex-v0",
+            "classify_reason": "检测到方向性提示需求", "help_level": 2,
+            "policy_reason": "考试策略：最高帮助等级 2", "approved": False,
+            "audit_reason": "code_block_over_limit", "model": "mock-offline",
+            "input_tokens": 12, "output_tokens": 34,
+        }
+        with mock.patch.dict("os.environ", {"EG_UI_DETAIL": "full"}):
+            rendered = self.module.render_audit_markdown(meta, latency_ms=87)
         self.assertIn("87 ms", rendered)
+        self.assertIn("12 / 34", rendered)
         self.assertNotIn("api_key", rendered)
         self.assertNotIn("系统提示词", rendered)
 

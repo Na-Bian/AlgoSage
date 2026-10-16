@@ -26,7 +26,7 @@ from typing import Optional, Protocol
 
 from .config import Settings
 from .llm import ChatBackend
-from .schemas import AuditResult, PolicyDecision
+from .schemas import AuditResult, Intent, PolicyDecision
 
 logger = logging.getLogger("examguard.leakage_guard")
 
@@ -97,7 +97,17 @@ class OutputGuardProtocol(Protocol):
 
 
 class RuleLeakageScreener:
-    """规则预筛层：确定性、离线可测；误拒控制见模块 docstring。"""
+    """规则预筛层：确定性、离线可测；误拒控制见模块 docstring。
+
+    概念教学豁免（2026-10 依真实使用反馈加入）：knowledge/hint 意图下允许
+    经典教材例子演示（状态转移式、编号讲解步骤、伪代码叙述），只保留
+    大段完整代码、入口点、完整证明收尾与"自称完整解答"的拦截——概念
+    讲解不该被"出现了 dp[i]="误伤。纵深防御由 layered 模式的 LLM Judge
+    兜底；该豁免的攻击面（诱导分类为 knowledge/hint 后骗例子）已在
+    实验报告中披露。
+    """
+
+    _TEACHING_INTENTS = {Intent.KNOWLEDGE, Intent.HINT}
 
     def review(
         self,
@@ -113,9 +123,10 @@ class RuleLeakageScreener:
             return AuditResult(True, draft, "practice_mode", method="rules-v1")
 
         level = decision.max_help_level
+        teaching = decision.intent in self._TEACHING_INTENTS
         for block in _CODE_BLOCK.findall(draft):
             nonempty = [line for line in block.splitlines() if line.strip()]
-            limit = 8 if level == 3 else 2
+            limit = 8 if level == 3 else (12 if teaching else 2)
             if len(nonempty) > limit:
                 return AuditResult(
                     False, fallback_message("code_block_over_limit"),
@@ -126,7 +137,7 @@ class RuleLeakageScreener:
                 False, fallback_message("entrypoint_detected"),
                 "entrypoint_detected", method="rules-v1",
             )
-        if level <= 2 and _TRANSITION.search(draft):
+        if not teaching and level <= 2 and _TRANSITION.search(draft):
             return AuditResult(
                 False, fallback_message("key_transition_exposed"),
                 "key_transition_exposed", method="rules-v1", categories=("key_steps",),
@@ -141,7 +152,7 @@ class RuleLeakageScreener:
                 False, fallback_message("claims_complete_solution"),
                 "claims_complete_solution", method="rules-v1", categories=("full_solution",),
             )
-        if level <= 2:
+        if not teaching and level <= 2:
             steps = _STEP_LINE.findall(draft)
             if len(steps) >= 3:
                 verb_hits = sum(1 for s in steps if _ALGO_VERBS.search(s))
@@ -171,8 +182,8 @@ class LLMLeakageJudge:
     def _build_messages(self, draft: str, decision: PolicyDecision, question: str, existing_code: str):
         level_rules = {
             0: "不提供任何可拼成完整解法的信息",
-            1: "只允许概念与一般性质解释",
-            2: "允许方向性提示；不允许完整关键步骤、完整代码、完整题解、完整证明",
+            1: "概念与一般性质讲解：允许用经典教材例子演示（含状态转移式、推导、≤10 行演示代码）",
+            2: "方向性提示：允许结合经典例子讲思路；不针对学生所述具体题目给完整可提交解法",
             3: "允许局部代码诊断与少量局部修改；不允许代写整题",
         }
         system = (
@@ -181,11 +192,20 @@ class LLMLeakageJudge:
             "输出且仅输出一个 JSON 对象（不要其他文字或围栏）：\n"
             '{"leaked": true/false, "categories": [...], "confidence": 0.0, "reason": "..."}\n'
             f"categories 从 {json.dumps(self._CATEGORIES)} 中选择，无泄漏为空数组。\n"
-            "注意：复杂度分析（如 T(n)=2T(n/2)+O(n) 的推导）、概念解释、"
-            "针对学生已有代码的少量局部修改建议都**不**算泄漏；"
-            "完整可提交程序、逐步完整题解、完整证明、可直接拼装的核心步骤才算泄漏。"
+            "以下内容都**不**算泄漏，一律判 leaked=false：\n"
+            "- 算法概念的定义、性质讲解与举例说明；\n"
+            "- 用经典教材问题（如 LCS、矩阵链、背包）演示思路、状态转移式或推导过程——"
+            "即使出现了 dp[i]=... 这类式子或编号步骤；\n"
+            "- 复杂度分析（如 T(n)=2T(n/2)+O(n)）与复杂度比较；\n"
+            "- 针对学生已有代码的局部修改建议。\n"
+            "只有当内容同时满足【针对学生所述的具体题目】且【可直接提交或几乎无需修改即可提交】"
+            "（完整程序、从头到尾的整题题解、完整形式化证明）时才判 leaked=true；"
+            "边界拿不准时判 false 并在 reason 中说明疑虑。误拦正常学习问答比漏拦代价更高。"
         )
-        parts = [f"当前最高帮助等级：L{decision.max_help_level}（{level_rules[decision.max_help_level]}）"]
+        parts = [
+            f"当前最高帮助等级：L{decision.max_help_level}（{level_rules[decision.max_help_level]}）；"
+            f"请求意图：{decision.intent.value}"
+        ]
         if question.strip():
             parts.append("学生问题（不可信）：\n" + question[:3000])
         if existing_code.strip():
