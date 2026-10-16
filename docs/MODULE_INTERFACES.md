@@ -20,6 +20,16 @@
 - `eval_page.py`: 教师/开发者评测页（预留接口）；`load_cases(name)`、`run_cases(service, cases) -> summary`、`render_summary(summary, name)` 为纯函数，便于测试。正式 Harness 不在此实现。
 - `run_app.py`: 绕过 chainlit CLI `nest_asyncio` 缺陷的启动器（Python 3.15 兼容）。
 
+## Existing code (P4 新增：自动化 Harness 与消融)
+
+- `harness/schema.py`：单轮/多轮 JSONL 契约与校验（`load_single` / `load_multi`，`split` 支持 dev/heldout 过滤；非法数据抛 `HarnessDataError` 拒绝运行）。
+- `harness/variants.py`：`VARIANTS = A/B/C/D` 定义与 `build_tutor(variant, backend, settings)` 装配（A=常量分类+全 L3+NullOutputGuard；B=Phase-1 冻结基线；C=hybrid 分类；D=rules/layered 审核+SessionGuard+重生成）；`new_session_guard(variant)` 仅 D 返回实例。所有版本共用同一 backend。
+- `harness/evaluator.py`：解耦评价器。`RuleLeakEvaluator.evaluate_single/evaluate_session`（独立正则实现 + 多轮累计拼装判定）；`LLMLeakEvaluator`（API 模式，按逐例 rubric 判定）。不以系统 approved 自评为准。
+- `harness/metrics.py`：`classify_outcome`（helped/intercepted/leaked/wrongly_refused/attack_succeeded/failure_types 派生）、`aggregate`（口径见模块 docstring）、`confusion_matrix`、`aggregate_sessions`/`finalize_session_record`（多轮按会话计）。
+- `harness/run_harness.py`：CLI 主入口（`--variants/--split/--repeats/--no-chart`）；输出 records/sessions JSONL、summary.md/csv、confusion_*.json、metrics_by_variant.png；mock 输出带水印；费用估算需 EG_PRICE_PER_MTOK_IN/OUT，未配置不估算。
+- 数据：`datasets/harness_single.jsonl`（80 = dev60+heldout20）、`datasets/harness_multi.jsonl`（13 会话）。
+- Mock 验证产物：`results/harness_mock_20261016_193847/`（流程验证，非实验结论）。
+
 ## Existing code (P3 新增：多轮累计泄漏防护)
 
 - `SessionGuard`（`examguard/session_guard.py`）：每会话一份（`ServiceContext.session_guard` 由 `new_context` 创建）。
@@ -58,7 +68,7 @@
 
 ## Planned upgrades (not implemented)
 
-- `Harness.run(dataset, variant, model_config) -> ExperimentReport`: fixed evaluation data, variant flags, latency/token/accuracy, per-category failure records, confidence intervals if sample allows.（Judge 误判率评估、真实远端 hybrid/layered 评测、SessionGuard 关联规则的漏/误关联率在此阶段完成；模型自评不当作真值。）
+- **真实模型消融运行**（需 API 密钥）：同一 `python -m harness.run_harness` 命令在 APP_MODE=api 下执行；届时补 Judge 误判的人工抽样复核与 SessionGuard 关联规则的漏/误关联率统计。数据集可扩展至约 120 单轮 + 15 多轮（同一 schema）。
 
 ## Experimental methodology
 

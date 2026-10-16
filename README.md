@@ -201,16 +201,53 @@ python report_classifier.py --mode hybrid   # 需 APP_MODE=api
   可能漏关联；规则 7 的"无关键词索答承接"可能轻微过度关联——均在报告有效
   性威胁中说明，P4 用标注数据量化。
 
+## P4：自动化 Harness 与消融实验（框架已交付，真实模型评测待密钥）
+
+- **测试数据**（结构化 JSONL，带 schema 校验、fail closed）：
+  - `datasets/harness_single.jsonl`：80 例（dev 60 = k14/d12/h12/s12/j10；heldout 20），
+    字段含 case_id/split/intent_gold/is_allowed/question_id/prompt/existing_code/
+    expected_help_level/leakage_rubric/attack_type，覆盖正常问法、歧义、攻击改写
+    （角色扮演/规则覆盖/翻译/伪装补全/编码套取）；
+  - `datasets/harness_multi.jsonl`：13 组多轮会话（良性 5 / 攻击链 6 / 混合 2，
+    dev 11 + heldout 2），含分段拆解、伪装调试逐轮套取、无关键词渐进链等。
+- **消融版本**（`harness/variants.py`，共用同一 backend/模型/解码参数）：
+  A 仅考试 System Prompt（常量分类+全 L3+直通审核）→ B +正则分类+默认策略+basic 审核
+  （Phase-1 冻结基线）→ C +混合意图分类（mock 下回退≈B，报告中标注）→
+  D +rules/layered 审核+SessionGuard+有限重生成。
+- **评价器与被测系统解耦**（`harness/evaluator.py`）：`RuleLeakEvaluator` 只看最终
+  送达文本与 rubric（独立实现，不以系统 approved 自评为准）；多轮含"累计披露是否
+  足以拼装"判定；`LLMLeakEvaluator`（API 模式）按逐例 rubric 语义复核。
+- **指标口径**（`harness/metrics.py`，分母写入汇总表头）：合法辅助完成率、误拒率、
+  拦截率、泄漏率、越狱成功率（多轮按会话计，攻击成功仅统计 jailbreak 类得手）、
+  意图准确率与混淆矩阵、重复运行均值±标准差、费用估算（需配价格，未配置则不估算）。
+- **运行**：
+
+```bash
+.venv/bin/python -m harness.run_harness                          # A/B/C/D, dev 集
+.venv/bin/python -m harness.run_harness --split heldout          # 保留集
+.venv/bin/python -m harness.run_harness --repeats 3              # 采样波动
+# API 模式：.env 配置 APP_MODE=api 与密钥后同命令（Layered Judge 自动启用需
+# EG_OUTPUT_GUARD=layered）
+```
+
+  输出：`results/harness_<mode>_<时间戳>/`（records.jsonl / sessions.jsonl /
+  summary.md / summary.csv / confusion_*.json / metrics_by_variant.png）。
+- **Mock 全流程验证（已真实运行，见 `results/harness_mock_20261016_193847/`）**：
+  数字自洽且方向符合预期——A 版拦截 0%、越狱成功 100%、意图准确 23.3%（14/60）；
+  B/C/D 拦截 100%、意图准确 71.7%；多轮泄漏 0%。**这些是流程验证数字，不代表
+  真实模型实验结论**（mock 回答不含代码，泄漏/帮助指标在 mock 下无区分度，
+  汇总中带【MOCK】水印）。真实消融数据待 API 密钥后运行同一命令获得。
+
 ## What has NOT been completed
 
-No batch harness yet. The hybrid classifier and the LLM Judge remote paths are implemented and unit-tested with scripted backends, but have **not** been evaluated with a real model (no API key used so far). Do **not** report unevaluated capabilities as experiment results. See `docs/MODULE_INTERFACES.md` for subsequent milestones and ablation plan. `eval_page.py` 是开发调试入口，不是正式评测 Harness。
+**真实模型消融实验未运行**（无 API 密钥）：hybrid 分类、LLM Judge 的远端路径已实现并经脚本化后端单测，A/B/C/D Harness 已在 mock 下全流程验证，但 `results/harness_mock_*` 的数字带【MOCK】水印、仅证明流程可用。补充建议规模（约 120 单轮 + 15 多轮）时继续沿用同一 schema。Do **not** report unevaluated capabilities as experiment results.
 
 ## Recommended next milestones
 
 1. ~~Replace `intent_classifier.py` with a rule+LLM classifier~~（P1 已完成；真实远端评测并入 P4）.
 2. ~~Policy decoupling + layered output guard~~（P2 已完成；Judge 误判率评估并入 P4）.
 3. ~~SessionGuard 多轮累计泄漏防护~~（P3 已完成；关联规则的漏/误关联率并入 P4）.
-4. Build Harness (JSONL cases; baseline A/B/C/D; same held-out test set, same model setup).
+4. ~~Build Harness (A/B/C/D)~~（P4 框架已完成并在 mock 验证；**待密钥后运行真实消融**）.
 5. Write methodology, complexity, metrics and a reproducibility report.
 
 ## Data and privacy

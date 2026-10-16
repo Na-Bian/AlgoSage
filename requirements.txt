@@ -1,5 +1,6 @@
 openai>=1.60,<4
 python-dotenv>=1.0,<2
+matplotlib>=3.8,<4         # P4 Harness 消融对比图（交接词技术栈要求）
 
 # 方案 B 前端（学生端 chainlit_app / 教师评测页 eval_page）
 chainlit>=2.11,<3
