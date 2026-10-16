@@ -17,6 +17,8 @@ class TutorRequest:
     question: str
     existing_code: str = ""
     exam_mode: bool = True
+    # P2 起新增：题目标识（教师策略按题覆盖、P3 会话风险跟踪用），默认空。
+    question_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,11 @@ class AuditResult:
     approved: bool
     output: str
     reason: str
+    # P2 起新增：审核层标识（如 rules-v1 / rules+judge-v1 / judge-v1），
+    # 用于审计展示与消融实验记录；空字符串表示旧基线未标注。
+    method: str = ""
+    # 拦截/泄漏类别（如 full_code / key_steps / proof），仅语义层填充。
+    categories: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -63,4 +70,6 @@ class TutorResponse:
     model: str
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    # P2 起新增：为通过审核而额外重生成的次数（0 表示一次生成即通过/未启用）。
+    regenerations: int = 0
     # No raw question/code stored in the response.

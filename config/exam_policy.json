@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "_comment": "教师侧可信考试策略示例。question_overrides 只允许比默认映射更严格；修改后重启服务生效。默认值与第一阶段硬编码映射一致。",
+  "exam_mode_levels": {
+    "jailbreak": 0,
+    "request_solution": 1,
+    "knowledge": 1,
+    "hint": 2,
+    "debug": 3
+  },
+  "practice_mode_level": 3,
+  "question_overrides": {
+    "q-dp-easy": { "hint": 1, "debug": 2 }
+  },
+  "max_regenerations": 1
+}

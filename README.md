@@ -156,16 +156,38 @@ python report_classifier.py --mode hybrid   # 需 APP_MODE=api
   hybrid 模式的真实远端评测待 API 密钥后在 P4 Harness 统一进行（本仓库拒绝在 mock 下
   生成冒充 hybrid 的报告）。
 
+## P2：分级辅助与输出安全审核（已交付）
+
+- **策略解耦**：帮助等级来源改为可信 `ExamPolicy` 配置（`examguard/exam_policy.py`）。
+  服务端文件 `EG_POLICY_FILE=config/exam_policy.json`（可选），支持按 `question_id`
+  **只收紧**的等级覆盖与重生成预算；文件非法时启动直接失败（fail closed）。
+  缺省内嵌映射与第一阶段硬编码逐项一致，旧测试与消融基线可复现。
+- **输出审核分层**（`EG_OUTPUT_GUARD=basic|rules|layered`，默认 rules）：
+  - `basic`：第一阶段冻结基线（消融对照）；
+  - `rules`（`RuleLeakageScreener`）：新增状态转移式（L≤2）、证明收尾标记（L≤1）、
+    完整解答自称（任意级，否定词排除）、编号算法步骤（≥3 步且含算法动词，L≤2）检测；
+    **误拒控制**：T(n)/O() 复杂度递推、概念性编号列表、L3 局部小代码段均放行；
+  - `layered`：规则先筛（拦截即短路，不耗 Judge 调用）→ 独立 `LLMLeakageJudge`
+    JSON 复核；Judge 不可用（非 API/超时/解析失败）降级为规则层结论并标注
+    `rules-v1(judge_unavailable)`，不静默放行也不硬拒。
+- **有限次重生成**：审核未通过按策略预算（默认 1 次）携拦截原因重生成；耗尽后替换为
+  确定性保守回退文案。只有审核通过的回答（或保守回退）会发给学生。
+- 审计元数据新增 `audit_method`/`audit_categories`/`regenerations`（Chainlit 审计步骤
+  可视展示）。
+- **边界**：多轮累计泄漏检测（与历史提示合并判定）属 P3；Judge 在真实模型上的
+  误判率评估属 P4（模型自评不当作真值）。
+
 ## What has NOT been completed
 
-No multi-turn answer-leakage detector, no reliable semantic output guard, and no batch harness. The hybrid classifier's remote-LLM path is implemented and unit-tested with a scripted backend, but has **not** been evaluated against the labeled dataset with a real model (no API key used so far). Do **not** report unevaluated capabilities as experiment results. See `docs/MODULE_INTERFACES.md` for subsequent milestones and ablation plan. `eval_page.py` 是开发调试入口，不是正式评测 Harness。
+No multi-turn answer-leakage detector (与历史提示合并的累计泄漏检测), and no batch harness. The hybrid classifier and the LLM Judge remote paths are implemented and unit-tested with scripted backends, but have **not** been evaluated with a real model (no API key used so far). Do **not** report unevaluated capabilities as experiment results. See `docs/MODULE_INTERFACES.md` for subsequent milestones and ablation plan. `eval_page.py` 是开发调试入口，不是正式评测 Harness。
 
 ## Recommended next milestones
 
 1. ~~Replace `intent_classifier.py` with a rule+LLM classifier~~（P1 已完成；真实远端评测并入 P4）.
-2. Add contextual `SessionGuard` and `LeakageJudge` (compare before/after, document false positives).
-3. Build Harness (JSONL cases; baseline A/B/C/D; same held-out test set, same model setup).
-4. Write methodology, complexity, metrics and a reproducibility report.
+2. ~~Policy decoupling + layered output guard~~（P2 已完成；Judge 误判率评估并入 P4）.
+3. Add contextual `SessionGuard`（多轮累计泄漏、题目改写不重置风险）.
+4. Build Harness (JSONL cases; baseline A/B/C/D; same held-out test set, same model setup).
+5. Write methodology, complexity, metrics and a reproducibility report.
 
 ## Data and privacy
 

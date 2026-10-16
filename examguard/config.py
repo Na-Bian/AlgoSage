@@ -24,6 +24,12 @@ class Settings:
     # P1：意图分类器模式。regex=冻结的正则基线（默认，离线可用）；
     # hybrid=规则+LLM 混合（需要 APP_MODE=api，LLM 不可用时自动回退正则）。
     classifier_mode: str = "regex"
+    # P2：输出审核层。basic=第一阶段冻结基线（供消融对照）；rules=规则预筛
+    # （默认，离线可用）；layered=规则+LLM Judge（API 模式下启用，Judge 不可
+    # 用时降级为规则层结论并标注）。
+    output_guard: str = "rules"
+    # P2：教师侧策略文件（可选）。缺省使用内嵌默认映射；文件非法时启动失败。
+    policy_file: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -37,6 +43,9 @@ class Settings:
         classifier_mode = os.environ.get("EG_CLASSIFIER_MODE", "regex").lower().strip()
         if classifier_mode not in {"regex", "hybrid"}:
             raise ValueError("EG_CLASSIFIER_MODE must be regex or hybrid")
+        output_guard = os.environ.get("EG_OUTPUT_GUARD", "rules").lower().strip()
+        if output_guard not in {"basic", "rules", "layered"}:
+            raise ValueError("EG_OUTPUT_GUARD must be basic, rules or layered")
         return cls(
             mode=mode,
             api_key=os.environ.get("LLM_API_KEY", ""),
@@ -47,4 +56,6 @@ class Settings:
             max_output_tokens=int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", "512")),
             token_parameter=token_parameter,
             classifier_mode=classifier_mode,
+            output_guard=output_guard,
+            policy_file=os.environ.get("EG_POLICY_FILE", "").strip(),
         )

@@ -21,9 +21,10 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from .config import Settings
+from .exam_policy import ExamPolicy, PolicyConfigError
 from .hybrid_classifier import HybridIntentClassifier
 from .llm import ChatBackend, make_backend
-from .pipeline import ExamGuardTutor
+from .pipeline import ExamGuardTutor, make_output_guard
 from .schemas import TutorRequest, TutorResponse
 
 logger = logging.getLogger("examguard.service")
@@ -59,11 +60,21 @@ class TutorService:
     ):
         self.settings = settings
         self.backend = backend if backend is not None else make_backend(settings)
+        # P2：可信策略文件（非法即启动失败，fail closed）。
+        if settings.policy_file:
+            self.policy_config = ExamPolicy.from_file(settings.policy_file)
+        else:
+            self.policy_config = ExamPolicy.default()
         # P1：hybrid 模式下注入规则+LLM 混合分类器；LLM 不可用时自动回退正则。
         classifier = None
         if settings.classifier_mode == "hybrid":
             classifier = HybridIntentClassifier(self.backend, settings)
-        self.tutor = ExamGuardTutor(self.backend, settings, classifier=classifier)
+        # P2：按配置选择输出审核层（basic / rules / layered）。
+        output_guard = make_output_guard(settings, self.backend)
+        self.tutor = ExamGuardTutor(
+            self.backend, settings, classifier=classifier,
+            output_guard=output_guard, policy_config=self.policy_config,
+        )
         if allow_policy_override is None:
             allow_policy_override = _env_flag("EG_ALLOW_POLICY_SWITCH")
         self.allow_policy_override = allow_policy_override
@@ -142,6 +153,9 @@ class TutorService:
             "policy_reason": response.decision.reason,
             "approved": response.audit.approved,
             "audit_reason": response.audit.reason,
+            "audit_method": response.audit.method,
+            "audit_categories": list(response.audit.categories),
+            "regenerations": response.regenerations,
             "model": response.model,
             "input_tokens": response.input_tokens,
             "output_tokens": response.output_tokens,

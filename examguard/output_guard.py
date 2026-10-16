@@ -6,8 +6,19 @@ _CODE_BLOCK = re.compile(r"```[^\n]*\n(.*?)```", re.S)
 
 
 class BasicOutputGuard:
-    """Conservative markdown-code heuristic; cannot detect paraphrased algorithm leaks."""
-    def review(self, draft: str, decision: PolicyDecision, exam_mode: bool) -> AuditResult:
+    """Conservative markdown-code heuristic; cannot detect paraphrased algorithm leaks.
+
+    P2 起 review 增加可选的 question / existing_code 上下文参数（签名兼容，
+    判定逻辑保持第一阶段冻结，供消融对照）。
+    """
+    def review(
+        self,
+        draft: str,
+        decision: PolicyDecision,
+        exam_mode: bool,
+        question: str = "",
+        existing_code: str = "",
+    ) -> AuditResult:
         if not draft.strip():
             return AuditResult(False, "这次没有得到有效回答，请稍后重试。", "empty_output")
         if not exam_mode:

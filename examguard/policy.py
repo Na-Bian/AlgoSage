@@ -1,21 +1,27 @@
-"""Explicit grading rules: stable without the model and easy to unit test."""
-from .schemas import Classification, Intent, PolicyDecision
+"""Explicit grading rules: stable without the model and easy to unit test.
+
+P2 起 `decide` 的等级来源是可信的 ``ExamPolicy`` 配置（服务端文件或内嵌
+默认值），策略引擎与分类器实现解耦；未显式传入配置时使用与第一阶段硬编码
+映射完全一致的内嵌默认值，旧测试与消融基线可复现。
+"""
+from .exam_policy import ExamPolicy
+from .schemas import Classification, PolicyDecision
 
 
-def decide(result: Classification, exam_mode: bool) -> PolicyDecision:
+def decide(
+    result: Classification,
+    exam_mode: bool,
+    exam_policy: ExamPolicy | None = None,
+    question_id: str = "",
+) -> PolicyDecision:
+    policy = exam_policy or ExamPolicy.default()
     if not exam_mode:
         # Practice mode still asks model not to write full solutions for unseen exams.
         # This stage is for course demos, not production authorization.
-        return PolicyDecision(result.intent, 3, "练习演示模式")
-    help_levels = {
-        Intent.JAILBREAK: 0,
-        Intent.SOLUTION: 1,
-        Intent.KNOWLEDGE: 1,
-        Intent.HINT: 2,
-        Intent.DEBUG: 3,
-    }
-    level = help_levels[result.intent]
-    return PolicyDecision(result.intent, level, f"考试策略：最高帮助等级 {level}")
+        return PolicyDecision(result.intent, policy.practice_mode_level, "练习演示模式")
+    level = policy.max_level(result.intent, question_id)
+    source = "题目策略" if policy.has_override(question_id, result.intent) else "考试策略"
+    return PolicyDecision(result.intent, level, f"{source}：最高帮助等级 {level}")
 
 
 def system_prompt(decision: PolicyDecision, exam_mode: bool) -> str:

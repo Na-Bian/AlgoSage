@@ -103,6 +103,12 @@ def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
     flags = meta.get("risk_flags") or []
     if flags:
         rows.append(("风险标记", "、".join(f"`{f}`" for f in flags)))
+    audit_method = meta.get("audit_method")
+    if audit_method:
+        rows.append(("审核层", f"`{audit_method}`"))
+    regenerations = meta.get("regenerations")
+    if regenerations:
+        rows.append(("安全重生成", f"{regenerations} 次（首次回答未过审）"))
     def _token(value) -> str:
         return str(value) if value is not None else "—"
 

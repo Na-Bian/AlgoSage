@@ -145,7 +145,8 @@ class DisplayMetadataTests(unittest.TestCase):
             "intent", "classify_method", "classify_reason",
             "classify_confidence", "risk_flags",
             "help_level", "policy_reason",
-            "approved", "audit_reason",
+            "approved", "audit_reason", "audit_method", "audit_categories",
+            "regenerations",
             "model", "input_tokens", "output_tokens",
         }
         self.assertEqual(set(meta), expected_keys)
@@ -183,6 +184,41 @@ class DisplayMetadataTests(unittest.TestCase):
         self.assertEqual(response.decision.max_help_level, 1)
         meta = TutorService.display_metadata(response)
         self.assertIn("classify_confidence", meta)
+
+
+class PolicyWiringTests(unittest.TestCase):
+    def test_policy_file_is_loaded_into_tutor(self):
+        from pathlib import Path
+
+        policy_path = Path(__file__).parent.parent / "config" / "exam_policy.json"
+        settings = Settings(mode="mock", policy_file=str(policy_path))
+        service = TutorService(settings, backend=MockChatBackend())
+        from examguard.exam_policy import ExamPolicy
+
+        self.assertIsInstance(service.policy_config, ExamPolicy)
+        self.assertEqual(service.policy_config.max_level(
+            __import__("examguard.schemas", fromlist=["Intent"]).Intent.HINT, "q-dp-easy"
+        ), 1)
+
+    def test_invalid_policy_file_fails_closed_at_construction(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            handle.write("{ broken")
+            path = handle.name
+        self.addCleanup(Path(path).unlink)
+        settings = Settings(mode="mock", policy_file=path)
+        from examguard.exam_policy import PolicyConfigError
+
+        with self.assertRaises(PolicyConfigError):
+            TutorService(settings, backend=MockChatBackend())
+
+    def test_default_guard_is_rules_layer(self):
+        service = make_service()
+        from examguard.leakage_guard import RuleLeakageScreener
+
+        self.assertIsInstance(service.tutor.output_guard, RuleLeakageScreener)
 
 
 if __name__ == "__main__":
