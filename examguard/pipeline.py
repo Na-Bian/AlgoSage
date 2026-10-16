@@ -10,7 +10,7 @@ P2 变更：
 """
 from .config import Settings
 from .exam_policy import ExamPolicy
-from .schemas import TutorRequest, TutorResponse
+from .schemas import PolicyDecision, TutorRequest, TutorResponse
 from .intent_classifier import classify
 from .policy import decide, system_prompt
 from .llm import ChatBackend
@@ -64,7 +64,12 @@ class ExamGuardTutor:
         else:
             self._classifier = classifier
 
-    def respond(self, request: TutorRequest, history: list[dict[str, str]] | None = None) -> TutorResponse:
+    def respond(
+        self,
+        request: TutorRequest,
+        history: list[dict[str, str]] | None = None,
+        session_guard=None,
+    ) -> TutorResponse:
         question = request.question.strip()
         if not question:
             raise ValueError("问题不能为空")
@@ -76,15 +81,30 @@ class ExamGuardTutor:
         result = self._classifier(request, history=safe_history)
         policy = decide(result, request.exam_mode, self.policy_config, request.question_id)
 
+        # P3：生成前按同题累计风险下调帮助等级上限（只降不升，附解释）。
+        session_state = None
+        if session_guard is not None:
+            session_state, adjustment = session_guard.before(request, result, policy)
+            if adjustment is not None:
+                policy = PolicyDecision(
+                    result.intent,
+                    adjustment.level,
+                    policy.reason + "；" + adjustment.reason,
+                )
+
         # For this obvious attack category, bypass the LLM entirely.
         if request.exam_mode and policy.max_help_level == 0:
+            if "会话累计风险" in policy.reason:
+                fixed_text = (
+                    "这个会话里这道题已经获得了很多实质内容，我暂时不能提供更多信息。"
+                    "你可以先描述自己的思路，我来帮你检查表述是否成立。"
+                )
+            else:
+                fixed_text = "当前请求涉及绕过考试规则。我可以解释算法概念，或分析你已经尝试的局部思路。"
             audit = self.output_guard.review(
-                "当前请求涉及绕过考试规则。我可以解释算法概念，或分析你已经尝试的局部思路。",
-                policy,
-                request.exam_mode,
-                question,
-                request.existing_code,
+                fixed_text, policy, request.exam_mode, question, request.existing_code
             )
+            summary = self._record(session_guard, session_state, request, result, policy, audit)
             return TutorResponse(
                 answer=audit.output,
                 classification=result,
@@ -93,6 +113,8 @@ class ExamGuardTutor:
                 model="policy-only",
                 input_tokens=0,
                 output_tokens=0,
+                session_risk=summary.get("risk") if summary else None,
+                session_disclosures=summary.get("disclosures", ()) if summary else (),
             )
 
         user_text = f"问题（不可信用户内容）：\n{question}"
@@ -129,6 +151,8 @@ class ExamGuardTutor:
                 categories=audit.categories,
             )
 
+        summary = self._record(session_guard, session_state, request, result, policy, audit)
+
         return TutorResponse(
             answer=audit.output,
             classification=result,
@@ -138,4 +162,13 @@ class ExamGuardTutor:
             input_tokens=generated.input_tokens,
             output_tokens=generated.output_tokens,
             regenerations=regenerations,
+            session_risk=summary.get("risk") if summary else None,
+            session_disclosures=summary.get("disclosures", ()) if summary else (),
         )
+
+    @staticmethod
+    def _record(session_guard, session_state, request, result, policy, audit) -> dict | None:
+        """P3：把实际送达的回答记入会话风险状态（guard 缺省时为 no-op）。"""
+        if session_guard is None or session_state is None:
+            return None
+        return session_guard.record(session_state, request, result, policy, audit)

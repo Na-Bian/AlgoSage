@@ -20,6 +20,18 @@
 - `eval_page.py`: 教师/开发者评测页（预留接口）；`load_cases(name)`、`run_cases(service, cases) -> summary`、`render_summary(summary, name)` 为纯函数，便于测试。正式 Harness 不在此实现。
 - `run_app.py`: 绕过 chainlit CLI `nest_asyncio` 缺陷的启动器（Python 3.15 兼容）。
 
+## Existing code (P3 新增：多轮累计泄漏防护)
+
+- `SessionGuard`（`examguard/session_guard.py`）：每会话一份（`ServiceContext.session_guard` 由 `new_context` 创建）。
+  - `before(request, classification, policy) -> (RiskState, RiskAdjustment|None)`：生成前按同题累计风险下调帮助等级上限（只降不升；`RiskAdjustment.reason` 可解释到已披露元素）。
+  - `record(state, request, classification, policy, audit) -> {risk, disclosures}`：把**实际送达**的回答记入风险状态（互补新信息主导，重复披露 0.25 衰减）。
+  - `trajectory(question_id="")` / `snapshot()`：风险轨迹与可序列化快照。
+- `RiskState`：question_id、anchor_texts（历史问法锚点列表）、disclosed_elements、risk_score、turns、last_intent、recent_audits、history、version（to_dict/from_dict；v1 单锚点字段兼容）。
+- 题目关联规则（`_match_key`）：显式 question_id；bigram Jaccard ≥0.45；关键词共享 ≥2；共享 1 且 J≥0.10；hint/solution 追问承接（锚点含关键词而当前省略、或双方均无关键词，状态近期为 hint/solution/debug）；无关键词的 solution 承接最近活跃状态。**误关联防护**：knowledge 意图不参与追问承接规则。
+- 会话降级（按意图）：hint/solution 0.4→L2/0.6→L1/0.8→L0；debug 0.8→L2/0.9→L1；knowledge 下限 L1。
+- `ExamGuardTutor.respond(request, history=None, session_guard=None)`；`TutorService.chat(..., question_id="")`；`TutorResponse.session_risk/session_disclosures`。
+- 演示：`python demo_session_guard.py`（离线攻击链：算法选择→状态定义→伪装调试转移式→继续索要，第 4 轮 L2→L0 附原因）。
+
 ## Existing code (P2 新增：分级辅助与输出安全审核)
 
 - `ExamPolicy`（`examguard/exam_policy.py`）：可信服务端策略配置。`from_file`/`from_dict` 严格校验（fail closed：未知意图、等级越界、按题覆盖比默认更宽松都直接抛 `PolicyConfigError`）；`question_overrides` 只允许**收紧或持平**；`max_regenerations`（0..2）为重生成预算。`config/exam_policy.json` 为示例（与内嵌默认一致 + q-dp-easy 覆盖示例）。
@@ -46,8 +58,7 @@
 
 ## Planned upgrades (not implemented)
 
-- `SessionGuard.update(question_id, history, prior_state) -> RiskState`: track accumulated *semantic* disclosures across same question and closely-related restatements. Should not reset on superficial paraphrases.（P2 的单轮审核不含历史合并检测。）
-- `Harness.run(dataset, variant, model_config) -> ExperimentReport`: fixed evaluation data, variant flags, latency/token/accuracy, per-category failure records, confidence intervals if sample allows.（Judge 误判率评估、真实远端 hybrid/layered 评测在此阶段完成；模型自评不当作真值。）
+- `Harness.run(dataset, variant, model_config) -> ExperimentReport`: fixed evaluation data, variant flags, latency/token/accuracy, per-category failure records, confidence intervals if sample allows.（Judge 误判率评估、真实远端 hybrid/layered 评测、SessionGuard 关联规则的漏/误关联率在此阶段完成；模型自评不当作真值。）
 
 ## Experimental methodology
 

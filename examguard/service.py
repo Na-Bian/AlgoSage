@@ -26,6 +26,7 @@ from .hybrid_classifier import HybridIntentClassifier
 from .llm import ChatBackend, make_backend
 from .pipeline import ExamGuardTutor, make_output_guard
 from .schemas import TutorRequest, TutorResponse
+from .session_guard import SessionGuard
 
 logger = logging.getLogger("examguard.service")
 
@@ -43,6 +44,8 @@ class ServiceContext:
     session_id: str
     exam_mode: bool
     history: list[dict[str, str]] = field(default_factory=list)
+    # P3：本会话专属的多轮风险跟踪器（new_context 自动创建，会话间互不影响）。
+    session_guard: SessionGuard = field(default_factory=SessionGuard)
 
 
 def _env_flag(name: str, default: str = "false") -> bool:
@@ -118,13 +121,21 @@ class TutorService:
     # ------------------------------------------------------------------
     # Chat
     # ------------------------------------------------------------------
-    def chat(self, context: ServiceContext, question: str, existing_code: str = "") -> TutorResponse:
+    def chat(
+        self,
+        context: ServiceContext,
+        question: str,
+        existing_code: str = "",
+        question_id: str = "",
+    ) -> TutorResponse:
         """One tutoring turn; appends the exchanged text to the session history.
 
-        The history stores display text only (mirrors the Streamlit starter),
-        not system prompts or internal audit structures.
+        question_id 为可选的题目标识（P4 Harness / 教师场景传入；学生 UI
+        暂不设置，SessionGuard 退化为相近问题关联）。The history stores
+        display text only (mirrors the Streamlit starter), not system prompts
+        or internal audit structures.
         """
-        response = self._respond(context, question, existing_code)
+        response = self._respond(context, question, existing_code, question_id)
         user_entry = question if not existing_code.strip() else (
             question + "\n\n已有代码（仅文本分析，不执行）：\n" + existing_code
         )
@@ -156,6 +167,8 @@ class TutorService:
             "audit_method": response.audit.method,
             "audit_categories": list(response.audit.categories),
             "regenerations": response.regenerations,
+            "session_risk": response.session_risk,
+            "session_disclosures": list(response.session_disclosures),
             "model": response.model,
             "input_tokens": response.input_tokens,
             "output_tokens": response.output_tokens,
@@ -164,13 +177,22 @@ class TutorService:
     # ------------------------------------------------------------------
     # internals
     # ------------------------------------------------------------------
-    def _respond(self, context: ServiceContext, question: str, existing_code: str) -> TutorResponse:
+    def _respond(
+        self,
+        context: ServiceContext,
+        question: str,
+        existing_code: str,
+        question_id: str = "",
+    ) -> TutorResponse:
         request = TutorRequest(
             question=question,
             existing_code=existing_code,
             exam_mode=context.exam_mode,
+            question_id=question_id,
         )
-        return self.tutor.respond(request, history=context.history)
+        return self.tutor.respond(
+            request, history=context.history, session_guard=context.session_guard
+        )
 
     def _require_override(self, requested_mode: bool) -> None:
         if not self.allow_policy_override:

@@ -72,4 +72,7 @@ class TutorResponse:
     output_tokens: Optional[int] = None
     # P2 起新增：为通过审核而额外重生成的次数（0 表示一次生成即通过/未启用）。
     regenerations: int = 0
+    # P3 起新增：本会话该题的累计风险与已披露元素（无 SessionGuard 时为 None/空）。
+    session_risk: Optional[float] = None
+    session_disclosures: tuple[str, ...] = ()
     # No raw question/code stored in the response.

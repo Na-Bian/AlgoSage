@@ -146,7 +146,7 @@ class DisplayMetadataTests(unittest.TestCase):
             "classify_confidence", "risk_flags",
             "help_level", "policy_reason",
             "approved", "audit_reason", "audit_method", "audit_categories",
-            "regenerations",
+            "regenerations", "session_risk", "session_disclosures",
             "model", "input_tokens", "output_tokens",
         }
         self.assertEqual(set(meta), expected_keys)

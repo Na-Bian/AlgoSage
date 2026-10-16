@@ -109,6 +109,12 @@ def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
     regenerations = meta.get("regenerations")
     if regenerations:
         rows.append(("安全重生成", f"{regenerations} 次（首次回答未过审）"))
+    session_risk = meta.get("session_risk")
+    if session_risk is not None:
+        rows.append(("本会话该题累计风险", f"{float(session_risk):.2f}"))
+    disclosures = meta.get("session_disclosures") or []
+    if disclosures:
+        rows.append(("已披露元素", "、".join(f"`{d}`" for d in disclosures)))
     def _token(value) -> str:
         return str(value) if value is not None else "—"
 

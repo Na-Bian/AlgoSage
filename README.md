@@ -177,15 +177,39 @@ python report_classifier.py --mode hybrid   # 需 APP_MODE=api
 - **边界**：多轮累计泄漏检测（与历史提示合并判定）属 P3；Judge 在真实模型上的
   误判率评估属 P4（模型自评不当作真值）。
 
+## P3：多轮累计泄漏防护（已交付）
+
+- **SessionGuard**（`examguard/session_guard.py`，每个聊天会话一份，`new_context` 自动创建）：
+  - 以显式 `question_id` 为主、相近问题关联为辅定位同一道题；关联规则 7 条（关键
+    词共享 + bigram Jaccard + 意图连续性），锚点保留**历史问法列表**，题目改写、
+    省略关键词的追问、"那把完整代码给我吧"式承接都不会重置风险；
+  - `RiskState` 可版本化序列化（`to_dict/from_dict`，v1 单锚点字段兼容）；
+  - **互补性风险累计**：新增披露元素 × 权重 × 新颖度（重复披露仅按 0.25 衰减
+    因子计入），而非按轮数/关键词次数累计。元素权重：算法选择 0.15、状态定义
+    0.25、转移式 0.35、关键步骤 0.40、伪代码 0.50、完整代码/证明 1.0、局部修
+    复 0.10、复杂度/概念 0.05；
+  - **按意图分级的会话降级**：hint/solution 自风险 0.4 起阶梯降级（0.4→L2、
+    0.6→L1、0.8→L0）；debug 仅极高风险降级（内容审核始终兜底，学生自己代码的
+    局部诊断不被先前提示过度牵连）；knowledge 下限 L1（不因会话风险完全拒答
+    概念问题）。降级原因写入 `PolicyDecision.reason`，可解释到具体已披露元素；
+  - 风险轨迹与状态快照：`guard.trajectory()` / `guard.snapshot()`；演示：
+    `python demo_session_guard.py`（离线 mock 完整攻击链：算法选择→状态定义→
+    伪装调试取得转移式→继续索要，第 4 轮 L2→L0 并给出原因）。
+- **误关联防护**（有测试）：KMP 讨论后转 Kruskal、考题讨论后的普通知识问题
+  不受高风险牵连；会话之间状态完全隔离。
+- **已知边界**：纯意译改写（无共享关键词、字面相似度低）在无 question_id 时
+  可能漏关联；规则 7 的"无关键词索答承接"可能轻微过度关联——均在报告有效
+  性威胁中说明，P4 用标注数据量化。
+
 ## What has NOT been completed
 
-No multi-turn answer-leakage detector (与历史提示合并的累计泄漏检测), and no batch harness. The hybrid classifier and the LLM Judge remote paths are implemented and unit-tested with scripted backends, but have **not** been evaluated with a real model (no API key used so far). Do **not** report unevaluated capabilities as experiment results. See `docs/MODULE_INTERFACES.md` for subsequent milestones and ablation plan. `eval_page.py` 是开发调试入口，不是正式评测 Harness。
+No batch harness yet. The hybrid classifier and the LLM Judge remote paths are implemented and unit-tested with scripted backends, but have **not** been evaluated with a real model (no API key used so far). Do **not** report unevaluated capabilities as experiment results. See `docs/MODULE_INTERFACES.md` for subsequent milestones and ablation plan. `eval_page.py` 是开发调试入口，不是正式评测 Harness。
 
 ## Recommended next milestones
 
 1. ~~Replace `intent_classifier.py` with a rule+LLM classifier~~（P1 已完成；真实远端评测并入 P4）.
 2. ~~Policy decoupling + layered output guard~~（P2 已完成；Judge 误判率评估并入 P4）.
-3. Add contextual `SessionGuard`（多轮累计泄漏、题目改写不重置风险）.
+3. ~~SessionGuard 多轮累计泄漏防护~~（P3 已完成；关联规则的漏/误关联率并入 P4）.
 4. Build Harness (JSONL cases; baseline A/B/C/D; same held-out test set, same model setup).
 5. Write methodology, complexity, metrics and a reproducibility report.
 

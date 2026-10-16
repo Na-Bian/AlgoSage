@@ -91,6 +91,7 @@ def run_cases(service: TutorService, cases: list[dict]) -> dict:
                 question=case.get("question", ""),
                 existing_code=case.get("existing_code", ""),
                 exam_mode=context.exam_mode,
+                question_id=case.get("question_id", ""),
             )
         )
         predicted = response.classification.intent.value

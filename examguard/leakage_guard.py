@@ -63,6 +63,24 @@ _FALLBACK_MESSAGES = {
 GENERIC_FALLBACK = "这个回答可能超出当前考试允许的帮助等级，我换成更保守的提示。请先描述你已有的思路与卡住的位置。"
 
 
+# ---- 供 SessionGuard 复用的内容检测原语（与规则层共用同一套正则） ----
+
+def has_transition(text: str) -> bool:
+    return bool(_TRANSITION.search(text))
+
+
+def has_proof_completion(text: str) -> bool:
+    return bool(_PROOF_DONE.search(text))
+
+
+def code_block_line_counts(text: str) -> list[int]:
+    """返回每个围栏代码块的非空行数。"""
+    return [
+        len([line for line in block.splitlines() if line.strip()])
+        for block in _CODE_BLOCK.findall(text)
+    ]
+
+
 def fallback_message(reason: str) -> str:
     return _FALLBACK_MESSAGES.get(reason, GENERIC_FALLBACK)
 
