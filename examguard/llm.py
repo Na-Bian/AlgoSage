@@ -10,7 +10,11 @@ class ChatBackend(Protocol):
 
 
 class MockChatBackend:
-    """For local wiring checks ONLY; does not represent actual LLM performance."""
+    """离线单元测试夹具（tests/ 专用）：仅供无网络/无密钥下验证装配逻辑。
+
+    自 2026-10 起业务运行默认走真实 API（APP_MODE 默认 api）；本类不代表
+    任何真实模型行为，不得用于演示或实验结论。
+    """
     def generate(self, messages: list[dict[str, str]]) -> LLMResult:
         user_content = messages[-1]["content"]
         if "报错" in user_content or "调试" in user_content:
@@ -43,6 +47,8 @@ class OpenAICompatibleBackend:
             "messages": messages,
             self.settings.token_parameter: self.settings.max_output_tokens,
         }
+        if self.settings.extra_body:
+            kwargs["extra_body"] = dict(self.settings.extra_body)
         completion = self.client.chat.completions.create(**kwargs)
         content = completion.choices[0].message.content or ""
         usage = completion.usage

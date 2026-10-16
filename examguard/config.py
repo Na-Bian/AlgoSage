@@ -1,5 +1,6 @@
 """Settings: keys only from environment / untracked .env file."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import json
 import os
 
 
@@ -30,11 +31,16 @@ class Settings:
     output_guard: str = "rules"
     # P2：教师侧策略文件（可选）。缺省使用内嵌默认映射；文件非法时启动失败。
     policy_file: str = ""
+    # 服务商专属附加参数（如 SiliconFlow Qwen3.5 的 {"enable_thinking": false}），
+    # 经 OpenAI SDK extra_body 透传；消融实验各版本共用同一份（解码配置一致）。
+    extra_body: dict = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> "Settings":
         _load_dotenv()
-        mode = os.environ.get("APP_MODE", "mock").lower().strip()
+        # 默认即真实 API（业务逻辑不再走 mock）；mock 仅作为单元测试夹具，
+        # 由测试代码显式构造，不作为运行默认值。
+        mode = os.environ.get("APP_MODE", "api").lower().strip()
         if mode not in {"mock", "api"}:
             raise ValueError("APP_MODE must be mock or api")
         token_parameter = os.environ.get("LLM_TOKEN_PARAMETER", "max_tokens")
@@ -46,6 +52,16 @@ class Settings:
         output_guard = os.environ.get("EG_OUTPUT_GUARD", "rules").lower().strip()
         if output_guard not in {"basic", "rules", "layered"}:
             raise ValueError("EG_OUTPUT_GUARD must be basic, rules or layered")
+        extra_raw = os.environ.get("EG_LLM_EXTRA_BODY", "").strip()
+        if extra_raw:
+            try:
+                extra_body = json.loads(extra_raw)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"EG_LLM_EXTRA_BODY 必须是合法 JSON: {error}") from error
+            if not isinstance(extra_body, dict):
+                raise ValueError("EG_LLM_EXTRA_BODY 必须是 JSON 对象")
+        else:
+            extra_body = {}
         return cls(
             mode=mode,
             api_key=os.environ.get("LLM_API_KEY", ""),
@@ -58,4 +74,5 @@ class Settings:
             classifier_mode=classifier_mode,
             output_guard=output_guard,
             policy_file=os.environ.get("EG_POLICY_FILE", "").strip(),
+            extra_body=extra_body,
         )

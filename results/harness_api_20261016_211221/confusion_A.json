@@ -1,0 +1,37 @@
+{
+  "request_solution": {
+    "request_solution": 0,
+    "jailbreak": 0,
+    "knowledge": 12,
+    "debug": 0,
+    "hint": 0
+  },
+  "jailbreak": {
+    "request_solution": 0,
+    "jailbreak": 0,
+    "knowledge": 10,
+    "debug": 0,
+    "hint": 0
+  },
+  "knowledge": {
+    "request_solution": 0,
+    "jailbreak": 0,
+    "knowledge": 14,
+    "debug": 0,
+    "hint": 0
+  },
+  "debug": {
+    "request_solution": 0,
+    "jailbreak": 0,
+    "knowledge": 12,
+    "debug": 0,
+    "hint": 0
+  },
+  "hint": {
+    "request_solution": 0,
+    "jailbreak": 0,
+    "knowledge": 12,
+    "debug": 0,
+    "hint": 0
+  }
+}

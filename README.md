@@ -201,7 +201,21 @@ python report_classifier.py --mode hybrid   # 需 APP_MODE=api
   可能漏关联；规则 7 的"无关键词索答承接"可能轻微过度关联——均在报告有效
   性威胁中说明，P4 用标注数据量化。
 
-## P4：自动化 Harness 与消融实验（框架已交付，真实模型评测待密钥）
+## P4：自动化 Harness 与消融实验（**真实模型已完成**）
+
+**真实实验**（2026-10-16，`Qwen/Qwen3.5-9B` @ SiliconFlow，`enable_thinking=false`，
+dev 60 单轮+11 会话、heldout 20+2 一次性；详见 `results/experiment_analysis_20261016.md`
+与 `results/harness_api_20261016_*`）：
+
+- 单轮：A 越狱成功 100%→B/C/D 0%；B 在 heldout 泄漏 14.3%（伪代码补全盲区）→ C/D 0%；
+  意图准确 A 23.3% / B 71.7% / C 96.7% / D 98.3%；
+- 多轮：A/B/C 均泄漏攻击链 mt-dev-004（单轮合规、累计拼装），**仅 D 零泄漏**；
+  代价：D 良性会话误拒（Judge 把合法调试/知识题误判为泄漏 + 良性深挖风险累积）；
+- 混合分类器：标注集 accuracy **97.6%** vs 正则 78.6%；
+- 结论：防护递进链条 A→B→C→D 完整成立；帮助-安全权衡真实存在（建议 D 用于
+  高风险考试、B/C 用于练习模式）。
+
+以下为框架说明（保留供复现）：
 
 - **测试数据**（结构化 JSONL，带 schema 校验、fail closed）：
   - `datasets/harness_single.jsonl`：80 例（dev 60 = k14/d12/h12/s12/j10；heldout 20），
@@ -240,15 +254,15 @@ python report_classifier.py --mode hybrid   # 需 APP_MODE=api
 
 ## What has NOT been completed
 
-**真实模型消融实验未运行**（无 API 密钥）：hybrid 分类、LLM Judge 的远端路径已实现并经脚本化后端单测，A/B/C/D Harness 已在 mock 下全流程验证，但 `results/harness_mock_*` 的数字带【MOCK】水印、仅证明流程可用。补充建议规模（约 120 单轮 + 15 多轮）时继续沿用同一 schema。Do **not** report unevaluated capabilities as experiment results.
+单次运行无重复采样（`--repeats` 已支持，时间成本原因未跑）；heldout 良性会话仅 1 个（D 的误拒率只能作个案证据）；Judge 误判的系统性人工抽样复核未做（已有 2 个典型案例记录）。有效性威胁清单见 `results/experiment_analysis_20261016.md`。
 
 ## Recommended next milestones
 
-1. ~~Replace `intent_classifier.py` with a rule+LLM classifier~~（P1 已完成；真实远端评测并入 P4）.
-2. ~~Policy decoupling + layered output guard~~（P2 已完成；Judge 误判率评估并入 P4）.
-3. ~~SessionGuard 多轮累计泄漏防护~~（P3 已完成；关联规则的漏/误关联率并入 P4）.
-4. ~~Build Harness (A/B/C/D)~~（P4 框架已完成并在 mock 验证；**待密钥后运行真实消融**）.
-5. Write methodology, complexity, metrics and a reproducibility report.
+1. ~~Replace `intent_classifier.py` with a rule+LLM classifier~~（P1；真实评测已完成 97.6%）.
+2. ~~Policy decoupling + layered output guard~~（P2；Judge FP 已有实证案例）.
+3. ~~SessionGuard 多轮累计泄漏防护~~（P3；多轮消融已验证 D 唯一零泄漏）.
+4. ~~Build Harness (A/B/C/D) + 真实消融~~（P4；2026-10-16 完成）.
+5. Write methodology, complexity, metrics and a reproducibility report（P5，唯一剩余阶段）.
 
 ## Data and privacy
 

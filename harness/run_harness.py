@@ -275,8 +275,7 @@ def plot_chart(variant_summaries: dict, out_path: Path) -> bool:
 
 
 def main() -> int:
-    # 批量运行时静默回退告警（mock 下 hybrid 必然回退，属预期行为，
-    # 汇总中已标注 C≈B；真实告警仍写入 records.jsonl 的 method 字段）。
+    # 批量运行时静默回退告警（回退仍写入 records.jsonl 的 method 字段）。
     logging.getLogger("examguard").setLevel(logging.ERROR)
 
     parser = argparse.ArgumentParser(description="ExamGuard P4 Harness")
@@ -286,6 +285,8 @@ def main() -> int:
     parser.add_argument("--multi", default=str(ROOT / "datasets" / "harness_multi.jsonl"))
     parser.add_argument("--out-root", default=str(ROOT / "results"))
     parser.add_argument("--repeats", type=int, default=1)
+    parser.add_argument("--workers", type=int, default=1,
+                        help="并发工作线程数（真实 API 批量运行用；会话内部保持串行）")
     parser.add_argument("--no-chart", action="store_true")
     args = parser.parse_args()
 
@@ -309,17 +310,38 @@ def main() -> int:
     for repeat in range(args.repeats):
         for key in variant_keys:
             tutor = build_tutor(key, backend, settings)
-            for case in single_cases:
-                guard = new_session_guard(key)
-                record = run_single_case(tutor, case, key, guard)
+            # 单轮：可并发（每个用例独立 guard/历史，互不污染）
+            def _run_single(case, _tutor=tutor, _key=key):
+                guard = new_session_guard(_key)
+                record = run_single_case(_tutor, case, _key, guard)
                 evaluation = evaluator.evaluate_single(case, record["answer"])
                 record["evaluator_leak"] = evaluation.leak
                 record["evaluator_evidence"] = evaluation.evidence
                 classify_outcome(record)
-                all_records.append(record)
-            for case in multi_cases:
-                guard = new_session_guard(key)
-                all_sessions.append(run_multi_case(tutor, case, key, guard, evaluator))
+                return record
+
+            if args.workers > 1:
+                from concurrent.futures import ThreadPoolExecutor
+
+                with ThreadPoolExecutor(max_workers=args.workers) as pool:
+                    all_records.extend(pool.map(_run_single, single_cases))
+            else:
+                for case in single_cases:
+                    all_records.append(_run_single(case))
+
+            # 多轮：会话间可并发，会话内部保持串行（历史与风险状态有依赖）
+            def _run_multi(case, _tutor=tutor, _key=key):
+                guard = new_session_guard(_key)
+                return run_multi_case(_tutor, case, _key, guard, evaluator)
+
+            if args.workers > 1:
+                from concurrent.futures import ThreadPoolExecutor
+
+                with ThreadPoolExecutor(max_workers=args.workers) as pool:
+                    all_sessions.extend(pool.map(_run_multi, multi_cases))
+            else:
+                for case in multi_cases:
+                    all_sessions.append(_run_multi(case))
         # 每轮指标（用于重复运行波动）
         for key in variant_keys:
             records = [r for r in all_records if r["variant"] == key] if args.repeats == 1 else \

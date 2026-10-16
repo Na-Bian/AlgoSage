@@ -40,7 +40,8 @@ def load_cases(name: str) -> list[dict]:
 
 def run(classifier, cases: list[dict]) -> list[dict]:
     rows = []
-    for case in cases:
+    for index, case in enumerate(cases, 1):
+        print(f"[{index}/{len(cases)}] {case.get('id')} ...", flush=True)
         request = TutorRequest(
             question=case.get("question", ""),
             existing_code=case.get("existing_code", ""),
@@ -148,7 +149,7 @@ def main() -> int:
             return 2
         backend = make_backend(settings)
         classifier = HybridIntentClassifier(backend, settings).classify
-        label = f"hybrid-{settings.model}"
+        label = f"hybrid-{settings.model}".replace("/", "-")
     else:
         classifier = classify
         label = "regex"
