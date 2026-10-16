@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.log
+.DS_Store
+results/raw_private/
+# Chainlit 运行期数据（.chainlit/config.toml 与 zh-CN 翻译为项目配置，保留跟踪）
+.files/

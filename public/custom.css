@@ -1,0 +1,121 @@
+/* ExamGuard Chainlit 自定义样式 —— 参考 DeepSeek 视觉风格的轻量定制。
+   仅覆盖配色 / 圆角 / 字体 / 阅读宽度等展示层细节，不改变交互逻辑。
+   Chainlit 前端以 hsl(var(--xxx)) 消费 shadcn 变量，因此这里提供原始 HSL 分量。 */
+
+:root:root {
+  /* 主色：DeepSeek 蓝 #4D6BFE */
+  --primary: 228 99% 65%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 228 99% 65%;
+
+  /* 浅色干净背景 */
+  --background: 0 0% 100%;
+  --foreground: 226 24% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 226 24% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 226 24% 12%;
+
+  /* 次级与边框 */
+  --secondary: 220 16% 96%;
+  --secondary-foreground: 226 20% 24%;
+  --muted: 220 16% 96%;
+  --muted-foreground: 222 10% 45%;
+  --accent: 224 60% 96%;
+  --accent-foreground: 226 24% 16%;
+  --border: 220 14% 91%;
+  --input: 220 14% 91%;
+  --destructive: 0 72% 51%;
+
+  /* 现代圆角 */
+  --radius: 0.8rem;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+/* 深色主题保持同样的品牌蓝 */
+.dark {
+  --primary: 228 99% 68%;
+  --ring: 228 99% 68%;
+}
+
+/* ---------- 布局：居中阅读宽度（DeepSeek 风格） ---------- */
+#messages {
+  max-width: 52rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ---------- 消息气泡 ---------- */
+#messages .mantine-Text-root {
+  line-height: 1.75;
+}
+
+/* 用户消息：浅灰圆角气泡 */
+[data-testid="user-message"] .message-bubble,
+.user-message-bubble {
+  background: hsl(220 16% 96%);
+  border-radius: 1rem;
+}
+
+/* ---------- 代码块：圆角 + 细边框 + 等宽字体 ---------- */
+pre,
+.code-block,
+[class*="codeblock"] {
+  border-radius: 0.75rem;
+  border: 1px solid hsl(var(--border));
+}
+
+pre code,
+.code-block code {
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+/* 行内代码 */
+:not(pre) > code {
+  background: hsl(var(--muted));
+  border-radius: 0.35rem;
+  padding: 0.1rem 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+/* ---------- 审计步骤（cl.Step）：左侧蓝色提示线 ---------- */
+.step,
+[class*="step"] {
+  border-left: 2px solid hsl(var(--primary) / 0.35);
+}
+
+.step .step-header,
+[class*="step"] [class*="header"] {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.85rem;
+}
+
+/* ---------- 输入框 ---------- */
+#chat-input {
+  border-radius: 0.9rem;
+  border: 1px solid hsl(var(--border));
+}
+
+/* ---------- 表格（欢迎信息 / 审计元数据） ---------- */
+#messages table {
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+#messages th,
+#messages td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.35rem 0.6rem;
+}
+
+#messages th {
+  background: hsl(var(--muted));
+  font-weight: 600;
+}
