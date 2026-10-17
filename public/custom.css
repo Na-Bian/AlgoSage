@@ -103,11 +103,9 @@ pre code,
   font-size: 0.85rem;
 }
 
-/* ---------- 输入框 ---------- */
-#chat-input {
-  border-radius: 0.9rem;
-  border: 1px solid hsl(var(--border));
-}
+/* ---------- 输入区 ----------
+   Chainlit 默认把输入编辑器（#chat-input）嵌在圆角容器（message_composer）
+   内；给内部编辑器再加边框会出现"框中框"错位，保持默认融合外观即可。 */
 
 /* ---------- 表格（欢迎信息 / 审计元数据） ---------- */
 #messages table {
