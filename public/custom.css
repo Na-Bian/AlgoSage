@@ -55,6 +55,14 @@
   display: none;
 }
 
+/* 空状态占位提示：欢迎消息到达前的新会话视图显示加载文案而非空白 */
+#welcome-screen::before {
+  content: "正在准备新的会话…";
+  color: hsl(var(--muted-foreground));
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+}
+
 /* ---------- 消息气泡 ---------- */
 #messages .mantine-Text-root {
   line-height: 1.75;

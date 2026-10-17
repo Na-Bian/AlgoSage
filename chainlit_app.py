@@ -350,8 +350,9 @@ async def _sync_teacher_settings(service: TutorService) -> None:
 @cl.on_chat_start
 async def on_chat_start() -> None:
     service = get_service()
-    async with conversation_lock():
-        context = await restore_conversation(service)
+    # The welcome text depends only on server settings, so send it first to
+    # replace the frontend's blank new-chat view as early as possible; the
+    # SQLite restore and provider settings follow.
     settings = service.settings
     switch_note = (
         "教师演示可通过设置面板切换"
@@ -378,6 +379,8 @@ async def on_chat_start() -> None:
             )
         ]
     await welcome.send()
+    async with conversation_lock():
+        context = await restore_conversation(service)
     await send_provider_settings(context)
 
 
