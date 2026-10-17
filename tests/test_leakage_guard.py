@@ -3,6 +3,7 @@
 Judge 的 LLM 环节用脚本化假后端模拟（离线可测）；Judge 在真实模型上的
 误判率评估属 P4 Harness，不在单测中伪造。
 """
+
 import unittest
 
 from examguard.config import Settings
@@ -51,7 +52,12 @@ class RuleScreenerTests(unittest.TestCase):
         self.guard = RuleLeakageScreener()
 
     def review(self, draft, level=2, exam=True, intent=Intent.SOLUTION):
-        return self.guard.review(draft, decision_of(intent, level), exam)
+        return self.guard.review(
+            draft,
+            decision_of(intent, level),
+            exam,
+            existing_code="a[i] = a[i-1]" if level == 3 else "",
+        )
 
     # ---- 与第一阶段基线对齐 ----
     def test_empty_output_blocked(self):
@@ -66,7 +72,7 @@ class RuleScreenerTests(unittest.TestCase):
         self.assertTrue(self.review(leaky, level=3).approved)
 
     def test_entrypoint_blocked(self):
-        draft = "看这里：\n```python\nif __name__ == \"__main__\":\n    pass\n```"
+        draft = '看这里：\n```python\nif __name__ == "__main__":\n    pass\n```'
         self.assertFalse(self.review(draft, level=3).approved)
 
     # ---- 内容情境检测（非教学意图）----
@@ -74,7 +80,8 @@ class RuleScreenerTests(unittest.TestCase):
         draft = "核心是：dp[i] = max(dp[i-1], dp[i-2] + a[i])，由此线性求解。"
         self.assertFalse(self.review(draft, level=2, intent=Intent.DEBUG).approved)
         self.assertEqual(
-            self.review(draft, level=2, intent=Intent.DEBUG).reason, "key_transition_exposed"
+            self.review(draft, level=2, intent=Intent.DEBUG).reason,
+            "key_transition_exposed",
         )
         # L3 局部诊断允许
         self.assertTrue(self.review(draft, level=3, intent=Intent.DEBUG).approved)
@@ -97,18 +104,22 @@ class RuleScreenerTests(unittest.TestCase):
         self.assertEqual(result.reason, "stepwise_solution")
 
     # ---- 概念教学豁免（2026-10 依真实使用反馈）----
-    def test_teaching_intent_allows_transition_and_steps(self):
+    def test_teaching_label_does_not_exempt_core_steps(self):
         transition = "例如经典的 LCS：dp[i][j] = dp[i-1][j-1] + 1，逐行填表即可。"
-        self.assertTrue(self.review(transition, level=1, intent=Intent.KNOWLEDGE).approved)
-        steps = (
-            "以矩阵链乘为例：\n1. 初始化对角线为 0\n2. 按区间长度枚举\n3. 枚举分割点取最小值\n4. 得到 m[1][n]"
+        self.assertFalse(
+            self.review(transition, level=1, intent=Intent.KNOWLEDGE).approved
         )
-        self.assertTrue(self.review(steps, level=2, intent=Intent.HINT).approved)
+        steps = "以矩阵链乘为例：\n1. 初始化对角线为 0\n2. 按区间长度枚举\n3. 枚举分割点取最小值\n4. 得到 m[1][n]"
+        self.assertFalse(self.review(steps, level=2, intent=Intent.HINT).approved)
 
     def test_teaching_intent_still_blocks_big_code_and_self_claim(self):
         big = "例如：\n```python\n" + "\n".join(f"a{i}=1" for i in range(15)) + "\n```"
         self.assertFalse(self.review(big, level=1, intent=Intent.KNOWLEDGE).approved)
-        self.assertFalse(self.review("以下是完整实现，可以直接提交。", level=1, intent=Intent.KNOWLEDGE).approved)
+        self.assertFalse(
+            self.review(
+                "以下是完整实现，可以直接提交。", level=1, intent=Intent.KNOWLEDGE
+            ).approved
+        )
 
     # ---- 误拒控制：合法回答必须放行 ----
     def test_legal_complexity_explanation_passes(self):
@@ -129,11 +140,11 @@ class RuleScreenerTests(unittest.TestCase):
         draft = "第 12 行的边界写错了，应改为：\n```python\nfor i in range(n - 1):\n```\n其余逻辑没问题。"
         self.assertTrue(self.review(draft, level=3, intent=Intent.DEBUG).approved)
 
-    def test_practice_mode_passes_everything(self):
+    def test_practice_mode_keeps_full_solution_boundary(self):
         leaky = "```python\n" + "\n".join(f"x{i}=1" for i in range(30)) + "\n```"
         result = self.guard.review(leaky, decision_of(Intent.HINT, 1), False)
-        self.assertTrue(result.approved)
-        self.assertEqual(result.reason, "practice_mode")
+        self.assertFalse(result.approved)
+        self.assertEqual(result.reason, "code_block_over_limit")
 
 
 class LayeredGuardTests(unittest.TestCase):
@@ -143,11 +154,13 @@ class LayeredGuardTests(unittest.TestCase):
 
     def test_rules_block_short_circuits_judge(self):
         judge_backend = JudgeBackend("{}")  # 若被调用会留下记录
-        guard = LayeredOutputGuard(RuleLeakageScreener(), LLMLeakageJudge(judge_backend, Settings()))
+        guard = LayeredOutputGuard(
+            RuleLeakageScreener(), LLMLeakageJudge(judge_backend, Settings())
+        )
         leaky = "```python\n" + "\n".join(f"a{i}=1" for i in range(6)) + "\n```"
         result = guard.review(leaky, decision_of(Intent.DEBUG, 2), True)
         self.assertFalse(result.approved)
-        self.assertEqual(result.method, "rules-v1")
+        self.assertEqual(result.method, "rules-v2")
         self.assertEqual(len(judge_backend.calls), 0)  # 未浪费 Judge 调用
 
     def test_judge_leak_blocks(self):
@@ -155,9 +168,11 @@ class LayeredGuardTests(unittest.TestCase):
             '{"leaked": true, "categories": ["full_solution"], "confidence": 0.9, "reason": "整题流程"}'
         )
         guard = LayeredOutputGuard(RuleLeakageScreener(), judge)
-        result = guard.review("先排序，再双指针扫描即可。", decision_of(Intent.HINT, 2), True)
+        result = guard.review(
+            "先排序，再双指针扫描即可。", decision_of(Intent.HINT, 2), True
+        )
         self.assertFalse(result.approved)
-        self.assertEqual(result.method, "judge-v1")
+        self.assertEqual(result.method, "judge-v2")
         self.assertIn("full_solution", result.categories)
         self.assertIn("judge_leak", result.reason)
 
@@ -166,26 +181,36 @@ class LayeredGuardTests(unittest.TestCase):
             '{"leaked": false, "categories": [], "confidence": 0.9, "reason": "概念解释"}'
         )
         guard = LayeredOutputGuard(RuleLeakageScreener(), judge)
-        result = guard.review("贪心选择性质指局部最优选择能导出全局最优。", decision_of(Intent.KNOWLEDGE, 1), True)
+        result = guard.review(
+            "贪心选择性质指局部最优选择能导出全局最优。",
+            decision_of(Intent.KNOWLEDGE, 1),
+            True,
+        )
         self.assertTrue(result.approved)
-        self.assertEqual(result.method, "rules+judge-v1")
+        self.assertEqual(result.method, "rules+judge-v2")
 
-    def test_judge_unavailable_degrades_to_rules(self):
+    def test_judge_unavailable_returns_unknown(self):
         judge, _ = self.make_judge("抱歉我不确定")  # 非 JSON
         guard = LayeredOutputGuard(RuleLeakageScreener(), judge)
-        result = guard.review("合法的概念解释。", decision_of(Intent.KNOWLEDGE, 1), True)
-        self.assertTrue(result.approved)
+        result = guard.review(
+            "合法的概念解释。", decision_of(Intent.KNOWLEDGE, 1), True
+        )
+        self.assertFalse(result.approved)
+        self.assertEqual(result.status, "unknown")
         self.assertIn("judge_unavailable", result.method)
 
-    def test_judge_exception_degrades_to_rules(self):
+    def test_judge_exception_returns_unknown(self):
         class Boom:
             def generate(self, messages):
                 raise TimeoutError("judge timeout")
 
         judge = LLMLeakageJudge(Boom(), Settings())
         guard = LayeredOutputGuard(RuleLeakageScreener(), judge)
-        result = guard.review("合法的概念解释。", decision_of(Intent.KNOWLEDGE, 1), True)
-        self.assertTrue(result.approved)
+        result = guard.review(
+            "合法的概念解释。", decision_of(Intent.KNOWLEDGE, 1), True
+        )
+        self.assertFalse(result.approved)
+        self.assertEqual(result.status, "unknown")
         self.assertIn("judge_unavailable", result.method)
 
     def test_judge_prompt_carries_context_and_untrusted_labels(self):
@@ -193,7 +218,13 @@ class LayeredGuardTests(unittest.TestCase):
             '{"leaked": false, "categories": [], "confidence": 0.9, "reason": "ok"}'
         )
         guard = LayeredOutputGuard(RuleLeakageScreener(), judge)
-        guard.review("局部思路。", decision_of(Intent.HINT, 2), True, question="这道题怎么做", existing_code="x=1")
+        guard.review(
+            "局部思路。",
+            decision_of(Intent.HINT, 2),
+            True,
+            question="这道题怎么做",
+            existing_code="x=1",
+        )
         system = backend.calls[0][0]["content"]
         user = backend.calls[0][1]["content"]
         self.assertIn("不可信", system)
@@ -205,7 +236,8 @@ class LayeredGuardTests(unittest.TestCase):
 class RegenerationTests(unittest.TestCase):
     def make_tutor(self, backend, policy=None):
         return ExamGuardTutor(
-            backend, Settings(mode="mock", output_guard="rules"),
+            backend,
+            Settings(mode="mock", output_guard="rules"),
             policy_config=policy or ExamPolicy.from_dict({"max_regenerations": 1}),
         )
 
@@ -218,12 +250,18 @@ class RegenerationTests(unittest.TestCase):
         self.assertEqual(response.answer, clean)
         self.assertEqual(response.regenerations, 1)
         # 重生成提示包含拦截原因
-        feedback = [m for m in backend.calls[1] if "被输出审核拦截" in m.get("content", "")]
+        feedback = [
+            m for m in backend.calls[1] if "被输出审核拦截" in m.get("content", "")
+        ]
         self.assertTrue(feedback)
         self.assertIn("code_block_over_limit", feedback[0]["content"])
 
     def test_all_drafts_leaky_yields_safe_fallback(self):
-        leaky = "以下是完整实现：\n```python\n" + "\n".join(f"a{i}=1" for i in range(20)) + "\n```"
+        leaky = (
+            "以下是完整实现：\n```python\n"
+            + "\n".join(f"a{i}=1" for i in range(20))
+            + "\n```"
+        )
         backend = ScriptedBackend([leaky, leaky])
         response = self.make_tutor(backend).respond(TutorRequest("给点提示"))
         self.assertFalse(response.audit.approved)
@@ -242,8 +280,10 @@ class RegenerationTests(unittest.TestCase):
     def test_practice_mode_never_regenerates(self):
         leaky = "```python\n" + "\n".join(f"a{i}=1" for i in range(30)) + "\n```"
         backend = ScriptedBackend([leaky])
-        response = self.make_tutor(backend).respond(TutorRequest("给点提示", exam_mode=False))
-        self.assertTrue(response.audit.approved)  # practice_mode 放行
+        response = self.make_tutor(backend).respond(
+            TutorRequest("给点提示", exam_mode=False)
+        )
+        self.assertFalse(response.audit.approved)  # 练习模式也不代写整题
         self.assertEqual(len(backend.calls), 1)
         self.assertEqual(response.regenerations, 0)
 
@@ -258,7 +298,9 @@ class GuardSelectionTests(unittest.TestCase):
         rules = make_output_guard(Settings(output_guard="rules"), None)
         self.assertIsInstance(rules, Screener)
         # mock 模式下 layered 不构造 Judge（避免无意义远端依赖）
-        layered = make_output_guard(Settings(output_guard="layered", mode="mock"), MockChatBackend())
+        layered = make_output_guard(
+            Settings(output_guard="layered", mode="mock"), MockChatBackend()
+        )
         self.assertIsInstance(layered, LayeredOutputGuard)
         self.assertIsNone(layered.judge)
 

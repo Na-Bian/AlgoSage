@@ -18,6 +18,7 @@
   "max_regenerations": 1
 }
 """
+
 from __future__ import annotations
 
 import json
@@ -44,7 +45,9 @@ class PolicyConfigError(ValueError):
 
 @dataclass(frozen=True)
 class ExamPolicy:
-    exam_mode_levels: dict[Intent, int] = field(default_factory=lambda: dict(DEFAULT_EXAM_LEVELS))
+    exam_mode_levels: dict[Intent, int] = field(
+        default_factory=lambda: dict(DEFAULT_EXAM_LEVELS)
+    )
     practice_mode_level: int = DEFAULT_PRACTICE_LEVEL
     question_overrides: dict[str, dict[Intent, int]] = field(default_factory=dict)
     max_regenerations: int = DEFAULT_MAX_REGENERATIONS
@@ -56,7 +59,7 @@ class ExamPolicy:
     def max_level(self, intent: Intent, question_id: str = "") -> int:
         override = self.question_overrides.get(question_id) if question_id else None
         if override and intent in override:
-            return override[intent]
+            return min(override[intent], self.exam_mode_levels[intent])
         return self.exam_mode_levels[intent]
 
     def has_override(self, question_id: str, intent: Intent) -> bool:
@@ -74,7 +77,9 @@ class ExamPolicy:
         if levels_raw is None:
             levels = dict(DEFAULT_EXAM_LEVELS)
         else:
-            if not isinstance(levels_raw, dict) or set(levels_raw) != {i.value for i in Intent}:
+            if not isinstance(levels_raw, dict) or set(levels_raw) != {
+                i.value for i in Intent
+            }:
                 raise PolicyConfigError("exam_mode_levels 必须恰好包含全部五类意图")
             levels = {}
             for name, value in levels_raw.items():
@@ -82,12 +87,20 @@ class ExamPolicy:
                     intent = Intent(name)
                 except ValueError as error:
                     raise PolicyConfigError(f"未知意图: {name}") from error
-                if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 3:
+                if (
+                    not isinstance(value, int)
+                    or isinstance(value, bool)
+                    or not 0 <= value <= 3
+                ):
                     raise PolicyConfigError(f"意图 {name} 的等级必须是 0..3 的整数")
                 levels[intent] = value
 
         practice_level = payload.get("practice_mode_level", DEFAULT_PRACTICE_LEVEL)
-        if not isinstance(practice_level, int) or isinstance(practice_level, bool) or not 0 <= practice_level <= 3:
+        if (
+            not isinstance(practice_level, int)
+            or isinstance(practice_level, bool)
+            or not 0 <= practice_level <= 3
+        ):
             raise PolicyConfigError("practice_mode_level 必须是 0..3 的整数")
 
         overrides_raw = payload.get("question_overrides", {})
@@ -104,20 +117,32 @@ class ExamPolicy:
                 try:
                     intent = Intent(name)
                 except ValueError as error:
-                    raise PolicyConfigError(f"题目 {question_id} 含未知意图: {name}") from error
-                if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 3:
-                    raise PolicyConfigError(f"题目 {question_id} 意图 {name} 的等级必须是 0..3")
+                    raise PolicyConfigError(
+                        f"题目 {question_id} 含未知意图: {name}"
+                    ) from error
+                if (
+                    not isinstance(value, int)
+                    or isinstance(value, bool)
+                    or not 0 <= value <= 3
+                ):
+                    raise PolicyConfigError(
+                        f"题目 {question_id} 意图 {name} 的等级必须是 0..3"
+                    )
                 # 覆盖只允许收紧或持平，不得比默认映射更宽松。
-                if value > DEFAULT_EXAM_LEVELS[intent]:
+                if value > min(DEFAULT_EXAM_LEVELS[intent], levels[intent]):
                     raise PolicyConfigError(
                         f"题目 {question_id} 意图 {name} 的等级 {value} 超过默认上限 "
-                        f"{DEFAULT_EXAM_LEVELS[intent]}（只允许收紧）"
+                        f"{min(DEFAULT_EXAM_LEVELS[intent], levels[intent])}（只允许收紧）"
                     )
                 parsed[intent] = value
             overrides[question_id] = parsed
 
         max_regen = payload.get("max_regenerations", DEFAULT_MAX_REGENERATIONS)
-        if not isinstance(max_regen, int) or isinstance(max_regen, bool) or not 0 <= max_regen <= 2:
+        if (
+            not isinstance(max_regen, int)
+            or isinstance(max_regen, bool)
+            or not 0 <= max_regen <= 2
+        ):
             raise PolicyConfigError("max_regenerations 必须是 0..2 的整数")
 
         return cls(

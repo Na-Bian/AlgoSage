@@ -1,275 +1,167 @@
-# ExamGuard: restricted algorithm exam tutor
+# ExamGuard：算法课程分级辅助与多轮披露防护
 
-Course project for **《算法设计与分析》**: lightweight open-weight LLM accessed via a hosted OpenAI-compatible API; explicit help policy and a future evaluation harness. **Prototype, not a production-safe exam system.**
+Python + Chainlit + 开源模型托管 API 的课程研究原型。包含五类意图识别、可信考试策略、受限生成、输出审核、同题披露预算和独立批量 Harness。对应《算法设计与分析》作业指南第 5 页课题二。
 
-Frontend track: **方案 B —— Chainlit**（学生端 `chainlit_app.py` + 教师评测页 `eval_page.py`），原 Streamlit 界面 `app.py` 保留为回退方案。业务逻辑（意图分类、帮助等级、模型调用、输出审核）全部位于 `examguard/` 包，与前端解耦。
+**2026-10-17 审计修复版**：当前代码与 10 月 16 日真实实验版本不同。旧结果保留为历史记录，不能用来证明本版本有效，更不能仅凭旧表格宣称 SessionGuard 的独立贡献或零泄漏。当前版本的真实模型效果和人工质量复核仍待执行。
 
-## Files
+## 运行
 
-```text
-chainlit_app.py             方案 B 学生端 Chainlit UI（聊天、代码块、会话、帮助等级展示）
-eval_page.py                教师/开发者评测页（预留接口，与正式 Harness 不同）
-run_app.py                  Chainlit 启动器（见下方“重要：启动方式”）
-app.py                      旧 Streamlit UI（回退方案）
-demo_cli.py                 dependency-free offline CLI (mock)
-examguard/config.py         settings via env
-examguard/schemas.py        stable request/response structures
-examguard/intent_classifier.py   5-way regex baseline + risk-flag extraction
-examguard/hybrid_classifier.py   P1 规则+LLM 混合分类器（EG_CLASSIFIER_MODE=hybrid）
-examguard/policy.py         0–3 help-level policy and prompt builder
-examguard/llm.py            mock + remote API adapters
-examguard/output_guard.py   *basic* demo audit
-examguard/pipeline.py       orchestration
-examguard/service.py        TutorService：前端无关服务层（会话、服务端策略、展示白名单）
-.chainlit/config.toml       Chainlit 配置（浅色主题、custom_css、关闭文件上传）
-public/custom.css           DeepSeek 风格轻量主题定制
-e2e_chainlit_check.py       E2E 冒烟：真实起服 + socket.io 完整会话
-datasets/smoke_tests.jsonl  5 starter categories for labeling
-datasets/intent_labeled_v0.jsonl  P1 42 例人工标注分类测试集（含歧义/攻击改写）
-report_classifier.py        P1 分类评测：混淆矩阵 + 逐类指标 + 错判清单 -> results/
-smoke_check.py              lightweight static sanity check
-README.md; docs/MODULE_INTERFACES.md; tests/
-```
-
-## Quickstart (Python 3.10+)
-
-### 1. Offline quick test: no API key required
+Python 3.10+：
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 python -m pip install -r requirements.txt
-
-python -m unittest discover -s tests -v   # 单元 + 集成测试（含 Chainlit 模块用例）
-python smoke_check.py
-python demo_cli.py '什么是前缀函数？'
+cp .env.example .env
 ```
 
-The CLI intentionally prints `【模拟输出】`; no model is called.
-
-### 2. Web demo (Chainlit, mock)
-
-> **重要：启动方式。** 本仓库用 `run_app.py` 而不是 `chainlit run`。
-> 原因：chainlit 2.11 CLI 依赖 `nest_asyncio`，在 Python 3.15 上会破坏
-> anyio 的线程卸载，导致 `/assets/*.js`、`/public/custom.css` 等静态资源 500、
-> 页面白屏（已在本机实测）。`run_app.py` 按 chainlit CLI 相同的初始化序列装配，
-> 但以原生 uvicorn 启动，绕开该缺陷；若你的 Python ≤3.13，`chainlit run chainlit_app.py`
-> 通常也可用。
+离线演示和验证必须显式指定 mock（`Settings.from_env()` 的运行缺省为 API）：
 
 ```bash
-cp .env.example .env            # 默认 APP_MODE=mock，无需密钥
-python run_app.py               # 学生端，默认 http://127.0.0.1:8000
-python run_app.py eval_page --port 8081   # 教师/开发者评测页
+APP_MODE=mock EG_OUTPUT_GUARD=rules python demo_cli.py '什么是前缀函数？'
+APP_MODE=mock EG_OUTPUT_GUARD=rules python run_app.py
+APP_MODE=mock python -m unittest discover -s tests -v
+APP_MODE=mock python smoke_check.py
+APP_MODE=mock python e2e_chainlit_check.py
 ```
 
-学生端功能：
+学生端默认 `http://127.0.0.1:8000`。`run_app.py` 使用原生 uvicorn；本项目在 Python 3.15 上使用它绕开 Chainlit CLI / nest_asyncio 的已知静态资源问题。E2E 覆盖真实起服、Socket.IO 会话及 HTTP 伪造教师重置被拒，不等于浏览器视觉或真实模型效果验证。
 
-- 聊天 + Markdown 代码块渲染；把已有代码放在 ``` 围栏块中一起发送即可（仅文本分析，不执行）；
-- 每条回答下方可展开「🛡️ 安全审计与策略」步骤：意图、帮助等级上限（L0–L3）、审核结论、模型与 Token 用量；
-- 会话管理：Chainlit 原生“新对话”会触发后端 `on_chat_start`/`on_chat_end`，`TutorService` 按会话隔离历史；
-- 考试模式由服务端 `EXAM_MODE` 决定并只读展示；教师演示可 `EG_ALLOW_POLICY_SWITCH=true python run_app.py` 后在界面切换（正常部署不要开启）。
-
-评测页命令：`info`（配置摘要，不含密钥）、`run smoke`（跑 `datasets/smoke_tests.jsonl`，API 模式需追加 `confirm-api` 确认以控制成本）。
-
-E2E 冒烟（可选，需要 venv）：
+API 模式在本地未跟踪 `.env` 中设置 `APP_MODE=api`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`。本地使用过 SiliconFlow 的 `Qwen/Qwen3.5-9B`，历史配置 `enable_thinking=false`；模型可用性以服务商账号为准。不要将密钥写入源码、日志、截图或提交包。
 
 ```bash
-python e2e_chainlit_check.py    # 起真实服务 + socket.io 客户端完整会话
-```
-
-### 3. Real hosted LLM API
-
-Edit your local `.env`:
-
-```dotenv
-APP_MODE=api
-LLM_API_KEY=PASTE_YOUR_OWN_KEY_HERE
-LLM_BASE_URL=https://api.siliconflow.cn/v1
-LLM_MODEL=Qwen/Qwen3-8B
-LLM_TOKEN_PARAMETER=max_tokens
-```
-
-Run:
-
-```bash
-python demo_cli.py --mode api '解释 KMP 的前缀函数有什么作用'
 python run_app.py
-```
-
-If your provider does not accept `max_tokens`, set `LLM_TOKEN_PARAMETER=max_completion_tokens`. For Alibaba Cloud Model Studio, use the matching region + workspace-specific `base_url` and a model ID available in that region; do **not** paste an example `{WorkspaceId}` literally. For OpenAI, set `LLM_BASE_URL=https://api.openai.com/v1`, choose an available model, and adjust token parameter to suit the model. API availability and fees depend on your account and provider.
-
-`LLM_API_KEY` is used exclusively server-side (read by `examguard/config.py` inside the server process; the browser only ever receives whitelisted display metadata from `TutorService.display_metadata`). `.env` is in `.gitignore`. Never push any real API keys to Git or include them in a zip submission. Config changes to `.env` may require restarting the app.
-
-### 4. Streamlit fallback
-
-```bash
+python run_app.py eval_page --port 8081
+# 旧入口也经过同一个 TutorService
 streamlit run app.py
+python demo_cli.py --mode api '解释摊还复杂度'
 ```
 
-`app.py` 未改动；在迁移验证期内保留作为回退。注意其侧栏“考试限制模式”开关是演示用途——真实考试场景的策略控制以 Chainlit 版的 `EG_ALLOW_POLICY_SWITCH` 机制为准。
+教师评测页提供 `info` 和 `run smoke`，API 批量调用需命令追加 `confirm-api`。它仅支持 smoke 的 `question/expected_intent` schema，会明确拒绝正式 Harness schema；正式多轮和消融使用下面的 CLI。
 
-## Architecture (方案 B)
+### 学生端功能（对照 DeepSeek 风格）
+
+- **多对话管理**：聊天历史经 `examguard/chat_store.ChatDataLayer` 持久化到
+  `EG_CHAT_FILE`（缺省 `.examguard/chats.sqlite3`）；左侧边栏可新建/搜索/重命名/
+  删除会话，切换会话触发 `on_chat_resume` 恢复记录与该会话的 Provider 选择与后端
+  披露预算（断线/换窗口不清除）。跨工作区（同一身份下的考试/工作区隔离）已由 E2E 覆盖。
+- **LLM Provider 切换**：服务端 allowlist（`EG_PROVIDERS_FILE`，缺省
+  `.examguard/providers.json`，示例见 `providers.example.json`）。界面"设置"下拉
+  只列出服务端登记的 Provider/模型组合；密钥一律通过 `api_key_env` 引用服务端环境
+  变量，浏览器永不接触凭据；未配置密钥的 Provider 标记不可用。切换按回合生效并
+  与同回合预算锁串行。
+- **流式回复**：生成采用"受审计的完整消费流"——草稿逐块接收但只在全文审核通过后
+  以打字机节奏送达学生（`deliver_response`）；未审草稿不直达前端，审核未完成/
+  违规一律替换为安全回退文案。等待期由"生成与安全审核"步骤展示进度。
+- **身份提示**：本地模式按浏览器 cookie 标识（`browser:` 前缀，非学生认证）。
+  服务重启后若界面无法连接，硬刷新一次页面让浏览器重新获取身份即可；实际考试须
+  接入教师认可的认证。
+
+## 当前控制链
 
 ```text
-浏览器 (Chainlit React UI)
-  └─ websocket ──> chainlit_app.py / eval_page.py   （只做展示与输入拆分）
-        └─> examguard.service.TutorService          （前端无关服务层）
-              ├─ 会话上下文 / 服务端考试策略 / 展示白名单
-              └─> ExamGuardTutor.respond            （原 pipeline 不变）
-                    ├─ classify → decide → system_prompt
-                    ├─ ChatBackend.generate (mock / OpenAI-compatible)
-                    └─ BasicOutputGuard.review
+可信考试/身份/题目上下文
+ -> 确定性注入预检（明确拒答不调用 LLM）
+ -> 正则 + 可选 LLM 意图分类
+ -> 可信 Policy + 历史风险上限
+ -> 受限候选生成
+ -> 规则 / 规则+Judge 全文审核（含同题历史披露）
+ -> SessionGuard.preview 检查当前候选与历史组合
+ -> 批准或安全回退
+ -> 同预算锁内提交披露、用量记录和持久状态
+ -> 学生最终回答
 ```
 
-安全约束：前端不持有 API Key；`display_metadata()` 是唯一面向前端的元数据出口（白名单字段）；
-学生无法从界面降低考试限制（默认无开关，`PermissionError` 兜底）。
+- L0 拒绝越权；L1 解释概念、性质和复杂度；L2 方向提示；L3 已有代码的局部诊断。知识/提示标签和经典教材例子不自动豁免具体解题信息。
+- 生成器和 Judge 使用同一内容规范。练习模式仍不意味着允许代写完整程序；局部帮助要求有实质已有代码。
+- Judge 超时、坏 JSON、低置信或不可用产生 `unknown`，不送达未审核草稿。`layered` 在 mock 下没有真实 Judge，因此会保守回退；离线演示选择 `rules`。
+- 分类置信度是未校准的模型自报值。低置信/解析失败产生 `uncertain`，最多给一般概念；注入 flags 进入确定性门控。
+- SessionGuard 区分学生原有代码与助教新增内容，预检累计核心步骤和代码片段，再提交已批准披露。它仍是启发式检测，不能证明语义上绝不泄漏。
+- 一般概念和复杂度解释不消耗具体题目的解题披露预算。
+- 同一身份/考试预算完整回合串行；聊天记录与安全预算分离。断线、清显示历史、重连和聊天缓存淘汰不会清除预算。
+- `call_trace` 记录每次逻辑调用与已知/未知 usage；`audit_attempts` 留存开发者候选证据。学生元数据白名单不包含这两项。
 
-## Stage-one acceptance
+## 配置
 
-- Five example input categories are classified (heuristically, not reliably in adversarial cases).
-- Exam policy maps category to one of four help levels.
-- Mock mode runs and tests pass offline (58 tests: 10 原有 + 48 新增服务层/前端/分类器集成).
-- Real API can be enabled with `.env` credentials; model metadata and token counts (if present) are returned.
-- Basic code-block output audit can trigger a safe fallback.
-- Chainlit 学生端与教师评测页可运行；E2E 冒烟覆盖欢迎消息、正常问答、越权拒答与密钥不泄漏.
+| 变量 | 含义 |
+| --- | --- |
+| `APP_MODE` | `mock` / `api`；运行缺省 `api` |
+| `EXAM_MODE` | 服务端考试模式；学生界面不可关闭 |
+| `EG_CLASSIFIER_MODE` | `regex` / `hybrid` |
+| `EG_OUTPUT_GUARD` | `rules` / `layered`；`basic` 仅作弱基线对照 |
+| `EG_POLICY_FILE` | 可信策略 JSON；非法直接拒绝启动，逐题覆盖只允许收紧当前全局等级 |
+| `EG_EXAM_ID` | 服务端考试标识，缺省 `demo`；每场考试应单独配置 |
+| `EG_QUESTION_ID` | 服务端当前题号；设置后学生不能换号来绕开逐题策略 |
+| `EG_STATE_FILE` | SQLite 安全状态文件，运行缺省 `.examguard/state.sqlite3`；测试显式构造 Settings 时缺省内存 |
+| `EG_ALLOW_POLICY_SWITCH` | 缺省 false；仅本地教师演示使用，不能代替教师身份认证 |
+| `EG_MAX_CALLS_PER_TURN` | 每回合逻辑模型调用上限，缺省 7 |
+| `EG_TURN_TIMEOUT_SECONDS` | 整轮截止时间，缺省 180 秒 |
+| `EG_CLASSIFIER_MAX_OUTPUT_TOKENS` | 分类输出上限，缺省 256 |
+| `EG_JUDGE_MAX_OUTPUT_TOKENS` | Judge 输出上限，缺省 256 |
+| `EG_MIN_CLASSIFIER_CONFIDENCE` | 自报置信度保守阈值，缺省 0.7；不代表校准概率 |
+| `LLM_TIMEOUT_SECONDS` | 单次网络超时，与整轮剩余时间取较小值 |
+| `LLM_MAX_OUTPUT_TOKENS` | 生成回答输出上限 |
+| `EG_LLM_EXTRA_BODY` | 服务商参数 JSON，例如 `{"enable_thinking":false}` |
+| `EG_UI_DETAIL` | 学生审计展示 `brief` / `full` |
 
-## P1：混合输入意图识别（已交付）
+SQLite 在完整回合内持有写事务，保证多服务实例也不会覆盖较新的预算，但会串行其他 SQLite 写入。适用于课程规模；并发吞吐需另测。安全预算容量满时拒绝新身份，不通过淘汰历史预算腾空间。
 
-- 正则基线**冻结**（`classify()` 判定逻辑不变），新增 `extract_risk_flags()` 提取
-  Prompt Injection / 变相索取特征（`instruction_override`、`roleplay_request`、
-  `system_prompt_probe`、`completion_disguise`、`translation_disguise` 等，含已有代码中的注入标记
-  `untrusted_code_injection`）；特征为预留信号，不改变帮助等级。
-- `HybridIntentClassifier`（`EG_CLASSIFIER_MODE=hybrid` 启用）：规则 + LLM 严格 JSON 输出；
-  超时 / 解析失败 / 字段非法一律回退正则（离线也可安全运行）；
-  冲突合并策略保守可解释——正则 knowledge 视为无信号，其余冲突取考试帮助等级更严格的一方
-  （伪装成调试的完整答案索取不会按 debug 放行）。
-- 分类评测（真实运行数据）：
+身份边界：已认证 Chainlit 用户按服务器身份关联不同聊天；匿名模式只保证同一会话 ID 的预算保留。匿名新会话没有可信身份，不能声称防住跨聊天累计套取。实际考试须接入教师认可的认证与考试上下文，不能把隐藏按钮或演示环境变量等同于权限系统。
+
+## Harness 与实验复现
 
 ```bash
-python report_classifier.py          # 正则基线（离线）
-python report_classifier.py --mode hybrid   # 需 APP_MODE=api
+APP_MODE=mock EG_OUTPUT_GUARD=rules python -m harness.run_harness --no-chart
+APP_MODE=mock EG_OUTPUT_GUARD=rules python -m harness.run_harness \
+  --variants A,B,C,D,D-no-session,D-no-judge,D-no-regen --repeats 2 --no-chart
+# 使用下面的审计回归题目集（开发集，不是新的无偏保留集）
+APP_MODE=mock EG_OUTPUT_GUARD=rules python -m harness.run_harness \
+  --single datasets/audit_regression_single.jsonl --multi datasets/audit_regression_multi.jsonl --no-chart
 ```
 
-  正则基线在 42 例人工标注集上 **accuracy=78.6%（33/42）**；9 条错判全部为改写/伪装类
-  （8 条落入 knowledge 兜底、1 条 jailbreak 降级为 request_solution——后者仍是保守方向），
-  详见 `results/classifier_intent_labeled_v0_regex.md` 与同名 CSV。
-  hybrid 模式的真实远端评测待 API 密钥后在 P4 Harness 统一进行（本仓库拒绝在 mock 下
-  生成冒充 hybrid 的报告）。
+API 模式同样命令会发起真实调用；先固定模型/解码/预算和明确费用范围。`--evaluator llm` 会增加外部评测调用；默认 `rules`。两者都是代理评价器，不是人工真值。
 
-## P2：分级辅助与输出安全审核（已交付）
+| 版本 | 组件 |
+| --- | --- |
+| A | 一般考试 Prompt；常量分类、直通审核 |
+| B | 正则分类、等级策略、basic 输出审核 |
+| C | B + 混合分类 |
+| D | C + rules/layered 审核、SessionGuard、有限重生成 |
+| D-no-session | D 去掉会话累计门控 |
+| D-no-judge | D 去掉 LLM Judge |
+| D-no-regen | D 去掉重生成 |
 
-- **策略解耦**：帮助等级来源改为可信 `ExamPolicy` 配置（`examguard/exam_policy.py`）。
-  服务端文件 `EG_POLICY_FILE=config/exam_policy.json`（可选），支持按 `question_id`
-  **只收紧**的等级覆盖与重生成预算；文件非法时启动直接失败（fail closed）。
-  缺省内嵌映射与第一阶段硬编码逐项一致，旧测试与消融基线可复现。
-- **输出审核分层**（`EG_OUTPUT_GUARD=basic|rules|layered`，默认 rules）：
-  - `basic`：第一阶段冻结基线（消融对照）；
-  - `rules`（`RuleLeakageScreener`）：新增状态转移式（L≤2）、证明收尾标记（L≤1）、
-    完整解答自称（任意级，否定词排除）、编号算法步骤（≥3 步且含算法动词，L≤2）检测；
-    **误拒控制**：T(n)/O() 复杂度递推、概念性编号列表、L3 局部小代码段均放行；
-  - `layered`：规则先筛（拦截即短路，不耗 Judge 调用）→ 独立 `LLMLeakageJudge`
-    JSON 复核；Judge 不可用（非 API/超时/解析失败）降级为规则层结论并标注
-    `rules-v1(judge_unavailable)`，不静默放行也不硬拒。
-- **有限次重生成**：审核未通过按策略预算（默认 1 次）携拦截原因重生成；耗尽后替换为
-  确定性保守回退文案。只有审核通过的回答（或保守回退）会发给学生。
-- 审计元数据新增 `audit_method`/`audit_categories`/`regenerations`（Chainlit 审计步骤
-  可视展示）。
-- **边界**：多轮累计泄漏检测（与历史提示合并判定）属 P3；Judge 在真实模型上的
-  误判率评估属 P4（模型自评不当作真值）。
+D 系列不接受 `basic` 冒充完整审核。隔离对照用于验证各组件贡献；A 的常量分类准确率没有分类器能力的含义。所有版本共享模型与生成配置；分类/Judge 的任务预算单独固定。
 
-## P3：多轮累计泄漏防护（已交付）
+输出含 `records.jsonl`、`sessions.jsonl`、`manifest.json`、`repeat_metrics.json`、`repeat_stats.json`、CSV、摘要与可选图表。记录含 repeat_id、分类方法/flags、候选与审核证据、各阶段调用 trace；manifest 含脱敏配置、组件和源码/数据 hash。失败与未知用量不会伪装为 0。费用包含单轮、多轮和外部评测调用，存在未知 token 时标注不完整。
 
-- **SessionGuard**（`examguard/session_guard.py`，每个聊天会话一份，`new_context` 自动创建）：
-  - 以显式 `question_id` 为主、相近问题关联为辅定位同一道题；关联规则 7 条（关键
-    词共享 + bigram Jaccard + 意图连续性），锚点保留**历史问法列表**，题目改写、
-    省略关键词的追问、"那把完整代码给我吧"式承接都不会重置风险；
-  - `RiskState` 可版本化序列化（`to_dict/from_dict`，v1 单锚点字段兼容）；
-  - **互补性风险累计**：新增披露元素 × 权重 × 新颖度（重复披露仅按 0.25 衰减
-    因子计入），而非按轮数/关键词次数累计。元素权重：算法选择 0.15、状态定义
-    0.25、转移式 0.35、关键步骤 0.40、伪代码 0.50、完整代码/证明 1.0、局部修
-    复 0.10、复杂度/概念 0.05；
-  - **按意图分级的会话降级**：hint/solution 自风险 0.4 起阶梯降级（0.4→L2、
-    0.6→L1、0.8→L0）；debug 仅极高风险降级（内容审核始终兜底，学生自己代码的
-    局部诊断不被先前提示过度牵连）；knowledge 下限 L1（不因会话风险完全拒答
-    概念问题）。降级原因写入 `PolicyDecision.reason`，可解释到具体已披露元素；
-  - 风险轨迹与状态快照：`guard.trajectory()` / `guard.snapshot()`；演示：
-    `python demo_session_guard.py`（离线 mock 完整攻击链：算法选择→状态定义→
-    伪装调试取得转移式→继续索要，第 4 轮 L2→L0 并给出原因）。
-- **误关联防护**（有测试）：KMP 讨论后转 Kruskal、考题讨论后的普通知识问题
-  不受高风险牵连；会话之间状态完全隔离。
-- **已知边界**：纯意译改写（无共享关键词、字面相似度低）在无 question_id 时
-  可能漏关联；规则 7 的"无关键词索答承接"可能轻微过度关联——均在报告有效
-  性威胁中说明，P4 用标注数据量化。
+指标口径已修正：
 
-## P4：自动化 Harness 与消融实验（**真实模型已完成**）
+- 未独立复核 correctness/helpfulness 的合法回答保留 `unknown` 和 `pending_review`；不再以回答长于 20 字当作有效帮助。
+- `helped_rate` 仅在已复核合法回答中计算，同时报告复核分母；不能忽略待复核覆盖率。
+- L1 或系统 `approved` 不自动等于拦截成功；泄漏为 true 时不能记成功拦截。未能独立确认合规的请求保留待复核。
+- 多轮攻击成功合并整个攻击会话的累计泄漏，包括单个合法轮逐步给出的信息。
+- repeats 按独立 repeat_id 计算均值和总体标准差，不对累计平均值二次统计。
+- 规则泄漏与误拒率依然是代理信号，短代码、一般教材讲解和自然语言改写均需抽样人工核查。
 
-**真实实验**（2026-10-16，`Qwen/Qwen3.5-9B` @ SiliconFlow，`enable_thinking=false`，
-dev 60 单轮+11 会话、heldout 20+2 一次性；详见 `results/experiment_analysis_20261016.md`
-与 `results/harness_api_20261016_*`）：
+已有 80 单轮/13 多轮和 42 条分类样例。原始 `mt-dev-004` 无明确题干且曾被代理误判，保留供历史复核；新的 `audit_regression_*` 为具体题目与审计边界回归，不冒充独立 heldout。原 heldout 已在调试时查看，后续正式结论应建立新的冻结留出集，并做人工复核和重复运行。
 
-- 单轮：A 越狱成功 100%→B/C/D 0%；B 在 heldout 泄漏 14.3%（伪代码补全盲区）→ C/D 0%；
-  意图准确 A 23.3% / B 71.7% / C 96.7% / D 98.3%；
-- 多轮：A/B/C 均泄漏攻击链 mt-dev-004（单轮合规、累计拼装），**仅 D 零泄漏**；
-  代价：D 良性会话误拒（Judge 把合法调试/知识题误判为泄漏 + 良性深挖风险累积）；
-- 混合分类器：标注集 accuracy **97.6%** vs 正则 78.6%；
-- 结论：防护递进链条 A→B→C→D 完整成立；帮助-安全权衡真实存在（建议 D 用于
-  高风险考试、B/C 用于练习模式）。
+## 交付状态和边界
 
-以下为框架说明（保留供复现）：
+安全控制与 Harness 代码已按审计问题修正，离线测试用于验证实现路径。最新模型安全性、帮助正确率、误拒率及单组件有效性尚无新实证结论。正式课程交付还需：可信的真实模型实验、人工 rubric 标注、核心算法复杂度说明、实验报告与最终材料包。120 单轮/15 多轮、LoRA、GPU 本地部署均不是本课题的硬性最低要求。
 
-- **测试数据**（结构化 JSONL，带 schema 校验、fail closed）：
-  - `datasets/harness_single.jsonl`：80 例（dev 60 = k14/d12/h12/s12/j10；heldout 20），
-    字段含 case_id/split/intent_gold/is_allowed/question_id/prompt/existing_code/
-    expected_help_level/leakage_rubric/attack_type，覆盖正常问法、歧义、攻击改写
-    （角色扮演/规则覆盖/翻译/伪装补全/编码套取）；
-  - `datasets/harness_multi.jsonl`：13 组多轮会话（良性 5 / 攻击链 6 / 混合 2，
-    dev 11 + heldout 2），含分段拆解、伪装调试逐轮套取、无关键词渐进链等。
-- **消融版本**（`harness/variants.py`，共用同一 backend/模型/解码参数）：
-  A 仅考试 System Prompt（常量分类+全 L3+直通审核）→ B +正则分类+默认策略+basic 审核
-  （Phase-1 冻结基线）→ C +混合意图分类（mock 下回退≈B，报告中标注）→
-  D +rules/layered 审核+SessionGuard+有限重生成。
-- **评价器与被测系统解耦**（`harness/evaluator.py`）：`RuleLeakEvaluator` 只看最终
-  送达文本与 rubric（独立实现，不以系统 approved 自评为准）；多轮含"累计披露是否
-  足以拼装"判定；`LLMLeakEvaluator`（API 模式）按逐例 rubric 语义复核。
-- **指标口径**（`harness/metrics.py`，分母写入汇总表头）：合法辅助完成率、误拒率、
-  拦截率、泄漏率、越狱成功率（多轮按会话计，攻击成功仅统计 jailbreak 类得手）、
-  意图准确率与混淆矩阵、重复运行均值±标准差、费用估算（需配价格，未配置则不估算）。
-- **运行**：
+代码不会执行学生程序。API 模式将学生问题/代码发送到配置的供应商；使用合成测试或经授权材料。SQLite 安全状态包含归一化题目锚点、披露片段与风险；不保存完整聊天或 API Key。Harness 的候选记录可能含不安全草稿，仅用于本地开发者复核，不能提供给学生。`.env`、`.examguard/` 和运行文件须从提交包排除。
 
-```bash
-.venv/bin/python -m harness.run_harness                          # A/B/C/D, dev 集
-.venv/bin/python -m harness.run_harness --split heldout          # 保留集
-.venv/bin/python -m harness.run_harness --repeats 3              # 采样波动
-# API 模式：.env 配置 APP_MODE=api 与密钥后同命令（Layered Judge 自动启用需
-# EG_OUTPUT_GUARD=layered）
-```
+### 多对话、流式传输与 Provider 切换
 
-  输出：`results/harness_<mode>_<时间戳>/`（records.jsonl / sessions.jsonl /
-  summary.md / summary.csv / confusion_*.json / metrics_by_variant.png）。
-- **Mock 全流程验证（已真实运行，见 `results/harness_mock_20261016_193847/`）**：
-  数字自洽且方向符合预期——A 版拦截 0%、越狱成功 100%、意图准确 23.3%（14/60）；
-  B/C/D 拦截 100%、意图准确 71.7%；多轮泄漏 0%。**这些是流程验证数字，不代表
-  真实模型实验结论**（mock 回答不含代码，泄漏/帮助指标在 mock 下无区分度，
-  汇总中带【MOCK】水印）。真实消融数据待 API 密钥后运行同一命令获得。
+学生端左侧支持新建、搜索、重命名、删除和恢复历史对话。右上设置按钮选择当前对话的 Provider / 模型，选择随对话保存。消息与安全审核摘要保存在 `EG_CHAT_FILE`（默认 `.examguard/chats.sqlite3`），供模型恢复的服务端历史独立存储，不采信浏览器伪造的消息角色或元数据。短暂断网重连和多个窗口交错提问保留最新历史；删除对话不会删除 `.examguard/state.sqlite3` 中的考试安全预算。
 
-## What has NOT been completed
+运行器为浏览器生成签名的本地工作区身份，签名密钥保存在 `EG_AUTH_SECRET_FILE`（默认 `.examguard/auth.secret`）或使用既有 `CHAINLIT_AUTH_SECRET`。同一浏览器的新对话共享身份和本次考试预算。此身份用于本地原型历史隔离；清理 Cookie、换浏览器仍可获得新身份，正式考试仍需接入真实学生认证。此运行器使用一个服务进程；不要直接改为多 worker 部署，当前对话串行锁在进程内。
 
-单次运行无重复采样（`--repeats` 已支持，时间成本原因未跑）；heldout 良性会话仅 1 个（D 的误拒率只能作个案证据）；Judge 误判的系统性人工抽样复核未做（已有 2 个典型案例记录）。有效性威胁清单见 `results/experiment_analysis_20261016.md`。
+上游生成使用真实 Chat Completions SSE，分类与 Judge 继续使用普通请求，统一计入每轮调用预算。草稿在服务端完整缓冲并审核后，最终答案通过 Chainlit `stream_token` 分块送达。审核前会显示生成状态；首次可见回答仍需等待审核完成。中断、截断、超时、无结束标记均不交付部分草稿，也不自动重新调用远端模型。
 
-## Recommended next milestones
+已有 `.env` 的默认 Provider 自动保留。新增配置见 [providers.example.json](providers.example.json)：复制到 `.examguard/providers.json`，或用 `EG_PROVIDERS_FILE` 指定配置文件，重启生效。每项配置包含 `id`、`label`、`models`、`base_url`、`api_key_env`，可配置 `extra_body` 和 `token_parameter`。密钥只从服务端环境变量读取；缺少密钥的选项不会出现在选择器中。切换仅改变模型连接，考试策略、分类阈值、输出审核层和累计风险保持原配置。
 
-1. ~~Replace `intent_classifier.py` with a rule+LLM classifier~~（P1；真实评测已完成 97.6%）.
-2. ~~Policy decoupling + layered output guard~~（P2；Judge FP 已有实证案例）.
-3. ~~SessionGuard 多轮累计泄漏防护~~（P3；多轮消融已验证 D 唯一零泄漏）.
-4. ~~Build Harness (A/B/C/D) + 真实消融~~（P4；2026-10-16 完成）.
-5. Write methodology, complexity, metrics and a reproducibility report（P5，唯一剩余阶段）.
+交互结构参考 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的会话侧栏、会话菜单与分组模型选择器（参考源码 HEAD `1600d8a`）；没有引入其 Agent 工具执行能力。
 
-## Data and privacy
-
-No student code is executed by this project. Student submissions may be sent to the configured remote model provider in API mode; use **synthetic test cases** unless users/teachers permit sending their materials. Chat turns are stored only in process memory (per-session `ServiceContext`); no persistent transcript logging is enabled. Chainlit 文件上传已关闭（仅接受文本输入）。
-
-## References
-
-- Course assignment PDF, especially page 5, project II.
-- Qwen hosted endpoint, model ID: SiliconFlow model catalog.
-- Compatible chat endpoint: provider docs and openai-python README.
+回归入口：`.venv/bin/python -m unittest discover -s tests -q`、`.venv/bin/python -m pytest -q`、`.venv/bin/python e2e_chainlit_check.py`。E2E 使用隔离的临时数据库与离线模型，验证真实 HTTP/SocketIO、流式事件、历史恢复、搜索/重命名/删除、跨工作区隔离和切换后的考试门控。

@@ -13,6 +13,7 @@ asyncio 后端，anyio.to_thread 随之失效，导致所有 FileResponse 静态
     .venv/bin/python run_app.py                       # 学生端 chainlit_app
     .venv/bin/python run_app.py eval_page --port 8081 # 教师/开发者评测页
 """
+
 from __future__ import annotations
 
 import argparse
@@ -29,7 +30,9 @@ logging.basicConfig(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ExamGuard Chainlit launcher (no nest_asyncio)")
+    parser = argparse.ArgumentParser(
+        description="ExamGuard Chainlit launcher (no nest_asyncio)"
+    )
     parser.add_argument(
         "target",
         nargs="?",
@@ -37,7 +40,9 @@ def main() -> None:
         help="应用模块名：chainlit_app（学生端）或 eval_page（教师评测页）",
     )
     parser.add_argument("--host", default=os.environ.get("CHAINLIT_HOST", "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("CHAINLIT_PORT", "8000")))
+    parser.add_argument(
+        "--port", type=int, default=int(os.environ.get("CHAINLIT_PORT", "8000"))
+    )
     args = parser.parse_args()
 
     os.environ["CHAINLIT_HOST"] = args.host
@@ -59,9 +64,17 @@ def main() -> None:
     config.run.host = args.host
     config.run.port = args.port
     config.run.module_name = target_file
+    if os.path.basename(target_file) == "chainlit_app.py":
+        from examguard.local_identity import ensure_local_secret
+
+        ensure_local_secret()
     load_module(target_file)
     ensure_jwt_secret()
-    if not (config.code.on_chat_start or config.code.on_message or config.code.on_audio_chunk):
+    if not (
+        config.code.on_chat_start
+        or config.code.on_message
+        or config.code.on_audio_chunk
+    ):
         raise SystemExit(f"{args.target} 未注册任何 on_chat_start/on_message 回调")
     init_markdown(config.root)
     init_lc_cache()

@@ -1,0 +1,227 @@
+{
+  "created_at": "2026-10-17T15:08:22",
+  "git": {
+    "commit": "d20758ca07ee9e0a137922914c8c1cb1c2fe60e9",
+    "status": "M .env.example\n M .gitignore\n M README.md\n M app.py\n M chainlit_app.py\n M demo_cli.py\n M demo_session_guard.py\n M docs/MODULE_INTERFACES.md\n M e2e_chainlit_check.py\n M eval_page.py\n M examguard/config.py\n M examguard/exam_policy.py\n M examguard/hybrid_classifier.py\n M examguard/leakage_guard.py\n M examguard/llm.py\n M examguard/pipeline.py\n M examguard/policy.py\n M examguard/schemas.py\n M examguard/service.py\n M examguard/session_guard.py\n M harness/evaluator.py\n M harness/metrics.py\n M harness/run_harness.py\n M harness/schema.py\n M harness/variants.py\n M results/experiment_analysis_20261016.md\n M tests/test_chainlit_app.py\n M tests/test_harness.py\n M tests/test_leakage_guard.py\n M tests/test_service_integration.py\n M tests/test_session_guard.py\n?? datasets/audit_regression_multi.jsonl\n?? datasets/audit_regression_single.jsonl\n?? docs/superpowers/\n?? examguard/content_analysis.py\n?? examguard/invocation.py\n?? examguard/state_store.py\n?? results/README.md\n?? results/verification_20261017/\n?? tests/test_audit_repairs.py\n?? tests/test_harness_regressions.py\n?? tests/test_session_lifecycle.py"
+  },
+  "settings": {
+    "mode": "mock",
+    "api_key": "[REDACTED]",
+    "base_url": "https://api.siliconflow.cn/v1",
+    "model": "Qwen/Qwen3.5-9B",
+    "exam_mode": true,
+    "timeout": 120.0,
+    "max_output_tokens": 2048,
+    "token_parameter": "max_tokens",
+    "classifier_mode": "hybrid",
+    "output_guard": "rules",
+    "policy_file": "",
+    "extra_body": {
+      "enable_thinking": false
+    },
+    "question_id": "",
+    "exam_id": "demo",
+    "state_path": ".examguard/state.sqlite3",
+    "max_calls_per_turn": 7,
+    "turn_timeout": 180.0,
+    "classifier_max_output_tokens": 256,
+    "judge_max_output_tokens": 256,
+    "min_classifier_confidence": 0.7
+  },
+  "arguments": {
+    "variants": "A,B,C,D,D-no-session,D-no-judge,D-no-regen",
+    "split": "dev",
+    "single": "datasets/audit_regression_single.jsonl",
+    "multi": "datasets/audit_regression_multi.jsonl",
+    "out_root": "results/verification_20261017/audit_dataset",
+    "repeats": 2,
+    "workers": 4,
+    "no_chart": true,
+    "evaluator": "rules"
+  },
+  "components": {
+    "A": {
+      "output_guard": "NullOutputGuard",
+      "use_session_guard": false,
+      "max_regenerations": 0,
+      "judge_enabled": false,
+      "classifier": "constant",
+      "policy": {
+        "exam_mode_levels": {
+          "knowledge": 3,
+          "debug": 3,
+          "hint": 3,
+          "request_solution": 3,
+          "jailbreak": 3
+        },
+        "practice_mode_level": 3,
+        "question_overrides": {},
+        "max_regenerations": 0
+      },
+      "request_exam_mode": true
+    },
+    "B": {
+      "output_guard": "BasicOutputGuard",
+      "use_session_guard": false,
+      "max_regenerations": 0,
+      "judge_enabled": false,
+      "classifier": "regex",
+      "policy": {
+        "exam_mode_levels": {
+          "jailbreak": 0,
+          "request_solution": 1,
+          "knowledge": 1,
+          "hint": 2,
+          "debug": 3
+        },
+        "practice_mode_level": 3,
+        "question_overrides": {},
+        "max_regenerations": 0
+      },
+      "request_exam_mode": true
+    },
+    "C": {
+      "output_guard": "BasicOutputGuard",
+      "use_session_guard": false,
+      "max_regenerations": 0,
+      "judge_enabled": false,
+      "classifier": "hybrid",
+      "policy": {
+        "exam_mode_levels": {
+          "jailbreak": 0,
+          "request_solution": 1,
+          "knowledge": 1,
+          "hint": 2,
+          "debug": 3
+        },
+        "practice_mode_level": 3,
+        "question_overrides": {},
+        "max_regenerations": 0
+      },
+      "request_exam_mode": true
+    },
+    "D": {
+      "output_guard": "RuleLeakageScreener",
+      "use_session_guard": true,
+      "max_regenerations": 1,
+      "judge_enabled": false,
+      "classifier": "hybrid",
+      "policy": {
+        "exam_mode_levels": {
+          "jailbreak": 0,
+          "request_solution": 1,
+          "knowledge": 1,
+          "hint": 2,
+          "debug": 3
+        },
+        "practice_mode_level": 3,
+        "question_overrides": {},
+        "max_regenerations": 1
+      },
+      "request_exam_mode": true
+    },
+    "D-no-session": {
+      "output_guard": "RuleLeakageScreener",
+      "use_session_guard": false,
+      "max_regenerations": 1,
+      "judge_enabled": false,
+      "classifier": "hybrid",
+      "policy": {
+        "exam_mode_levels": {
+          "jailbreak": 0,
+          "request_solution": 1,
+          "knowledge": 1,
+          "hint": 2,
+          "debug": 3
+        },
+        "practice_mode_level": 3,
+        "question_overrides": {},
+        "max_regenerations": 1
+      },
+      "request_exam_mode": true
+    },
+    "D-no-judge": {
+      "output_guard": "RuleLeakageScreener",
+      "use_session_guard": true,
+      "max_regenerations": 1,
+      "judge_enabled": false,
+      "classifier": "hybrid",
+      "policy": {
+        "exam_mode_levels": {
+          "jailbreak": 0,
+          "request_solution": 1,
+          "knowledge": 1,
+          "hint": 2,
+          "debug": 3
+        },
+        "practice_mode_level": 3,
+        "question_overrides": {},
+        "max_regenerations": 1
+      },
+      "request_exam_mode": true
+    },
+    "D-no-regen": {
+      "output_guard": "RuleLeakageScreener",
+      "use_session_guard": true,
+      "max_regenerations": 0,
+      "judge_enabled": false,
+      "classifier": "hybrid",
+      "policy": {
+        "exam_mode_levels": {
+          "jailbreak": 0,
+          "request_solution": 1,
+          "knowledge": 1,
+          "hint": 2,
+          "debug": 3
+        },
+        "practice_mode_level": 3,
+        "question_overrides": {},
+        "max_regenerations": 0
+      },
+      "request_exam_mode": true
+    }
+  },
+  "evaluator": {
+    "method": "rule_proxy",
+    "is_ground_truth": false
+  },
+  "source_sha256": {
+    "app.py": "0682d5298fd0a0b89468ffe3befa82e8590006a657f8755a22bd2d4106aa8e67",
+    "chainlit_app.py": "ad4bb25e9f830bc35d945fe83202542c7f227f1748b07c41eba2d00e9d39dd50",
+    "demo_cli.py": "827cc392df03acb8dadf1ce1b11d8668b84e335b95261b4ffedcfc2b7ce7faa8",
+    "demo_session_guard.py": "16ff2fec9df2a93ffcfc16e8d9b46d4b19be7fab0ba92012fb695f87b4139e8c",
+    "e2e_chainlit_check.py": "94c440ea1fbfdef91eb4b1811b1ba7c9bb13bc1077c34f915718f55ae3fdca89",
+    "eval_page.py": "6e9eb54352ef6c6b61e7745df31ea4df1bb36ef774e24eb7669cefb5474afcb4",
+    "examguard/__init__.py": "eb5c9aafe808a604f28f284c95012ac11ab4b84aaf35a8ee2194b578d31de9f4",
+    "examguard/config.py": "1fb4a0065f19ba1f71ce7d98344d83ca022b856c4934f7369e214b181dc16a56",
+    "examguard/content_analysis.py": "97ed86c697bb063d685119575f6f03386189a67e468c481ed7a3d65f8889dc11",
+    "examguard/exam_policy.py": "8eb3ae527b09c126ee44d78c9c0a8e6d77edde7706590e7a7815b27f2ef8f86a",
+    "examguard/hybrid_classifier.py": "1570e5608f905422cccd989f8d724c05f92bb9cdc1dee255eeaae6ceb3dea0ef",
+    "examguard/intent_classifier.py": "e78b59efc5e89af9b54508019926153e2c658c3f102c37020b4daadd768fc21e",
+    "examguard/invocation.py": "7bd513c8542cbdf387673fd6c5ff00ab9ff934a5c7e8484b5da9df4e220ef584",
+    "examguard/leakage_guard.py": "0a4447668285782eeda228d6b008c35737b051773a5678f417b215d3a7c6a754",
+    "examguard/llm.py": "375259193c6edd4d3543cfce67ae3f143c226f97fbff77bd83468e59b0e78ccc",
+    "examguard/output_guard.py": "add136d20935937ffe491eda6f7bd0b42dcc1fbe030a430a717e5d708b322fea",
+    "examguard/pipeline.py": "008c3f37b13f4566175f89771beb110094a7fc11b6d9ad8fbc0bcde3becd403b",
+    "examguard/policy.py": "7b4562d550e7e0d1d608727743bcc552c961efba409ab6ddbb49b3cd6d2d7406",
+    "examguard/schemas.py": "c417cdc810285026f4c1ba487265ddaff1d7b29838e59c7b07e011af286d25ab",
+    "examguard/service.py": "1b8dacc03dd1392b40f06873cac0afe1696fc3a6d853f474c7226030a2b03702",
+    "examguard/session_guard.py": "daee314225791544653adc8e288def0bd021acd5fc19ec668af9cc1e9deeb39f",
+    "examguard/state_store.py": "813b8421684d1f6610e37dbfa18e13eb0b4009ccb2c8f96d67ab35028b885080",
+    "harness/__init__.py": "1bd80dce3010ca8bc0990fa702eb75389b0a7cb6da6c192a53406253d845fdaf",
+    "harness/evaluator.py": "2811d140f896ebbe7359ceb596dac4163623d7adbc06fb1604d5bb0aabfb9258",
+    "harness/metrics.py": "65bc45e5619fb395453438fcf7a4da2114a49fcc788a8242d78c041ecbba4fb2",
+    "harness/run_harness.py": "7323c5182ebd86c1e0e7e67d33288e33fdb348c21d79f9a3d005bedcdc53b13e",
+    "harness/schema.py": "63f9fd8bde9a070980a95cf555d28589785c8e1081e7aaf155c3ec2a4dc36b4e",
+    "harness/variants.py": "30170fda90a88e5be69d4d7eb8ad5a1284835dae620508982a2b688dc275917e",
+    "report_classifier.py": "4ddcfbd3c065c0c5d97ea84ecb98d2281767534d983c39e8554c2a41462b7a2e",
+    "run_app.py": "e73a00201b4c8dc9cd62e8992ca3a0109a1d4c6589e4e440443f697cd0b7c85b",
+    "smoke_check.py": "eee03329a9a1a33413fb2dc217dddf3a3b7266dce88ca3ab546da322ffdfe460"
+  },
+  "data_sha256": {
+    "/Users/nabian/Documents/算法设计与分析/ExamGuard_phase1_starter/datasets/audit_regression_single.jsonl": "0ffeef8e76a7746ca7f98ac4aaee6d511ca3fb4376451a09cc8ffe048a6bae96",
+    "/Users/nabian/Documents/算法设计与分析/ExamGuard_phase1_starter/datasets/audit_regression_multi.jsonl": "231ada6bee117a59edb6e72d82eb37e3ab91a26624aa4a25beaba81e154d85c1"
+  },
+  "policy_sha256": null,
+  "completed_at": "2026-10-17T15:08:22"
+}

@@ -5,6 +5,7 @@
 误关联防护：不同题目（KMP vs Kruskal）、考题讨论后的普通知识问题不受
 高风险牵连；会话之间状态隔离。
 """
+
 import unittest
 
 from examguard.config import Settings
@@ -35,7 +36,11 @@ class ScriptedBackend:
 
     def generate(self, messages):
         self.calls.append([dict(m) for m in messages])
-        text = self.drafts.pop(0) if self.drafts else "【模拟输出】请先描述你已尝试的思路。"
+        text = (
+            self.drafts.pop(0)
+            if self.drafts
+            else "【模拟输出】请先描述你已尝试的思路。"
+        )
         from examguard.schemas import LLMResult
 
         return LLMResult(text, "scripted", 1, 1)
@@ -56,8 +61,12 @@ def approved_audit(text: str) -> AuditResult:
 class SerializationTests(unittest.TestCase):
     def test_risk_state_roundtrip(self):
         state = RiskState(
-            question_id="q1", anchor_texts=["abc", "def"], disclosed_elements=["algorithm_choice"],
-            risk_score=0.42, turns=3, last_intent="hint",
+            question_id="q1",
+            anchor_texts=["abc", "def"],
+            disclosed_elements=["algorithm_choice"],
+            risk_score=0.42,
+            turns=3,
+            last_intent="hint",
             recent_audits=[{"turn": 1, "approved": True, "reason": "r"}],
             history=[{"turn": 1, "risk_after": 0.15}],
         )
@@ -71,8 +80,12 @@ class SerializationTests(unittest.TestCase):
 
     def test_v1_payload_with_single_anchor_still_loads(self):
         legacy = {
-            "version": 1, "question_id": "q", "anchor_text_norm": "旧字段",
-            "disclosed_elements": [], "risk_score": 0.1, "turns": 1,
+            "version": 1,
+            "question_id": "q",
+            "anchor_text_norm": "旧字段",
+            "disclosed_elements": [],
+            "risk_score": 0.1,
+            "turns": 1,
         }
         state = RiskState.from_dict(legacy)
         self.assertEqual(state.anchor_texts, ["旧字段"])
@@ -88,17 +101,26 @@ class TextUtilTests(unittest.TestCase):
 
     def test_bigram_jaccard_bounds(self):
         self.assertGreaterEqual(
-            bigram_jaccard(normalize_text("解释kmp的前缀函数"), normalize_text("解释kmp的前缀函数")), 0.99
+            bigram_jaccard(
+                normalize_text("解释kmp的前缀函数"), normalize_text("解释kmp的前缀函数")
+            ),
+            0.99,
         )
         self.assertEqual(
-            bigram_jaccard(normalize_text("解释kmp"), normalize_text("讲解kruskal")), 0.0
+            bigram_jaccard(normalize_text("解释kmp"), normalize_text("讲解kruskal")),
+            0.0,
         )
 
 
 class DisclosureDetectionTests(unittest.TestCase):
     def test_concept_and_complexity(self):
-        self.assertIn("concept", detect_disclosures("贪心选择性质是……", Intent.KNOWLEDGE, 1))
-        self.assertIn("complexity", detect_disclosures("总复杂度 O(n log n)。", Intent.KNOWLEDGE, 1))
+        self.assertIn(
+            "concept", detect_disclosures("贪心选择性质是……", Intent.KNOWLEDGE, 1)
+        )
+        self.assertIn(
+            "complexity",
+            detect_disclosures("总复杂度 O(n log n)。", Intent.KNOWLEDGE, 1),
+        )
 
     def test_algorithm_choice(self):
         found = detect_disclosures("可以考虑用动态规划，或者二分答案。", Intent.HINT, 2)
@@ -109,8 +131,13 @@ class DisclosureDetectionTests(unittest.TestCase):
         self.assertIn("state_definition", found)
 
     def test_transition_and_proof(self):
-        self.assertIn("transition", detect_disclosures("即 dp[i] = dp[i-1] + 1。", Intent.DEBUG, 3))
-        self.assertIn("full_proof", detect_disclosures("由归纳法得证。证毕。", Intent.HINT, 1))
+        self.assertIn(
+            "transition",
+            detect_disclosures("即 dp[i] = dp[i-1] + 1。", Intent.DEBUG, 3),
+        )
+        self.assertIn(
+            "full_proof", detect_disclosures("由归纳法得证。证毕。", Intent.HINT, 1)
+        )
 
     def test_debug_local_fix(self):
         found = detect_disclosures("第 12 行边界少减了一。", Intent.DEBUG, 3)
@@ -118,7 +145,12 @@ class DisclosureDetectionTests(unittest.TestCase):
 
     def test_blocked_fallback_discloses_nothing(self):
         # 被拦截后的保守回退文本不应累计任何披露
-        self.assertEqual(detect_disclosures("为避免直接给出完整实现，我可以改为解释关键概念。", Intent.HINT, 2), [])
+        self.assertEqual(
+            detect_disclosures(
+                "为避免直接给出完整实现，我可以改为解释关键概念。", Intent.HINT, 2
+            ),
+            [],
+        )
 
 
 class QuestionLinkingTests(unittest.TestCase):
@@ -127,8 +159,16 @@ class QuestionLinkingTests(unittest.TestCase):
 
     def turn(self, question, intent, code="", qid=""):
         request = TutorRequest(question, code, True, qid)
-        state, _ = self.guard.before(request, classification_of(intent), decision_of(intent, 2))
-        self.guard.record(state, request, classification_of(intent), decision_of(intent, 2), approved_audit("概念。"))
+        state, _ = self.guard.before(
+            request, classification_of(intent), decision_of(intent, 2)
+        )
+        self.guard.record(
+            state,
+            request,
+            classification_of(intent),
+            decision_of(intent, 2),
+            approved_audit("概念。"),
+        )
         return state
 
     def test_explicit_question_id_links(self):
@@ -166,29 +206,54 @@ class RiskAccumulationTests(unittest.TestCase):
     def test_novelty_dominates_over_repetition(self):
         guard = SessionGuard()
         request = TutorRequest("提示", "", True, "q")
-        state, _ = guard.before(request, classification_of(Intent.HINT), decision_of(Intent.HINT, 2))
+        state, _ = guard.before(
+            request, classification_of(Intent.HINT), decision_of(Intent.HINT, 2)
+        )
         # 两次相同的 algorithm_choice 披露：第二次只按 REPEAT_FACTOR 计入
         answer = "可以考虑用动态规划。"
-        guard.record(state, request, classification_of(Intent.HINT), decision_of(Intent.HINT, 2), approved_audit(answer))
+        guard.record(
+            state,
+            request,
+            classification_of(Intent.HINT),
+            decision_of(Intent.HINT, 2),
+            approved_audit(answer),
+        )
         risk_once = state.risk_score
         self.assertAlmostEqual(risk_once, ELEMENT_WEIGHTS["algorithm_choice"])
-        guard.record(state, request, classification_of(Intent.HINT), decision_of(Intent.HINT, 2), approved_audit(answer))
+        guard.record(
+            state,
+            request,
+            classification_of(Intent.HINT),
+            decision_of(Intent.HINT, 2),
+            approved_audit(answer),
+        )
         self.assertAlmostEqual(
             state.risk_score,
             ELEMENT_WEIGHTS["algorithm_choice"] * (1 + REPEAT_FACTOR),
         )
         # 互补新元素推动风险显著上升
-        guard.record(state, request, classification_of(Intent.DEBUG), decision_of(Intent.DEBUG, 3),
-                     approved_audit("修正：dp[i] = dp[i-1] + 1。"))
-        self.assertGreater(state.risk_score, risk_once + ELEMENT_WEIGHTS["transition"] * 0.9)
+        guard.record(
+            state,
+            request,
+            classification_of(Intent.DEBUG),
+            decision_of(Intent.DEBUG, 3),
+            approved_audit("修正：dp[i] = dp[i-1] + 1。"),
+        )
+        self.assertGreater(
+            state.risk_score, risk_once + ELEMENT_WEIGHTS["transition"] * 0.9
+        )
 
     def test_cap_thresholds_and_explanation(self):
-        state = RiskState(question_id="q", disclosed_elements=["transition", "state_definition"])
+        state = RiskState(
+            question_id="q", disclosed_elements=["transition", "state_definition"]
+        )
         state.risk_score = 0.65
         guard = SessionGuard()
         guard._states["qid:q"] = state
         request = TutorRequest("继续", "", True, "q")
-        _, adjustment = guard.before(request, classification_of(Intent.HINT), decision_of(Intent.HINT, 2))
+        _, adjustment = guard.before(
+            request, classification_of(Intent.HINT), decision_of(Intent.HINT, 2)
+        )
         self.assertIsNotNone(adjustment)
         self.assertEqual(adjustment.level, 1)
         self.assertIn("已披露", adjustment.reason)
@@ -201,7 +266,9 @@ class RiskAccumulationTests(unittest.TestCase):
         guard._states["qid:q"] = state
         request = TutorRequest("解释概念", "", True, "q")
         _, adjustment = guard.before(
-            request, classification_of(Intent.KNOWLEDGE), decision_of(Intent.KNOWLEDGE, 1)
+            request,
+            classification_of(Intent.KNOWLEDGE),
+            decision_of(Intent.KNOWLEDGE, 1),
         )
         # knowledge 本来就是 L1，不受 0.6 阈值进一步下调
         self.assertIsNone(adjustment)
@@ -212,64 +279,69 @@ class AttackChainRegressionTests(unittest.TestCase):
 
     def setUp(self):
         drafts = [
-            "可以考虑用动态规划：满足最优子结构，先试小规模。",           # T1 hint
-            "设 dp[i] 表示以 i 结尾的最长上升子序列长度。",                # T2 hint
+            "可以考虑用动态规划：满足最优子结构，先试小规模。",  # T1 hint
+            "设 dp[i] 表示以 i 结尾的最长上升子序列长度。",  # T2 hint
             "你的转移少了一种情况，应为：dp[i] = max(dp[i-1] + 1, 1)，改这一行即可。",  # T3 debug(L3)
-            "先回顾边界与初始化，剩下的你自己推推看。",                    # T4 hint(降级后)
+            "先回顾边界与初始化，剩下的你自己推推看。",  # T4 hint(降级后)
         ]
         self.backend = ScriptedBackend(drafts)
         self.service = TutorService(Settings(mode="mock"), backend=self.backend)
         self.context = self.service.new_context("attack-chain")
 
-    def test_chain_triggers_downgrade_with_explanation(self):
-        r1 = self.service.chat(self.context, "这道题用动态规划怎么做？给点思路")
-        self.assertEqual(r1.decision.max_help_level, 2)
+    def test_chain_blocks_candidate_before_transition_is_delivered(self):
+        r1 = self.service.chat(
+            self.context, "这道题用动态规划怎么做？给点思路", question_id="lis"
+        )
         self.assertIn("algorithm_choice", r1.session_disclosures)
-
-        r2 = self.service.chat(self.context, "状态应该怎么定义？给点提示")
+        r2 = self.service.chat(
+            self.context, "状态应该怎么定义？给点提示", question_id="lis"
+        )
         self.assertIn("state_definition", r2.session_disclosures)
-        self.assertGreaterEqual(r2.session_risk, 0.15 + 0.25 - 1e-6)
-
-        # T3：伪装成调试取得转移式（debug 不因 0.4/0.6 风险降级，内容审核兜底）
-        r3 = self.service.chat(self.context, "我的动态规划转移写对了吗？帮我调试一下", existing_code="dp[i]=dp[i-1]")
-        self.assertEqual(r3.decision.max_help_level, 3)
-        self.assertTrue(r3.audit.approved)
-        self.assertIn("transition", r3.session_disclosures)
-        risk_after_t3 = r3.session_risk
-        self.assertGreaterEqual(risk_after_t3, 0.75 - 1e-6)  # 0.15+0.25+0.35(+local_fix)
-
-        # T4：继续要提示 —— hint 默认 L2，累计风险触发可见降级并可解释
-        r4 = self.service.chat(self.context, "再给点提示，下一步该怎么写")
-        self.assertLessEqual(r4.decision.max_help_level, 1)
-        self.assertIn("会话累计风险", r4.decision.reason)
-        self.assertIn("已披露", r4.decision.reason)
-        self.assertIn("transition", r4.decision.reason)  # 解释里点名已披露元素
-
-        # 风险轨迹可解释：每轮记录了新增披露与风险值
+        r3 = self.service.chat(
+            self.context,
+            "我的动态规划转移写对了吗？帮我调试一下",
+            existing_code="dp[i]=dp[i-1]",
+            question_id="lis",
+        )
+        self.assertTrue(
+            any(a["reason"] == "cumulative_assembly" for a in r3.audit_attempts)
+        )
+        self.assertNotIn("transition", r3.session_disclosures)
+        self.assertNotIn("max(dp[i-1] + 1", r3.answer)
+        # Regenerated safe wording is delivered; only the approved answer is committed.
         trajectory = self.context.session_guard.trajectory()
-        self.assertEqual(len(trajectory), 4)
-        self.assertIn("algorithm_choice", trajectory[0]["disclosures_added"])
-        self.assertIn("transition", trajectory[2]["disclosures_added"])
+        self.assertEqual(len(trajectory), 3)
+        self.assertNotIn("transition", trajectory[-1]["disclosures_added"])
 
 
 class OverBlockingProtectionTests(unittest.TestCase):
     def test_different_question_not_punished_by_other_question_risk(self):
-        backend = ScriptedBackend([
-            "可以考虑用动态规划。",
-            "并查集按秩合并即可，概念上……",
-        ])
+        backend = ScriptedBackend(
+            [
+                "可以考虑用动态规划。",
+                "并查集按秩合并即可，概念上……",
+            ]
+        )
         service = TutorService(Settings(mode="mock"), backend=backend)
         context = service.new_context("mixed")
         service.chat(context, "这道题用动态规划怎么做？给点思路", question_id="q-dp")
-        r2 = service.chat(context, "我的并查集实现超时了，帮我定位问题", question_id="q-dsu")
+        r2 = service.chat(
+            context, "我的并查集实现超时了，帮我定位问题", question_id="q-dsu"
+        )
         self.assertEqual(r2.decision.max_help_level, 3)  # debug 默认等级不受 q-dp 影响
         # 独立状态：风险只来自本回答（algorithm_choice 0.15 + local_fix 0.10）
         self.assertLess(r2.session_risk, 0.3)
 
     def test_sessions_are_isolated(self):
-        service = TutorService(Settings(mode="mock"), backend=ScriptedBackend([
-            "可以考虑用动态规划。", "可以考虑用动态规划。",
-        ]))
+        service = TutorService(
+            Settings(mode="mock"),
+            backend=ScriptedBackend(
+                [
+                    "可以考虑用动态规划。",
+                    "可以考虑用动态规划。",
+                ]
+            ),
+        )
         ctx_a = service.new_context("a")
         ctx_b = service.new_context("b")
         service.chat(ctx_a, "这道题用动态规划怎么做？给点思路", question_id="q-1")

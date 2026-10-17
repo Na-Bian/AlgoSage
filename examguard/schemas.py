@@ -1,5 +1,6 @@
 """Stable message contracts for future classifier, guards, and benchmark harness."""
-from dataclasses import dataclass, field
+
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
@@ -27,9 +28,8 @@ class Classification:
     method: str
     reason: str
     # P1 起新增（带默认值，保持旧调用兼容）：
-    # confidence 仅在可可靠估计时给出（正则基线为 None，混合分类取 LLM 置信度）；
-    # risk_flags 为 Prompt Injection / 变相索取等风险特征标记，现阶段仅作
-    # 预留信号与审计展示，不直接改变策略等级。
+    # Model-reported confidence is uncalibrated. Low/invalid values become uncertain;
+    # trusted policy consumes injection and uncertainty flags before generation.
     confidence: Optional[float] = None
     risk_flags: tuple[str, ...] = ()
 
@@ -59,6 +59,15 @@ class AuditResult:
     method: str = ""
     # 拦截/泄漏类别（如 full_code / key_steps / proof），仅语义层填充。
     categories: tuple[str, ...] = ()
+    status: str = ""
+
+    def __post_init__(self):
+        status = self.status or ("pass" if self.approved else "block")
+        if status not in {"pass", "block", "unknown"}:
+            raise ValueError("Invalid audit status")
+        if self.approved != (status == "pass"):
+            raise ValueError("Only a pass may approve a draft")
+        object.__setattr__(self, "status", status)
 
 
 @dataclass(frozen=True)
@@ -75,4 +84,6 @@ class TutorResponse:
     # P3 起新增：本会话该题的累计风险与已披露元素（无 SessionGuard 时为 None/空）。
     session_risk: Optional[float] = None
     session_disclosures: tuple[str, ...] = ()
-    # No raw question/code stored in the response.
+    # Developer-side evidence only; never include these fields in student metadata.
+    call_trace: tuple[dict, ...] = ()
+    audit_attempts: tuple[dict, ...] = ()

@@ -7,7 +7,14 @@
 - 会话历史按上下文累积并传给 pipeline，且会话之间相互隔离；
 - 前端可见元数据是白名单，不含 API Key 或系统提示词。
 """
+
 import unittest
+import contextlib
+import io
+import runpy
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from examguard.config import Settings
 from examguard.llm import MockChatBackend
@@ -26,8 +33,12 @@ class RecordingBackend:
         return LLMResult("【模拟输出】这是可展示的简短回答。", "recording-spy", 1, 1)
 
 
-def make_service(exam_mode=True, allow_policy_override=False, backend=None) -> TutorService:
-    settings = Settings(mode="mock", exam_mode=exam_mode, api_key="SECRET-KEY-SHOULD-NOT-LEAK")
+def make_service(
+    exam_mode=True, allow_policy_override=False, backend=None
+) -> TutorService:
+    settings = Settings(
+        mode="mock", exam_mode=exam_mode, api_key="SECRET-KEY-SHOULD-NOT-LEAK"
+    )
     return TutorService(
         settings,
         backend=backend if backend is not None else MockChatBackend(),
@@ -142,12 +153,24 @@ class DisplayMetadataTests(unittest.TestCase):
         meta = TutorService.display_metadata(response)
 
         expected_keys = {
-            "intent", "classify_method", "classify_reason",
-            "classify_confidence", "risk_flags",
-            "help_level", "policy_reason",
-            "approved", "audit_reason", "audit_method", "audit_categories",
-            "regenerations", "session_risk", "session_disclosures",
-            "model", "input_tokens", "output_tokens",
+            "intent",
+            "classify_method",
+            "classify_reason",
+            "classify_confidence",
+            "risk_flags",
+            "help_level",
+            "policy_reason",
+            "approved",
+            "audit_reason",
+            "audit_method",
+            "audit_categories",
+            "audit_status",
+            "regenerations",
+            "session_risk",
+            "session_disclosures",
+            "model",
+            "input_tokens",
+            "output_tokens",
         }
         self.assertEqual(set(meta), expected_keys)
         # 密钥与配置不得出现在任何展示值中
@@ -161,7 +184,12 @@ class DisplayMetadataTests(unittest.TestCase):
     def test_metadata_reports_denied_audit(self):
         class LeakyBackend:
             def generate(self, messages):
-                return LLMResult("```python\n" + "\n".join(f"line{i}" for i in range(20)) + "\n```", "leaky", 1, 1)
+                return LLMResult(
+                    "```python\n" + "\n".join(f"line{i}" for i in range(20)) + "\n```",
+                    "leaky",
+                    1,
+                    1,
+                )
 
         service = make_service(exam_mode=True, backend=LeakyBackend())
         context = service.new_context("s1")
@@ -196,9 +224,13 @@ class PolicyWiringTests(unittest.TestCase):
         from examguard.exam_policy import ExamPolicy
 
         self.assertIsInstance(service.policy_config, ExamPolicy)
-        self.assertEqual(service.policy_config.max_level(
-            __import__("examguard.schemas", fromlist=["Intent"]).Intent.HINT, "q-dp-easy"
-        ), 1)
+        self.assertEqual(
+            service.policy_config.max_level(
+                __import__("examguard.schemas", fromlist=["Intent"]).Intent.HINT,
+                "q-dp-easy",
+            ),
+            1,
+        )
 
     def test_invalid_policy_file_fails_closed_at_construction(self):
         import tempfile
@@ -219,6 +251,71 @@ class PolicyWiringTests(unittest.TestCase):
         from examguard.leakage_guard import RuleLeakageScreener
 
         self.assertIsInstance(service.tutor.output_guard, RuleLeakageScreener)
+
+
+class EntrypointTests(unittest.TestCase):
+    def test_cli_uses_service_chat(self):
+        import demo_cli
+
+        svc = make_service()
+        with (
+            mock.patch(
+                "sys.argv", ["demo_cli.py", "解释 KMP 前缀函数", "--mode", "mock"]
+            ),
+            mock.patch.object(demo_cli.Settings, "from_env", return_value=svc.settings),
+            mock.patch("examguard.service.TutorService", return_value=svc),
+            mock.patch.object(svc, "chat", wraps=svc.chat) as chat,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            # run_path also covers imports in the actual command entry point.
+            runpy.run_path(
+                str(Path(__file__).parents[1] / "demo_cli.py"), run_name="__main__"
+            )
+        self.assertEqual(chat.call_count, 1)
+
+    def test_streamlit_uses_service_and_offers_no_exam_policy_switch(self):
+        svc = make_service()
+        fake_st = mock.Mock()
+        fake_st.session_state = {}
+        fake_st.sidebar = contextlib.nullcontext()
+        fake_st.cache_resource = lambda func: func
+        fake_st.button.return_value = False
+        fake_st.text_area.return_value = ""
+        fake_st.chat_input.return_value = "解释 KMP 前缀函数"
+        fake_st.chat_message.side_effect = lambda *args: contextlib.nullcontext()
+        fake_st.toggle.side_effect = AssertionError(
+            "student must not toggle exam policy"
+        )
+        with (
+            mock.patch.dict("sys.modules", {"streamlit": fake_st}),
+            mock.patch("examguard.config.Settings.from_env", return_value=svc.settings),
+            mock.patch("examguard.service.TutorService", return_value=svc),
+            mock.patch.object(svc, "chat", wraps=svc.chat) as chat,
+        ):
+            runpy.run_path(
+                str(Path(__file__).parents[1] / "app.py"), run_name="__main__"
+            )
+        self.assertEqual(chat.call_count, 1)
+        self.assertTrue(chat.call_args.args[0].exam_mode)
+
+    def test_metadata_never_serializes_internal_drafts_or_call_payloads(self):
+        svc = make_service()
+        response = svc.chat(svc.new_context("metadata"), "解释 KMP 前缀函数")
+        # A future response may add developer evidence. Only the explicit
+        # display whitelist may leave the service boundary.
+        view = SimpleNamespace(**vars(response))
+        view.call_trace = ({"messages": "PRIVATE PROMPT", "api_key": "SECRET"},)
+        view.audit_attempts = (
+            {"draft": "RAW REJECTED ANSWER", "output": "RAW OUTPUT"},
+        )
+        dumped = repr(TutorService.display_metadata(view))
+        for private in (
+            "PRIVATE PROMPT",
+            "RAW REJECTED ANSWER",
+            "RAW OUTPUT",
+            "SECRET",
+        ):
+            self.assertNotIn(private, dumped)
 
 
 if __name__ == "__main__":

@@ -6,11 +6,18 @@ on_message；因此这里验证的是页面模块的“可导入 + 纯函数行�
 - 输入拆分（围栏代码块）、审计元数据渲染等纯函数正确；
 - 页面使用的 TutorService 与后端链路真实连通（mock 后端）。
 """
+
 import unittest
+import asyncio
+import inspect
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 try:
     import chainlit  # noqa: F401
+
     HAS_CHAINLIT = True
 except ImportError:  # pragma: no cover - 依赖缺失时跳过
     HAS_CHAINLIT = False
@@ -20,7 +27,12 @@ def _isolated_env():
     """让页面服务在测试中固定使用 mock 模式，不受本地 .env 影响。"""
     return mock.patch.dict(
         "os.environ",
-        {"APP_MODE": "mock", "EXAM_MODE": "true", "EG_ALLOW_POLICY_SWITCH": "false"},
+        {
+            "APP_MODE": "mock",
+            "EXAM_MODE": "true",
+            "EG_ALLOW_POLICY_SWITCH": "false",
+            "EG_STATE_FILE": "",
+        },
     )
 
 
@@ -30,11 +42,90 @@ class ChainlitAppModuleTests(unittest.TestCase):
         import chainlit_app
 
         self.module = chainlit_app
+        from examguard.chat_store import ChatDataLayer
+
+        store = ChatDataLayer(":memory:")
+        self.module._chat_store = store
+        self.addCleanup(lambda: asyncio.run(store.close()))
+        self.addCleanup(setattr, self.module, "_chat_store", None)
         env = _isolated_env()
         env.start()
         self.addCleanup(env.stop)
         self.module._service = None  # 重置惰性单例，保证环境隔离
         self.addCleanup(setattr, self.module, "_service", None)
+
+    def test_forged_reset_action_is_denied_without_erasing_risk(self):
+        service = self.module.get_service()
+        ctx = service.new_context("forged-reset")
+        service.chat(ctx, "解释什么是 KMP 前缀函数", question_id="q")
+        before = ctx.session_guard.snapshot()
+        message = mock.Mock()
+        message.send = mock.AsyncMock()
+        fake_cl = SimpleNamespace(
+            context=SimpleNamespace(session=SimpleNamespace(id=ctx.session_id)),
+            Message=mock.Mock(return_value=message),
+            user_session=SimpleNamespace(get=lambda key: None),
+        )
+        with mock.patch.object(self.module, "cl", fake_cl):
+            asyncio.run(inspect.unwrap(self.module.on_reset_session)(mock.Mock()))
+        self.assertEqual(
+            service.get_context(ctx.session_id).session_guard.snapshot(), before
+        )
+        self.assertIn("权限", fake_cl.Message.call_args.kwargs["content"])
+
+    def test_chat_start_binds_authenticated_identifier(self):
+        svc = self.module.get_service()
+        sent = mock.Mock(send=mock.AsyncMock())
+        fake_cl = SimpleNamespace(
+            context=SimpleNamespace(session=SimpleNamespace(id="authenticated-start")),
+            user_session=SimpleNamespace(
+                get=lambda key: (
+                    SimpleNamespace(identifier="trusted-student")
+                    if key == "user"
+                    else None
+                )
+            ),
+            Message=mock.Mock(return_value=sent),
+            ChatSettings=mock.Mock(return_value=sent),
+        )
+        with mock.patch.object(self.module, "cl", fake_cl):
+            asyncio.run(inspect.unwrap(self.module.on_chat_start)())
+        ctx = svc.get_context("authenticated-start")
+        self.assertEqual(ctx.principal_id, "trusted-student")
+        self.assertIs(
+            ctx.session_guard,
+            svc.new_context(
+                "another-chat", principal_id="trusted-student"
+            ).session_guard,
+        )
+
+    def test_disconnect_preserves_shared_thread_context_and_guard(self):
+        svc = self.module.get_service()
+        ctx = svc.new_context("disconnect")
+        svc.chat(ctx, "解释 KMP 前缀函数", question_id="q")
+        before = ctx.session_guard.snapshot()
+        fake_cl = SimpleNamespace(
+            context=SimpleNamespace(session=SimpleNamespace(id=ctx.session_id))
+        )
+        with mock.patch.object(self.module, "cl", fake_cl):
+            asyncio.run(inspect.unwrap(self.module.on_chat_end)())
+        fresh = svc.get_context(ctx.session_id)
+        self.assertTrue(fresh.history)
+        self.assertEqual(fresh.session_guard.snapshot(), before)
+
+    def test_authenticated_identifier_is_only_identity_source(self):
+        for user, expected in (
+            (SimpleNamespace(identifier="student"), "student"),
+            (None, None),
+        ):
+            with self.subTest(user=user):
+                fake_cl = SimpleNamespace(
+                    user_session=SimpleNamespace(
+                        get=lambda key: user if key == "user" else None
+                    )
+                )
+                with mock.patch.object(self.module, "cl", fake_cl):
+                    self.assertEqual(self.module.authenticated_principal_id(), expected)
 
     def test_module_registers_required_callbacks(self):
         # 装饰器仅注册回调，不在导入期执行；此处验证入口齐备。
@@ -68,8 +159,11 @@ class ChainlitAppModuleTests(unittest.TestCase):
 
     def test_render_audit_markdown_brief_is_one_line(self):
         meta = {
-            "intent": "hint", "help_level": 2, "approved": False,
-            "audit_reason": "code_block_over_limit", "session_risk": 0.45,
+            "intent": "hint",
+            "help_level": 2,
+            "approved": False,
+            "audit_reason": "code_block_over_limit",
+            "session_risk": 0.45,
         }
         rendered = self.module.render_audit_markdown(meta)
         self.assertIn("`hint`", rendered)
@@ -82,11 +176,16 @@ class ChainlitAppModuleTests(unittest.TestCase):
 
     def test_render_audit_markdown_full_mode_shows_details(self):
         meta = {
-            "intent": "hint", "classify_method": "regex-v0",
-            "classify_reason": "检测到方向性提示需求", "help_level": 2,
-            "policy_reason": "考试策略：最高帮助等级 2", "approved": False,
-            "audit_reason": "code_block_over_limit", "model": "mock-offline",
-            "input_tokens": 12, "output_tokens": 34,
+            "intent": "hint",
+            "classify_method": "regex-v0",
+            "classify_reason": "检测到方向性提示需求",
+            "help_level": 2,
+            "policy_reason": "考试策略：最高帮助等级 2",
+            "approved": False,
+            "audit_reason": "code_block_over_limit",
+            "model": "mock-offline",
+            "input_tokens": 12,
+            "output_tokens": 34,
         }
         with mock.patch.dict("os.environ", {"EG_UI_DETAIL": "full"}):
             rendered = self.module.render_audit_markdown(meta, latency_ms=87)
@@ -118,6 +217,43 @@ class EvalPageModuleTests(unittest.TestCase):
         self.addCleanup(env.stop)
         self.module._service = None
         self.addCleanup(setattr, self.module, "_service", None)
+
+    def test_dataset_paths_cannot_escape_root_or_follow_outside_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "datasets"
+            root.mkdir()
+            outside = Path(tmp) / "private.jsonl"
+            outside.write_text('{"question":"secret"}\n')
+            (root / "linked.jsonl").symlink_to(outside)
+            with mock.patch.object(self.module, "DATASET_DIR", root):
+                for name in ("../private.jsonl", str(outside), "linked.jsonl"):
+                    with self.subTest(name=name), self.assertRaises(ValueError):
+                        self.module.resolve_dataset_path(name)
+
+    def test_formal_harness_schema_is_explicitly_rejected(self):
+        svc = self.module.get_service()
+        with self.assertRaisesRegex(ValueError, "Harness"):
+            self.module.run_cases(
+                svc,
+                [
+                    {
+                        "case_id": "formal",
+                        "prompt": "解释 KMP",
+                        "intent_gold": "knowledge",
+                    }
+                ],
+            )
+        with self.assertRaisesRegex(ValueError, "Harness"):
+            self.module.run_cases(
+                svc, [{"case_id": "multi", "turns": [{"prompt": "解释 KMP"}]}]
+            )
+
+    def test_eval_runs_through_service_chat_and_cleans_context(self):
+        svc = self.module.get_service()
+        with mock.patch.object(svc, "chat", wraps=svc.chat) as chat:
+            self.module.run_cases(svc, self.module.load_cases("smoke"))
+        self.assertEqual(chat.call_count, 5)
+        self.assertEqual(len(svc._contexts), 0)
 
     def test_load_cases_reads_smoke_dataset(self):
         cases = self.module.load_cases("smoke")

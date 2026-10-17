@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-17",
+  "timezone": "Asia/Shanghai",
+  "base_commit": "d20758ca07ee9e0a137922914c8c1cb1c2fe60e9",
+  "python": "3.15.0 (v3.15.0:d220409a13b, Oct  9 2026, 08:17:44) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "dependencies": {
+    "chainlit": "2.11.0",
+    "openai": "3.31.0",
+    "python-dotenv": "1.2.4",
+    "streamlit": "1.66.0"
+  },
+  "unit_tests": {
+    "count": 208,
+    "result": "OK"
+  },
+  "smoke": {
+    "count": 5,
+    "passed": 5
+  },
+  "e2e": "HTTP/Socket.IO PASS; forged teacher reset denied",
+  "live_llm_calls": 0,
+  "variants": 7,
+  "repeats": 2,
+  "full_harness": {
+    "directory": "results/verification_20261017/full_dataset/harness_mock_20261017_150822",
+    "single_records": 1120,
+    "sessions": 182,
+    "errors": 0
+  },
+  "audit_harness": {
+    "directory": "results/verification_20261017/audit_dataset/harness_mock_20261017_150822",
+    "single_records": 168,
+    "sessions": 42,
+    "errors": 0
+  },
+  "verification_sha256": {
+    "unittest.txt": "bf49954084be9acc0b5cae6308cb7da7862d8cb1f12d87f374273c6675ad4909",
+    "smoke.txt": "1b19d1a8a1fe4110ba016ec5f6f03c2307a5de0bf3a0f7186dafaf3a2ef43ab4",
+    "e2e.txt": "7b08e907a17fc8879d64c7a346c6b4cf17260d1af0af67024d9d9a0ae25a5c0d",
+    "session_demo.txt": "f6c9ec9c64391f82c9118e3ccff8eb3f9c1bf33d0b1910e42572411d95708ab0"
+  },
+  "scope": "Implementation regression evidence only; no current real-model effectiveness claim."
+}

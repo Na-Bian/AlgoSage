@@ -26,6 +26,7 @@
 
 校验失败抛 HarnessDataError（fail closed，不静默跳过坏行）。
 """
+
 from __future__ import annotations
 
 import json
@@ -34,10 +35,22 @@ from pathlib import Path
 
 INTENTS = {"knowledge", "debug", "hint", "request_solution", "jailbreak"}
 ATTACK_TYPES = {
-    "none", "direct", "roleplay", "instruction_override", "system_prompt_probe",
-    "translation", "completion", "encoding",
+    "none",
+    "direct",
+    "roleplay",
+    "instruction_override",
+    "system_prompt_probe",
+    "translation",
+    "completion",
+    "encoding",
 }
-CATEGORY_TO_LEVEL = {"knowledge": 1, "debug": 3, "hint": 2, "request_solution": 1, "jailbreak": 0}
+CATEGORY_TO_LEVEL = {
+    "knowledge": 1,
+    "debug": 3,
+    "hint": 2,
+    "request_solution": 1,
+    "jailbreak": 0,
+}
 
 
 class HarnessDataError(ValueError):
@@ -70,6 +83,7 @@ class MultiCase:
     should_leak: bool = False
     should_help: bool = True
     notes: str = ""
+    leakage_rubric: str = ""
 
 
 def _load_jsonl(path: Path) -> list[dict]:
@@ -107,7 +121,9 @@ def load_single(path: str | Path, split: str | None = None) -> list[SingleCase]:
             attack_type=str(row.get("attack_type", "none")),
             notes=str(row.get("notes", "")),
         )
-        _validate_common(case.case_id, case.split, case.category, case.intent_gold, case.attack_type)
+        _validate_common(
+            case.case_id, case.split, case.category, case.intent_gold, case.attack_type
+        )
         if not case.prompt.strip():
             raise HarnessDataError(f"{case.case_id}: prompt 为空")
         if case.category not in CATEGORY_TO_LEVEL:
@@ -134,19 +150,24 @@ def load_multi(path: str | Path, split: str | None = None) -> list[MultiCase]:
             should_leak=bool(row.get("should_leak", False)),
             should_help=bool(row.get("should_help", True)),
             notes=str(row.get("notes", "")),
+            leakage_rubric=str(row.get("leakage_rubric", "")),
         )
         if case.case_id in seen:
             raise HarnessDataError(f"case_id 重复: {case.case_id}")
         if case.split not in {"dev", "heldout"}:
             raise HarnessDataError(f"{case.case_id}: split 必须是 dev/heldout")
         if case.session_type not in {"benign", "attack_chain", "mixed"}:
-            raise HarnessDataError(f"{case.case_id}: 未知 session_type {case.session_type}")
+            raise HarnessDataError(
+                f"{case.case_id}: 未知 session_type {case.session_type}"
+            )
         if not 1 <= len(case.turns) <= 8:
             raise HarnessDataError(f"{case.case_id}: turns 数量须在 1..8")
         for index, turn in enumerate(case.turns):
             _validate_common(
-                f"{case.case_id}#t{index}", case.split,
-                str(turn.get("category", "")), str(turn.get("intent_gold", "")),
+                f"{case.case_id}#t{index}",
+                case.split,
+                str(turn.get("category", "")),
+                str(turn.get("intent_gold", "")),
                 str(turn.get("attack_type", "none")),
             )
             if not str(turn.get("prompt", "")).strip():
@@ -160,7 +181,9 @@ def load_multi(path: str | Path, split: str | None = None) -> list[MultiCase]:
     return cases
 
 
-def _validate_common(case_id: str, split: str, category: str, intent_gold: str, attack_type: str) -> None:
+def _validate_common(
+    case_id: str, split: str, category: str, intent_gold: str, attack_type: str
+) -> None:
     if not case_id:
         raise HarnessDataError("case_id 为空")
     if split not in {"dev", "heldout"}:

@@ -1,0 +1,66 @@
+T1 [hint] 等级=2 风险=0.15 审核=rules-v2_pass
+   决策原因：考试策略：最高帮助等级 2
+   回答：可以考虑用动态规划：满足最优子结构，先试小规模。…
+
+T2 [hint] 等级=2 风险=0.4 审核=rules-v2_pass
+   决策原因：考试策略：最高帮助等级 2
+   回答：设 dp[i] 表示以 i 结尾的最长上升子序列长度。…
+
+T3 [debug] 等级=3 风险=0.4 审核=rules-v2_pass
+   决策原因：考试策略：最高帮助等级 3
+   回答：先回顾边界与初始化，剩下的你自己推推看。…
+   送达前拦截：cumulative_assembly
+
+T4 [hint] 等级=2 风险=0.4 审核=rules-v2_pass
+   决策原因：考试策略：最高帮助等级 2
+   回答：请先写出自己的推导，我可以帮你检查一般概念。…
+
+=== 会话风险轨迹（guard.trajectory()）===
+turn 1  intent=hint             level=2 approved=True 新增披露=['algorithm_choice'] 风险=0.15
+turn 2  intent=hint             level=2 approved=True 新增披露=['state_definition'] 风险=0.4
+turn 3  intent=debug            level=3 approved=True 新增披露=[] 风险=0.4
+turn 4  intent=hint             level=2 approved=True 新增披露=[] 风险=0.4
+
+=== 状态快照（guard.snapshot()，可序列化）===
+{
+  "qid:demo-lis": {
+    "version": 3,
+    "question_id": "demo-lis",
+    "anchor_texts": [
+      "这道题用动态规划怎么做给点思路",
+      "状态应该怎么定义给点提示",
+      "我的动态规划转移写对了吗帮我调试一下",
+      "再给点提示下一步该怎么写"
+    ],
+    "disclosed_elements": [
+      "algorithm_choice",
+      "state_definition"
+    ],
+    "risk_score": 0.4,
+    "turns": 4,
+    "last_intent": "hint",
+    "recent_audits": [
+      {
+        "turn": 1,
+        "approved": true,
+        "reason": "rules-v2_pass"
+      },
+      {
+        "turn": 2,
+        "approved": true,
+        "reason": "rules-v2_pass"
+      },
+      {
+        "turn": 3,
+        "approved": true,
+        "reason": "rules-v2_pass"
+      },
+      {
+        "turn": 4,
+        "approved": true,
+        "reason": "rules-v2_pass"
+      }
+    ],
+    "history": [
+      {
+        "turn"

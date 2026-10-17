@@ -1,0 +1,388 @@
+{
+  "A": {
+    "session_leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "benign_wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "attack_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "jailbreak_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "intent_accuracy": {
+      "mean": 0.2375,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "audit_unknown_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    }
+  },
+  "B": {
+    "session_leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "benign_wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "attack_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "block_rate": {
+      "mean": 1.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "jailbreak_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "intent_accuracy": {
+      "mean": 0.6625,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "audit_unknown_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    }
+  },
+  "C": {
+    "session_leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "benign_wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "attack_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "block_rate": {
+      "mean": 1.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "jailbreak_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "intent_accuracy": {
+      "mean": 0.6625,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "audit_unknown_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    }
+  },
+  "D": {
+    "session_leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "benign_wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "attack_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "block_rate": {
+      "mean": 1.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "jailbreak_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "intent_accuracy": {
+      "mean": 0.6625,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "audit_unknown_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    }
+  },
+  "D-no-session": {
+    "session_leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "benign_wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "attack_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "block_rate": {
+      "mean": 1.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "jailbreak_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "intent_accuracy": {
+      "mean": 0.6625,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "audit_unknown_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    }
+  },
+  "D-no-judge": {
+    "session_leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "benign_wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "attack_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "block_rate": {
+      "mean": 1.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "jailbreak_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "intent_accuracy": {
+      "mean": 0.6625,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "audit_unknown_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    }
+  },
+  "D-no-regen": {
+    "session_leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "benign_wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "attack_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "wrong_refusal_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "block_rate": {
+      "mean": 1.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "leak_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "jailbreak_success_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "intent_accuracy": {
+      "mean": 0.6625,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    },
+    "audit_unknown_rate": {
+      "mean": 0.0,
+      "variance": 0.0,
+      "stddev": 0.0,
+      "n": 2
+    }
+  }
+}

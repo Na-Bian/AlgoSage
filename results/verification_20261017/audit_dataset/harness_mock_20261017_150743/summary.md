@@ -1,0 +1,120 @@
+# ExamGuard Harness 消融汇总
+
+- 时间：2026-10-17T15:07:43；模式：`mock`；模型：`Qwen/Qwen3.5-9B`
+- 重复运行：2；输出目录：results/verification_20261017/audit_dataset/harness_mock_20261017_150743
+- 分类器/审核配置：EG_CLASSIFIER_MODE=hybrid，EG_OUTPUT_GUARD=rules
+- 指标口径：合法辅助完成率=correctness 且 helpfulness 为 true 的合法回答/两项均已复核的合法回答；未复核记 unknown，单列 pending_review。拦截率/泄漏率/攻击成功率只在相应标签已知的样本上计算；误拒率=文本拒答代理/合法数，多轮按会话计。
+- 规则与可选 LLM 评测均为代理标签，不是语义真值或人工真值；未检出泄漏不证明合规。拦截需独立显式合规复核或拒答文本代理，不能由 approved 或低等级推断；泄漏时绝不计拦截。
+- audit_unknown_rate 独立统计内部审核 unknown；A 的意图准确率只是常量分类基线。实际组件与配置见 manifest.json；D-no-judge 在 rules/mock 下与 D 没有 Judge 差异。
+
+> 【MOCK】本报告由 mock 后端生成，仅验证 Harness 流程；数字不代表真实模型实验结论。C 版在 mock 下回退正则（≈B）。
+
+## 单轮指标（按版本）
+
+| 版本 | 说明 | 样本 | 合法辅助完成率 | 误拒率 | 拦截率 | 泄漏率 | 越狱成功 | 意图准确 | 重生成总数 | 待复核 | 审核unknown率 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A | 仅考试 System Prompt | 24 | — | 0.0% | — | 0.0% | 0.0% | 16.7% | 0 | 12 | 0.0% |
+| B | A + 简单规则 | 24 | — | 0.0% | 100.0% | 0.0% | 0.0% | 91.7% | 0 | 12 | 0.0% |
+| C | B + 混合意图分类与等级控制 | 24 | — | 0.0% | 100.0% | 0.0% | 0.0% | 91.7% | 0 | 12 | 0.0% |
+| D | C + 输出审核 + 多轮 SessionGuard | 24 | — | 0.0% | 100.0% | 0.0% | 0.0% | 91.7% | 0 | 12 | 0.0% |
+| D-no-judge | D 去除 LLM Judge | 24 | — | 0.0% | 100.0% | 0.0% | 0.0% | 91.7% | 0 | 12 | 0.0% |
+| D-no-regen | D 去除重生成 | 24 | — | 0.0% | 100.0% | 0.0% | 0.0% | 91.7% | 0 | 12 | 0.0% |
+| D-no-session | D 去除会话控制 | 24 | — | 0.0% | 100.0% | 0.0% | 0.0% | 91.7% | 0 | 12 | 0.0% |
+
+## 重复运行波动（2 次，均值 ± 总体标准差；方差见 repeat_stats.json）
+
+| 版本 | 指标 | 均值 | 标准差 |
+| --- | --- | --- | --- |
+| A | attack_success_rate | 0.0000 | 0.0000 |
+| A | audit_unknown_rate | 0.0000 | 0.0000 |
+| A | benign_wrong_refusal_rate | 0.0000 | 0.0000 |
+| A | intent_accuracy | 0.1667 | 0.0000 |
+| A | jailbreak_success_rate | 0.0000 | 0.0000 |
+| A | leak_rate | 0.0000 | 0.0000 |
+| A | session_leak_rate | 0.0000 | 0.0000 |
+| A | wrong_refusal_rate | 0.0000 | 0.0000 |
+| B | attack_success_rate | 0.0000 | 0.0000 |
+| B | audit_unknown_rate | 0.0000 | 0.0000 |
+| B | benign_wrong_refusal_rate | 0.0000 | 0.0000 |
+| B | block_rate | 1.0000 | 0.0000 |
+| B | intent_accuracy | 0.9167 | 0.0000 |
+| B | jailbreak_success_rate | 0.0000 | 0.0000 |
+| B | leak_rate | 0.0000 | 0.0000 |
+| B | session_leak_rate | 0.0000 | 0.0000 |
+| B | wrong_refusal_rate | 0.0000 | 0.0000 |
+| C | attack_success_rate | 0.0000 | 0.0000 |
+| C | audit_unknown_rate | 0.0000 | 0.0000 |
+| C | benign_wrong_refusal_rate | 0.0000 | 0.0000 |
+| C | block_rate | 1.0000 | 0.0000 |
+| C | intent_accuracy | 0.9167 | 0.0000 |
+| C | jailbreak_success_rate | 0.0000 | 0.0000 |
+| C | leak_rate | 0.0000 | 0.0000 |
+| C | session_leak_rate | 0.0000 | 0.0000 |
+| C | wrong_refusal_rate | 0.0000 | 0.0000 |
+| D | attack_success_rate | 0.0000 | 0.0000 |
+| D | audit_unknown_rate | 0.0000 | 0.0000 |
+| D | benign_wrong_refusal_rate | 0.0000 | 0.0000 |
+| D | block_rate | 1.0000 | 0.0000 |
+| D | intent_accuracy | 0.9167 | 0.0000 |
+| D | jailbreak_success_rate | 0.0000 | 0.0000 |
+| D | leak_rate | 0.0000 | 0.0000 |
+| D | session_leak_rate | 0.0000 | 0.0000 |
+| D | wrong_refusal_rate | 0.0000 | 0.0000 |
+| D-no-judge | attack_success_rate | 0.0000 | 0.0000 |
+| D-no-judge | audit_unknown_rate | 0.0000 | 0.0000 |
+| D-no-judge | benign_wrong_refusal_rate | 0.0000 | 0.0000 |
+| D-no-judge | block_rate | 1.0000 | 0.0000 |
+| D-no-judge | intent_accuracy | 0.9167 | 0.0000 |
+| D-no-judge | jailbreak_success_rate | 0.0000 | 0.0000 |
+| D-no-judge | leak_rate | 0.0000 | 0.0000 |
+| D-no-judge | session_leak_rate | 0.0000 | 0.0000 |
+| D-no-judge | wrong_refusal_rate | 0.0000 | 0.0000 |
+| D-no-regen | attack_success_rate | 0.0000 | 0.0000 |
+| D-no-regen | audit_unknown_rate | 0.0000 | 0.0000 |
+| D-no-regen | benign_wrong_refusal_rate | 0.0000 | 0.0000 |
+| D-no-regen | block_rate | 1.0000 | 0.0000 |
+| D-no-regen | intent_accuracy | 0.9167 | 0.0000 |
+| D-no-regen | jailbreak_success_rate | 0.0000 | 0.0000 |
+| D-no-regen | leak_rate | 0.0000 | 0.0000 |
+| D-no-regen | session_leak_rate | 0.0000 | 0.0000 |
+| D-no-regen | wrong_refusal_rate | 0.0000 | 0.0000 |
+| D-no-session | attack_success_rate | 0.0000 | 0.0000 |
+| D-no-session | audit_unknown_rate | 0.0000 | 0.0000 |
+| D-no-session | benign_wrong_refusal_rate | 0.0000 | 0.0000 |
+| D-no-session | block_rate | 1.0000 | 0.0000 |
+| D-no-session | intent_accuracy | 0.9167 | 0.0000 |
+| D-no-session | jailbreak_success_rate | 0.0000 | 0.0000 |
+| D-no-session | leak_rate | 0.0000 | 0.0000 |
+| D-no-session | session_leak_rate | 0.0000 | 0.0000 |
+| D-no-session | wrong_refusal_rate | 0.0000 | 0.0000 |
+
+## 多轮会话指标（按版本，每会话计一次）
+
+| 版本 | 会话 | 泄漏会话率 | 良性误拒率 | 攻击成功率 | 泄漏会话 | 待复核回答 | 审核unknown率 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A | 6 | 0.0% | 0.0% | 0.0% | — | 14 | 0.0% |
+| B | 6 | 0.0% | 0.0% | 0.0% | — | 14 | 0.0% |
+| C | 6 | 0.0% | 0.0% | 0.0% | — | 14 | 0.0% |
+| D | 6 | 0.0% | 0.0% | 0.0% | — | 14 | 0.0% |
+| D-no-judge | 6 | 0.0% | 0.0% | 0.0% | — | 14 | 0.0% |
+| D-no-regen | 6 | 0.0% | 0.0% | 0.0% | — | 14 | 0.0% |
+| D-no-session | 6 | 0.0% | 0.0% | 0.0% | — | 14 | 0.0% |
+
+## 失败案例（泄漏 / 误拒，按版本）
+- A: 无
+- B: 无
+- C: 无
+- D: 无
+- D-no-judge: 无
+- D-no-regen: 无
+- D-no-session: 无
+
+## 费用估算
+
+未配置 EG_PRICE_PER_MTOK_IN/OUT，跳过费用估算（不伪造数字）。
+
+## 复现命令
+
+```bash
+.venv/bin/python -m harness.run_harness --variants A,B,C,D --split dev
+```

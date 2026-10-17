@@ -1,6 +1,8 @@
 """Settings: keys only from environment / untracked .env file."""
+
 from dataclasses import dataclass, field
 import json
+import math
 import os
 
 
@@ -27,13 +29,41 @@ class Settings:
     classifier_mode: str = "regex"
     # P2：输出审核层。basic=第一阶段冻结基线（供消融对照）；rules=规则预筛
     # （默认，离线可用）；layered=规则+LLM Judge（API 模式下启用，Judge 不可
-    # 用时降级为规则层结论并标注）。
+    # 用时返回 unknown 并安全回退）。
     output_guard: str = "rules"
     # P2：教师侧策略文件（可选）。缺省使用内嵌默认映射；文件非法时启动失败。
     policy_file: str = ""
     # 服务商专属附加参数（如 SiliconFlow Qwen3.5 的 {"enable_thinking": false}），
     # 经 OpenAI SDK extra_body 透传；消融实验各版本共用同一份（解码配置一致）。
     extra_body: dict = field(default_factory=dict)
+    question_id: str = ""
+    exam_id: str = "demo"
+    # Empty in explicitly constructed offline/test settings; runtime defaults to SQLite.
+    state_path: str = ""
+    max_calls_per_turn: int = 7
+    turn_timeout: float = 180.0
+    classifier_max_output_tokens: int = 256
+    judge_max_output_tokens: int = 256
+    min_classifier_confidence: float = 0.7
+
+    def __post_init__(self) -> None:
+        for name in (
+            "max_calls_per_turn",
+            "classifier_max_output_tokens",
+            "judge_max_output_tokens",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if not math.isfinite(self.turn_timeout) or self.turn_timeout <= 0:
+            raise ValueError("turn_timeout must be finite and positive")
+        if (
+            not math.isfinite(self.min_classifier_confidence)
+            or not 0 <= self.min_classifier_confidence <= 1
+        ):
+            raise ValueError("min_classifier_confidence must be in [0, 1]")
+        if not isinstance(self.exam_id, str) or not self.exam_id.strip():
+            raise ValueError("exam_id must not be empty")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -57,7 +87,9 @@ class Settings:
             try:
                 extra_body = json.loads(extra_raw)
             except json.JSONDecodeError as error:
-                raise ValueError(f"EG_LLM_EXTRA_BODY 必须是合法 JSON: {error}") from error
+                raise ValueError(
+                    f"EG_LLM_EXTRA_BODY 必须是合法 JSON: {error}"
+                ) from error
             if not isinstance(extra_body, dict):
                 raise ValueError("EG_LLM_EXTRA_BODY 必须是 JSON 对象")
         else:
@@ -65,9 +97,12 @@ class Settings:
         return cls(
             mode=mode,
             api_key=os.environ.get("LLM_API_KEY", ""),
-            base_url=os.environ.get("LLM_BASE_URL", "https://api.siliconflow.cn/v1").strip(),
+            base_url=os.environ.get(
+                "LLM_BASE_URL", "https://api.siliconflow.cn/v1"
+            ).strip(),
             model=os.environ.get("LLM_MODEL", "Qwen/Qwen3-8B").strip(),
-            exam_mode=os.environ.get("EXAM_MODE", "true").lower() in {"true", "1", "yes"},
+            exam_mode=os.environ.get("EXAM_MODE", "true").lower()
+            in {"true", "1", "yes"},
             timeout=float(os.environ.get("LLM_TIMEOUT_SECONDS", "30")),
             max_output_tokens=int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", "512")),
             token_parameter=token_parameter,
@@ -75,4 +110,20 @@ class Settings:
             output_guard=output_guard,
             policy_file=os.environ.get("EG_POLICY_FILE", "").strip(),
             extra_body=extra_body,
+            question_id=os.environ.get("EG_QUESTION_ID", "").strip(),
+            exam_id=os.environ.get("EG_EXAM_ID", "demo").strip(),
+            state_path=os.environ.get(
+                "EG_STATE_FILE", ".examguard/state.sqlite3"
+            ).strip(),
+            max_calls_per_turn=int(os.environ.get("EG_MAX_CALLS_PER_TURN", "7")),
+            turn_timeout=float(os.environ.get("EG_TURN_TIMEOUT_SECONDS", "180")),
+            classifier_max_output_tokens=int(
+                os.environ.get("EG_CLASSIFIER_MAX_OUTPUT_TOKENS", "256")
+            ),
+            judge_max_output_tokens=int(
+                os.environ.get("EG_JUDGE_MAX_OUTPUT_TOKENS", "256")
+            ),
+            min_classifier_confidence=float(
+                os.environ.get("EG_MIN_CLASSIFIER_CONFIDENCE", ".7")
+            ),
         )
