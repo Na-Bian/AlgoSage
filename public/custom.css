@@ -133,7 +133,7 @@ pre code,
 }
 
 /* ---------- 消息复制按钮（clipboard-buttons.js 注入） ---------- */
-#messages > div {
+main div[id^='step-'] {
   position: relative;
 }
 
@@ -153,7 +153,7 @@ pre code,
   z-index: 5;
 }
 
-#messages > div:hover .eg-copy-btn {
+main div[id^='step-']:hover .eg-copy-btn {
   opacity: 1;
 }
 
