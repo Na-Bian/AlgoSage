@@ -131,3 +131,33 @@ pre code,
   background: hsl(var(--muted));
   font-weight: 600;
 }
+
+/* ---------- 消息复制按钮（clipboard-buttons.js 注入） ---------- */
+#messages > div {
+  position: relative;
+}
+
+.eg-copy-btn {
+  position: absolute;
+  right: 0.3rem;
+  bottom: 0.2rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  border-radius: 0.5rem;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+  z-index: 5;
+}
+
+#messages > div:hover .eg-copy-btn {
+  opacity: 1;
+}
+
+.eg-copy-btn:hover {
+  color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
