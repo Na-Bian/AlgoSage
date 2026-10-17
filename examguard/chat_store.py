@@ -388,7 +388,11 @@ class ChatDataLayer(BaseDataLayer):
                 continue
             role, content = message.get("role"), message.get("content")
             if role in {"user", "assistant"} and isinstance(content, str):
-                safe_history.append({"role": role, "content": content})
+                entry = {"role": role, "content": content}
+                msg_id = message.get("msg_id")
+                if isinstance(msg_id, str) and msg_id.strip():
+                    entry["msg_id"] = msg_id.strip()[:64]
+                safe_history.append(entry)
         provider = str(provider_selection or "")[:300]
         with self._lock:
             if self._conn.execute(

@@ -90,6 +90,7 @@ async def restore_conversation(service):
             context_id(), principal
         )
         await asyncio.to_thread(_restore_context_history, context, history)
+        _rebuild_msg_turn_map(context.history)
         if selection:
             try:
                 await asyncio.to_thread(service.select_provider, context, selection)
@@ -164,6 +165,35 @@ async def on_settings_update(settings: dict) -> None:
     await cl.Message(content=f"当前模型：**{info['label']} · {info['model']}**").send()
 
 
+def _msg_turn_map():
+    mapping = cl.user_session.get("msg_turn_index")
+    if mapping is None:
+        mapping = {}
+        try:
+            cl.user_session.set("msg_turn_index", mapping)
+        except AttributeError:
+            pass  # 测试 fake 或无 set 能力时仅用局部映射
+    return mapping
+
+
+def _store_msg_turn_map(mapping) -> None:
+    try:
+        cl.user_session.set("msg_turn_index", mapping)
+    except AttributeError:
+        pass
+
+
+def _rebuild_msg_turn_map(history):
+    """重建 msg_id -> 轮次映射（历史恢复后；仅 user 消息携带 msg_id）。"""
+    mapping = {}
+    for index, entry in enumerate(history):
+        msg_id = entry.get("msg_id")
+        if entry.get("role") == "user" and msg_id:
+            mapping[msg_id] = index // 2
+    _store_msg_turn_map(mapping)
+    return mapping
+
+
 def _snapshot_context(context):
     with context._budget.lock:
         return [dict(m) for m in context.history], context.provider_selection
@@ -209,19 +239,41 @@ async def deliver_response(
     await reply.send()
 
 
-async def run_turn(service, context, question, code):
+async def run_turn(service, context, question, code, msg_id="", edit_turn=None):
     async with conversation_lock():
         # Every window reloads the latest private transcript before generating.
         context = await restore_conversation(service)
         await _sync_teacher_settings(service)
+        mapping = _msg_turn_map()
+        if edit_turn is None:
+            edit_turn = mapping.get(msg_id)  # 命中即编辑重发
         async with cl.Step(
             name="生成与安全审核", type="run", icon="shield-check"
         ) as step:
             step.output = "正在生成并审核回答…"
             with streaming_transport():
-                response = await asyncio.to_thread(
-                    service.chat, context, question, code
-                )
+                if edit_turn is not None:
+                    # 编辑重发：覆盖该轮用户内容并从此重新生成；
+                    # 之前轮次的上下文保留（预算保守累计，只增不减）。
+                    response = await asyncio.to_thread(
+                        service.edit_and_regenerate,
+                        context,
+                        edit_turn,
+                        question,
+                        code,
+                        user_msg_id=msg_id,
+                    )
+                    for known_id, known_turn in list(mapping.items()):
+                        if known_turn >= edit_turn and known_id != msg_id:
+                            del mapping[known_id]
+                else:
+                    response = await asyncio.to_thread(
+                        service.chat, context, question, code, user_msg_id=msg_id
+                    )
+            if msg_id:
+                mapping[msg_id] = len(
+                    [m for m in context.history if m.get("role") == "user"]
+                ) - 1
             await persist_backend_history(context)
             step.output = "审核已完成"
     return response
@@ -422,7 +474,9 @@ async def on_message(message: cl.Message) -> None:
             context_id(),
             principal_id=authenticated_principal_id(),
         )
-        response = await run_turn(service, context, question, code)
+        response = await run_turn(
+            service, context, question, code, msg_id=message.id
+        )
     except ValueError as error:
         reply.content = f"⚠️ 输入未通过校验：{error}"
         await reply.send()

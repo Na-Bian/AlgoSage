@@ -200,6 +200,7 @@ class TutorService:
         question: str,
         existing_code: str = "",
         question_id: str = "",
+        user_msg_id: str = "",
     ) -> TutorResponse:
         """One tutoring turn; appends the exchanged text to the session history.
 
@@ -218,17 +219,62 @@ class TutorService:
             if not self.allow_policy_override:
                 context.exam_mode = self.settings.exam_mode
             response = self._respond(context, question, existing_code, question_id)
-            user_entry = (
-                question
-                if not existing_code.strip()
-                else (
-                    question + "\n\n已有代码（仅文本分析，不执行）：\n" + existing_code
-                )
-            )
-            context.history.append({"role": "user", "content": user_entry})
-            context.history.append({"role": "assistant", "content": response.answer})
-            context.history[:] = context.history[-2 * HISTORY_TURNS_KEPT :]
+            self._append_turn(context, question, existing_code, user_msg_id, response)
         return response
+
+    def edit_and_regenerate(
+        self,
+        context: ServiceContext,
+        turn_index: int,
+        question: str,
+        existing_code: str = "",
+        question_id: str = "",
+        user_msg_id: str = "",
+    ) -> TutorResponse:
+        """Replace an earlier user turn and regenerate only from that point.
+
+        Earlier turns stay in the context (they are kept verbatim); the
+        edited turn's old answer and anything after it are dropped. The
+        regeneration walks the full audited pipeline and counts as a new
+        turn for the disclosure budget (conservative: budgets never shrink).
+        """
+        if not isinstance(turn_index, int) or turn_index < 0:
+            raise ValueError("turn_index 非法")
+        if self.settings.question_id:
+            if question_id and question_id != self.settings.question_id:
+                raise ValueError("题目由服务端 EG_QUESTION_ID 绑定，不允许切换")
+            question_id = self.settings.question_id
+        with self.state_store.turn(self._context_budget(context)):
+            if not self.allow_policy_override:
+                context.exam_mode = self.settings.exam_mode
+            keep = 2 * turn_index
+            if keep > len(context.history):
+                raise ValueError("编辑轮次超出当前会话历史")
+            context.history[:] = context.history[:keep]
+            response = self._respond(context, question, existing_code, question_id)
+            self._append_turn(context, question, existing_code, user_msg_id, response)
+        return response
+
+    @staticmethod
+    def _append_turn(
+        context: ServiceContext,
+        question: str,
+        existing_code: str,
+        user_msg_id: str,
+        response: TutorResponse,
+    ) -> None:
+        user_entry = (
+            question
+            if not existing_code.strip()
+            else (
+                question + "\n\n已有代码（仅文本分析，不执行）：\n" + existing_code
+            )
+        )
+        context.history.append(
+            {"role": "user", "content": user_entry, "msg_id": user_msg_id}
+        )
+        context.history.append({"role": "assistant", "content": response.answer})
+        context.history[:] = context.history[-2 * HISTORY_TURNS_KEPT :]
 
     # ------------------------------------------------------------------
     # Safe display metadata (frontend whitelist)
