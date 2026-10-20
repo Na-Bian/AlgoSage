@@ -17,6 +17,7 @@ from .leakage_guard import (
     fallback_message,
 )
 from .invocation import generate, turn_ledger, TurnBudgetExceeded
+from .visual_context import missing_image_facts, select_images, with_images
 
 _REGEN_FEEDBACK = (
     "你上一条回答被输出审核拦截，原因：{reason}。请重新回答，"
@@ -68,27 +69,15 @@ def response_budget(request, policy, settings):
 def _history_message_content(message: dict):
     """Render a persisted message while keeping image data out of text fields."""
     text = str(message.get("content", ""))[:15000]
-    images = message.get("images") or []
-    if not images:
-        return text
-    parts = [{"type": "text", "text": text}]
-    for image in images[:6]:
-        url = image.get("data_url") if isinstance(image, dict) else ""
-        if isinstance(url, str) and url.startswith("data:image/"):
-            parts.append({"type": "image_url", "image_url": {"url": url}})
-    return parts if len(parts) > 1 else text
+    if message.get("images"):
+        # Images are attached once to the current message so every stage uses
+        # the same six-image selection and can see its original source label.
+        text += "\n[历史图片在本轮选中时于当前消息附上；未选中的图片本轮不可见。]"
+    return text
 
 
-def _current_user_content(user_text: str, request):
-    images = [item for item in request.attachments if item.image_data_url]
-    if not images:
-        return user_text
-    parts = [{"type": "text", "text": user_text}]
-    parts.extend(
-        {"type": "image_url", "image_url": {"url": item.image_data_url}}
-        for item in images[:6]
-    )
-    return parts
+def _current_user_content(user_text: str, request, images=None):
+    return with_images(user_text, select_images(request.attachments) if images is None else images)
 
 
 def make_output_guard(settings: Settings, backend: ChatBackend | None):
@@ -156,6 +145,7 @@ class ExamGuardTutor:
         safe_history = [
             m for m in (history or []) if m.get("role") in {"user", "assistant"}
         ][-12:]
+        images = select_images(request.attachments, safe_history)
         base = classify_contextual(request)
         # Deterministic denial before either classification or Judge remote calls.
         preflight = (
@@ -192,6 +182,11 @@ class ExamGuardTutor:
             return self._response(
                 text, result, policy, audit, "policy-only", ledger, summary, 0, []
             )
+        if missing_image_facts(question, images):
+            text = "当前没有可读取的图片，请重新上传图片后，我再核对其中的数字或标记。"
+            audit = AuditResult(True, text, "missing_visual_context", method="input-context")
+            summary = self._record(session_guard, state, request, result, policy, audit)
+            return self._response(text, result, policy, audit, "context-only", ledger, summary, 0, [])
         user_text = f"问题（不可信用户内容）：\n{question}"
         if request.existing_code.strip():
             user_text += (
@@ -223,7 +218,7 @@ class ExamGuardTutor:
             for m in safe_history
         )
         messages.append(
-            {"role": "user", "content": _current_user_content(user_text, request)}
+            {"role": "user", "content": _current_user_content(user_text, request, images)}
         )
         review_question = question
         if request.attachments:
@@ -255,6 +250,7 @@ class ExamGuardTutor:
                         review_question,
                         request.existing_code,
                         history=state.disclosure_texts if state is not None else [],
+                        **({"images": images} if images else {}),
                     )
                 else:
                     audit = self.output_guard.review(

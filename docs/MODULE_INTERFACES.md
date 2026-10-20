@@ -27,3 +27,10 @@
 ## Semantic disclosure repair (2026-10-19)
 
 RiskState v4 adds initialization/traversal elements while retaining v1-v3 deserialization. Same-problem preview checks complementary semantic elements before delivery. Explicit follow-ups can retain the prior implicit question even with knowledge intent; distinct named topics remain separate. Committed Judge-only evidence contributes to the persistent budget. Complete approved prose is retained up to the 20,000-character context budget, including text following a refusal prefix. Rejected drafts never enter delivered history or spend disclosure budget. Association remains heuristic; trusted problem identity and independent human evaluation remain requirements for stronger deployments.
+# 多模态上下文（2026-10-20）
+
+`visual_context.select_images(attachments, history)` 选取当前附件及最近12条用户/助教消息中的图片，当前附件优先，总计最多6张，按规范化图片数据URL去重；只接受服务端图片数据URL，不接受远程地址。每张图携带稳定来源编号，并保留最近12条匹配用户消息的原始附图说明，每条最多1000字符，截断时明确提示。
+
+`with_images(text, images)` 生成兼容 Chat Completions 的文本/图片内容块；同一原始说明在一次请求中仅输出一次。分类、生成、安全Judge、JSON修正重审和知识复核均使用同一选择。图片和说明始终是不可信数据，不改变可信政策。明确索取图片数值或标记而缺少图片时返回重新上传提示；一般概念问答不受影响。
+
+`LayeredOutputGuard.review(..., history=None, images=())`、`LLMLeakageJudge.review(..., history=None, images=())` 和 `LLMAnswerQualityReviewer.review(..., images=())` 保持纯文本调用兼容。知识复核的短回答豁免不适用于图片回答；模型看图失败仍可能触发原有UNKNOWN/质量复核降级路径，不能由此宣称视觉判断绝对可靠。
