@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 .pytest_cache/
@@ -11,3 +13,11 @@ results/raw_private/
 
 # Persistent exam safety budgets (never package or publish)
 .examguard/
+
+# Local browser journals and new evaluation artifacts stay on the audit machine.
+.playwright-cli/
+/results/*
+!/results/README.md
+*.sqlite
+*.sqlite3
+*.sqlite3-*

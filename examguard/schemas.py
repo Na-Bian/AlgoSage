@@ -14,12 +14,43 @@ class Intent(str, Enum):
 
 
 @dataclass(frozen=True)
+class AttachmentPayload:
+    """Server-prepared attachment content; never contains a local file path."""
+
+    name: str
+    mime: str
+    kind: str
+    text: str = ""
+    image_data_url: str = ""
+    size_bytes: int = 0
+
+    def history_entry(self) -> dict:
+        return {
+            "name": self.name,
+            "mime": self.mime,
+            "kind": self.kind,
+            "text": self.text,
+            "image_data_url": self.image_data_url,
+        }
+
+
+@dataclass(frozen=True)
 class TutorRequest:
     question: str
     existing_code: str = ""
     exam_mode: bool = True
     # P2 起新增：题目标识（教师策略按题覆盖、P3 会话风险跟踪用），默认空。
     question_id: str = ""
+    # 由前端经服务端解析后的附件；文档文本与图片数据均视为不可信输入。
+    attachments: tuple[AttachmentPayload, ...] = ()
+
+    @property
+    def attachment_text(self) -> str:
+        return "\n\n".join(
+            f"[附件 {index}：{item.name}]\n{item.text}"
+            for index, item in enumerate(self.attachments, start=1)
+            if item.text
+        )
 
 
 @dataclass(frozen=True)
@@ -60,6 +91,12 @@ class AuditResult:
     # 拦截/泄漏类别（如 full_code / key_steps / proof），仅语义层填充。
     categories: tuple[str, ...] = ()
     status: str = ""
+    # Grounded developer evidence; never include quotes in student metadata.
+    disclosures: tuple[str, ...] = ()
+    evidence: tuple[dict, ...] = ()
+    # High-confidence factual, logic or scope issues in an otherwise safe
+    # draft. They trigger one controlled regeneration and stay developer-only.
+    quality_issues: tuple[dict, ...] = ()
 
     def __post_init__(self):
         status = self.status or ("pass" if self.approved else "block")

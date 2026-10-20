@@ -491,7 +491,12 @@ class RunnerRegressions(unittest.TestCase):
             self.assertNotIn("SECRET_MARKER", manifest_text)
             self.assertNotIn("NESTED_SECRET", manifest_text)
             manifest = json.loads(manifest_text)
-            self.assertTrue(manifest["git"]["commit"])
+            # A source release intentionally omits .git; exact source/data hashes
+            # remain required even when commit/status metadata is unavailable.
+            if manifest["git"]["commit"] is None:
+                self.assertIsNone(manifest["git"]["status"])
+            else:
+                self.assertRegex(manifest["git"]["commit"], r"^[0-9a-f]{40,64}$")
             self.assertEqual(
                 manifest["data_sha256"][str(data.resolve())],
                 hashlib.sha256(data.read_bytes()).hexdigest(),

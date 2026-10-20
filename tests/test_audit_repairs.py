@@ -54,7 +54,7 @@ class AuditRegressionTests(unittest.TestCase):
     def test_judge_never_approves_unseen_tail(self):
         b = Backend('{"leaked":false,"categories":[],"confidence":.9}')
         # Valid JSON, whole draft must be inspected (or the draft must be blocked).
-        b.text = '{"leaked":false,"categories":[],"confidence":0.9}'
+        b.text = '{"leaked":false,"categories":[],"confidence":0.9,"disclosures":[]}'
         draft = "概念。" * 2100 + "TAIL_CANARY"
         r = LayeredOutputGuard(judge=LLMLeakageJudge(b, Settings())).review(
             draft, PolicyDecision(Intent.KNOWLEDGE, 1, "test"), True
@@ -131,7 +131,7 @@ class AuditRegressionTests(unittest.TestCase):
                 self.calls.append(messages)
                 if "独立输出审核员" in messages[0]["content"]:
                     return LLMResult(
-                        '{"leaked":false,"categories":[],"confidence":0.9}',
+                        '{"leaked":false,"categories":[],"confidence":0.9,"disclosures":[]}',
                         "judge",
                         1,
                         1,
@@ -167,7 +167,7 @@ class AuditRegressionTests(unittest.TestCase):
                 if "输入意图分类器" in system:
                     text = '{"intent":"knowledge","confidence":0.99,"reason":"concept","risk_flags":[]}'
                 elif "独立输出审核员" in system:
-                    text = '{"leaked":false,"categories":[],"confidence":0.99}'
+                    text = '{"leaked":false,"categories":[],"confidence":0.99,"disclosures":[]}'
                 else:
                     self.generated += 1
                     text = (

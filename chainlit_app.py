@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -28,8 +29,10 @@ from chainlit.input_widget import Select, Switch
 from examguard.config import Settings
 from examguard.service import TutorService, HISTORY_TURNS_KEPT
 from examguard.providers import ProviderRegistry
-from examguard.invocation import streaming_transport
+from examguard.invocation import streaming_transport, timing_summary
 from examguard.local_identity import browser_user
+from examguard.runtime_paths import runtime_path
+from examguard.attachments import prepare_attachment_elements
 
 logger = logging.getLogger("examguard.chainlit")
 
@@ -56,6 +59,7 @@ WELCOME_TMPL = """### 🛡️ ExamGuard · 算法考试受限助教
 **使用方式**
 - 左侧可新建、搜索和管理历史对话；右上设置可选择 Provider 与模型；
 - 直接提问算法概念或复杂度问题，回答会尽量讲透、配合具体例子；
+- 可附加 PNG/JPEG/WebP 图片，以及 PDF、DOCX、PPTX、XLSX、文本和常见代码文件；附件在服务端解析并按不可信输入审核；
 - 调试已有代码时，把代码放在 ``` 围栏代码块中一并粘贴（仅作文本分析，**不会执行**）；
 - 每条回答下方有一行安全摘要（意图 · 帮助等级 · 审核结论）；完整审计明细可用 `EG_UI_DETAIL=full` 启动查看。
 
@@ -64,6 +68,7 @@ WELCOME_TMPL = """### 🛡️ ExamGuard · 算法考试受限助教
 _service: TutorService | None = None
 _chat_store = None
 _conversation_locks = WeakValueDictionary()
+_title_tasks: set[asyncio.Task] = set()
 
 
 def context_id():
@@ -113,7 +118,7 @@ def get_chat_store():
         from examguard.chat_store import ChatDataLayer
 
         _chat_store = ChatDataLayer(
-            os.environ.get("EG_CHAT_FILE", ".examguard/chats.sqlite3")
+            runtime_path("EG_CHAT_FILE", ".examguard/chats.sqlite3")
         )
     return _chat_store
 
@@ -213,6 +218,52 @@ async def persist_backend_history(context) -> None:
         )
 
 
+async def schedule_title(
+    service, context, response, question, emitter, session, timeout=8
+):
+    """Start one ancillary job after audit, concurrently with final answer delivery."""
+    if (
+        emitter is None
+        or not context.principal_id
+        or getattr(session, "restored", False)
+        or os.environ.get("EG_AUTO_TITLES", "true").lower() in {"false", "0", "no"}
+        or not response.audit.approved
+        or response.audit.reason == "policy_denial"
+        or len(response.call_trace) >= service.settings.max_calls_per_turn
+        or timeout <= 0
+    ):
+        return None
+    store = get_chat_store()
+    thread_id, principal = context.session_id, context.principal_id
+    if not await store.claim_title(thread_id, principal):
+        return None
+    selection = context.provider_selection
+
+    async def complete():
+        try:
+            title = await asyncio.to_thread(
+                service.generate_title, selection, question, min(8, timeout)
+            )
+            if (
+                await store.finish_title(thread_id, principal, title)
+                and session.thread_id == thread_id
+                and not getattr(session, "to_clear", False)
+            ):
+                # Chainlit 2.11 refetches persisted sidebar titles on this event.
+                # Do not call init_thread(): that would persist the raw question again.
+                await emitter.emit(
+                    "first_interaction",
+                    {"interaction": title, "thread_id": thread_id},
+                )
+        except Exception as error:  # noqa: BLE001 - optional title failures must not affect chat
+            logger.info("Sidebar title skipped error_type=%s", type(error).__name__)
+
+    task = asyncio.create_task(complete())
+    _title_tasks.add(task)
+    task.add_done_callback(_title_tasks.discard)
+    return task
+
+
 @cl.on_chat_resume
 async def on_chat_resume(thread: dict) -> None:
     service = get_service()
@@ -224,13 +275,13 @@ async def on_chat_resume(thread: dict) -> None:
 
 
 async def deliver_response(
-    reply, answer: str, chunk_size: int = 24, delay: float = 0.016
+    reply, answer: str, chunk_size: int = 24, delay: float = 0
 ) -> None:
-    """Deliver the final audited answer with a typewriter cadence.
+    """Deliver the final audited answer without artificial pacing by default.
 
     Only the approved answer reaches this function (transport drafts are
     consumed and audited upstream); the pacing below is purely cosmetic
-    (DeepSeek-style streaming feel) and can be disabled by passing delay=0.
+    Optional pacing is retained for callers that explicitly pass a delay.
     """
     for offset in range(0, len(answer), chunk_size):
         await reply.stream_token(answer[offset : offset + chunk_size])
@@ -239,7 +290,16 @@ async def deliver_response(
     await reply.send()
 
 
-async def run_turn(service, context, question, code, msg_id="", edit_turn=None):
+async def run_turn(
+    service,
+    context,
+    question,
+    code,
+    msg_id="",
+    edit_turn=None,
+    attachments=(),
+):
+    started = time.perf_counter()
     async with conversation_lock():
         # Every window reloads the latest private transcript before generating.
         context = await restore_conversation(service)
@@ -262,20 +322,40 @@ async def run_turn(service, context, question, code, msg_id="", edit_turn=None):
                         question,
                         code,
                         user_msg_id=msg_id,
+                        attachments=attachments,
                     )
                     for known_id, known_turn in list(mapping.items()):
                         if known_turn >= edit_turn and known_id != msg_id:
                             del mapping[known_id]
                 else:
                     response = await asyncio.to_thread(
-                        service.chat, context, question, code, user_msg_id=msg_id
+                        service.chat,
+                        context,
+                        question,
+                        code,
+                        user_msg_id=msg_id,
+                        attachments=attachments,
                     )
             if msg_id:
-                mapping[msg_id] = len(
-                    [m for m in context.history if m.get("role") == "user"]
-                ) - 1
+                mapping[msg_id] = (
+                    len([m for m in context.history if m.get("role") == "user"]) - 1
+                )
             await persist_backend_history(context)
             step.output = "审核已完成"
+        try:
+            await schedule_title(
+                service,
+                context,
+                response,
+                question,
+                getattr(cl.context, "emitter", None),
+                cl.context.session,
+                timeout=service.settings.turn_timeout - (time.perf_counter() - started),
+            )
+        except Exception as error:  # noqa: BLE001 - optional title failures must not affect chat
+            logger.info(
+                "Sidebar title not scheduled error_type=%s", type(error).__name__
+            )
     return response
 
 
@@ -316,6 +396,22 @@ def split_question_and_code(message: str) -> tuple[str, str]:
     if not question:
         question = "请基于我粘贴的代码提供辅导。"
     return question, code
+
+
+def prepare_message_inputs(
+    content: str, elements=()
+) -> tuple[str, str, tuple]:
+    """Split text, code blocks, and uploaded elements into one safe turn."""
+    question, code = split_question_and_code(content)
+    prepared = prepare_attachment_elements(elements)
+    attachments = prepared.files
+    if not question and attachments:
+        question = (
+            "请分析我上传的图片附件。"
+            if prepared.has_images and not prepared.has_documents
+            else "请分析我上传的文档附件。"
+        )
+    return question, code, attachments
 
 
 def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
@@ -399,12 +495,7 @@ async def _sync_teacher_settings(service: TutorService) -> None:
             logger.warning("策略切换被拒绝")
 
 
-@cl.on_chat_start
-async def on_chat_start() -> None:
-    service = get_service()
-    # The welcome text depends only on server settings, so send it first to
-    # replace the frontend's blank new-chat view as early as possible; the
-    # SQLite restore and provider settings follow.
+def welcome_markdown(service) -> str:
     settings = service.settings
     switch_note = (
         "教师演示可通过设置面板切换"
@@ -412,25 +503,47 @@ async def on_chat_start() -> None:
         else "界面不可切换"
     )
     mode_label = "考试限制" if settings.exam_mode else "练习演示"
-    welcome = cl.Message(
-        content=WELCOME_TMPL.format(
-            mode_label=mode_label,
-            switch_note=switch_note,
-            backend=settings.mode,
-            model=settings.model,
-            classifier=settings.classifier_mode,
-        )
+    return WELCOME_TMPL.format(
+        mode_label=mode_label,
+        switch_note=switch_note,
+        backend=settings.mode,
+        model=settings.model,
+        classifier=settings.classifier_mode,
     )
+
+
+@cl.set_chat_profiles
+async def chat_profiles(_current_user=None, _language=None):
+    # /project/settings supplies this before the WebSocket connects. One
+    # default profile renders the welcome natively without a profile selector.
+    return [
+        cl.ChatProfile(
+            name="ExamGuard",
+            default=True,
+            icon="/favicon",
+            markdown_description=welcome_markdown(get_service()),
+        )
+    ]
+
+
+@cl.on_chat_start
+async def on_chat_start() -> None:
+    service = get_service()
+    # The student welcome is already on screen from the HTTP bootstrap.
+    # Only teacher demo mode needs a message to host the privileged action.
     if service.allow_policy_override:
-        welcome.actions = [
-            cl.Action(
-                name="reset_session",
-                payload={},
-                label="🧹 教师重置安全状态",
-                tooltip="教师明确重置：清空该身份本次考试的累计风险及聊天历史",
-            )
-        ]
-    await welcome.send()
+        welcome = cl.Message(
+            content=welcome_markdown(service),
+            actions=[
+                cl.Action(
+                    name="reset_session",
+                    payload={},
+                    label="🧹 教师重置安全状态",
+                    tooltip="教师明确重置：清空该身份本次考试的累计风险及聊天历史",
+                )
+            ],
+        )
+        await welcome.send()
     async with conversation_lock():
         context = await restore_conversation(service)
     await send_provider_settings(context)
@@ -465,17 +578,24 @@ async def on_chat_end() -> None:
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
     service = get_service()
-    question, code = split_question_and_code(message.content)
     reply = cl.Message(content="")
     started = time.perf_counter()
     try:
+        question, code, attachments = prepare_message_inputs(
+            message.content, getattr(message, "elements", ())
+        )
         context = await asyncio.to_thread(
             service.new_context,
             context_id(),
             principal_id=authenticated_principal_id(),
         )
         response = await run_turn(
-            service, context, question, code, msg_id=message.id
+            service,
+            context,
+            question,
+            code,
+            msg_id=message.id,
+            attachments=attachments,
         )
     except ValueError as error:
         reply.content = f"⚠️ 输入未通过校验：{error}"
@@ -490,7 +610,15 @@ async def on_message(message: cl.Message) -> None:
         return
 
     latency_ms = int((time.perf_counter() - started) * 1000)
+    delivery_started = time.perf_counter()
     await deliver_response(reply, response.answer)
+    logger.info("Turn timing %s", json.dumps({
+        "thread_id": context_id(), "message_id": message.id,
+        "compute_ms": latency_ms,
+        "delivery_ms": round((time.perf_counter() - delivery_started) * 1000),
+        "regenerations": response.regenerations,
+        "stages": timing_summary(response.call_trace),
+    }, ensure_ascii=False))
 
     meta = TutorService.display_metadata(response)
     async with cl.Step(

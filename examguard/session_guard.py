@@ -15,7 +15,7 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .leakage_guard import code_block_line_counts, has_proof_completion, has_transition
+from .leakage_guard import code_block_line_counts, has_proof_completion, has_transition, has_pseudocode_declaration
 from .schemas import AuditResult, Classification, Intent, PolicyDecision, TutorRequest
 from .content_analysis import (
     novel_text,
@@ -25,11 +25,17 @@ from .content_analysis import (
     has_new_code,
 )
 from .leakage_guard import fallback_message
+from .solution_semantics import extract_solution_evidence, core_budget_reason
 
 # ---- 可解释的风险模型参数（常量集中，便于消融与调参） ----
 ELEMENT_WEIGHTS: dict[str, float] = {
     "algorithm_choice": 0.15,
     "state_definition": 0.25,
+    "initialization": 0.15,
+    "traversal": 0.15,
+    "include_branch": 0.10,
+    "exclude_branch": 0.10,
+    "branch_comparison": 0.10,
     "transition": 0.35,
     "key_steps": 0.40,
     "pseudocode": 0.50,
@@ -103,7 +109,6 @@ _D_STATE_DEF = re.compile(
     re.I,
 )
 _D_COMPLEXITY = re.compile(r"[OT]\s*\(")
-_D_PSEUDO = re.compile(r"伪代码|伪码|算法流程如下", re.I)
 _D_STEP = re.compile(r"^\s*(?:步骤\s*)?\d[\.、）)]\s*\S+", re.M)
 
 
@@ -145,10 +150,11 @@ class RiskState:
     last_intent: Optional[str] = None
     recent_audits: list[dict] = field(default_factory=list)
     history: list[dict] = field(default_factory=list)
-    version: int = 3
+    version: int = 4
     content_fingerprints: list[str] = field(default_factory=list)
     code_lines: list[str] = field(default_factory=list)
     disclosure_texts: list[str] = field(default_factory=list)
+    last_active: int = 0
 
     ANCHOR_LIMIT = 20
 
@@ -171,6 +177,7 @@ class RiskState:
             "content_fingerprints": list(self.content_fingerprints),
             "code_lines": list(self.code_lines),
             "disclosure_texts": list(self.disclosure_texts),
+            "last_active": self.last_active,
         }
 
     @classmethod
@@ -193,6 +200,7 @@ class RiskState:
             content_fingerprints=list(payload.get("content_fingerprints", []))[-256:],
             code_lines=list(payload.get("code_lines", []))[:8],
             disclosure_texts=list(payload.get("disclosure_texts", [])),
+            last_active=max(0, int(payload.get("last_active", 0))),
         )
 
 
@@ -206,10 +214,11 @@ def detect_disclosures(
     answer_text: str, intent: Intent, help_level: int, existing_code: str = ""
 ) -> list[str]:
     """从**实际送达学生**的回答文本中识别已披露元素（放行文本才会被分析）。"""
+    semantic = extract_solution_evidence(answer_text, existing_code)
     answer_text = novel_text(answer_text, existing_code)
     if not answer_text.strip():
         return []
-    found: list[str] = []
+    found: list[str] = [e["element"] for e in semantic]
     if intent is Intent.KNOWLEDGE:
         found.append("concept")
     if intent is Intent.DEBUG:
@@ -235,7 +244,7 @@ def detect_disclosures(
     if complete_program(answer_text) or (counts and max(counts) > 8):
         found.append("full_code")
     steps = _D_STEP.findall(answer_text)
-    if _D_PSEUDO.search(answer_text) and len(steps) >= 3:
+    if has_pseudocode_declaration(answer_text) and len(steps) >= 3:
         found.append("pseudocode")
     elif len(steps) >= 3 and help_level >= 2:
         found.append("key_steps")
@@ -248,6 +257,10 @@ class SessionGuard:
     def __init__(self):
         self._states: dict[str, RiskState] = {}
 
+    def _recent_states(self):
+        # Activity is serialized, so key order after persistence is irrelevant.
+        return sorted(self._states.items(), key=lambda pair: pair[1].last_active, reverse=True)
+
     # ------------------------------------------------------------------
     # 题目定位（关联规则见模块 docstring）
     # ------------------------------------------------------------------
@@ -257,7 +270,14 @@ class SessionGuard:
             return key if key in self._states else None
         text_norm = normalize_text(request.question)
         kw = extract_keywords(request.question)
-        for key, state in reversed(self._states.items()):
+        # Explicit anaphora must not reset a problem merely because its next
+        # request is labeled 'knowledge'. Distinct named topics still separate.
+        followup = bool(re.search(r"接着|继续|刚才|前面|上述|这道题|该题|那(?:么)?[，,]?.{0,8}(?:状态|边界|初始化|循环|转移)", request.question))
+        if followup and not kw:
+            for key, state in self._recent_states():
+                if not key.startswith("qid:"):
+                    return key
+        for key, state in self._recent_states():
             if key.startswith("qid:"):
                 continue
             best_j = 0.0
@@ -285,7 +305,7 @@ class SessionGuard:
                     return key
         # 规则 7：无关键词的"把完整代码给我"承接最近活跃状态
         if intent is Intent.SOLUTION and not kw and self._states:
-            for key, state in reversed(self._states.items()):
+            for key, state in self._recent_states():
                 if state.last_intent in {"hint", "request_solution", "debug"}:
                     return key
         return None
@@ -322,6 +342,7 @@ class SessionGuard:
         policy: PolicyDecision,
     ):
         state = self._locate(request, classification.intent)
+        state.last_active = max((s.last_active for s in self._states.values()), default=0) + 1
         cap = self._cap_for(state.risk_score, classification.intent)
         if cap is None or not policy.max_help_level:
             return state, None
@@ -351,12 +372,15 @@ class SessionGuard:
 
     def preview(self, state, request, classification, policy, audit):
         """Check the final candidate before any disclosure is committed or delivered."""
-        text = novel_text(audit.output, request.existing_code)
+        text = novel_text(audit.output, request.existing_code, keep_refusals=True)
         disclosures = set(
-            detect_disclosures(text, classification.intent, policy.max_help_level)
-        )
+            detect_disclosures(audit.output, classification.intent, policy.max_help_level, request.existing_code)
+        ) | set(audit.disclosures)
         combined = set(state.disclosed_elements) | disclosures
         reason = None
+        semantic_reason = core_budget_reason(disclosures, state.disclosed_elements, policy.max_help_level)
+        if semantic_reason:
+            reason = semantic_reason
         if {"algorithm_choice", "state_definition", "transition"}.issubset(
             combined
         ) and disclosures & {"algorithm_choice", "state_definition", "transition"}:
@@ -383,9 +407,8 @@ class SessionGuard:
             reason = "cumulative_budget"
         if state.risk_score >= 0.9 and lines:
             reason = "cumulative_budget"
-        substantial = disclosures - {"concept", "complexity"}
         if (
-            substantial
+            text not in state.disclosure_texts
             and sum(len(t) for t in state.disclosure_texts) + len(text) > 20000
         ):
             reason = "cumulative_context_limit"
@@ -396,6 +419,8 @@ class SessionGuard:
                 reason,
                 method="session-preview-v1",
                 categories=("cumulative_leak",),
+                disclosures=tuple(sorted(disclosures)),
+                evidence=audit.evidence,
             )
         return audit
 
@@ -425,12 +450,13 @@ class SessionGuard:
                 classification.intent,
                 policy.max_help_level,
                 request.existing_code,
-            )
+            ) + list(audit.disclosures)
             if audit.approved and audit.reason != "policy_denial"
             else []
         )
-        text = novel_text(audit.output, request.existing_code)
+        text = novel_text(audit.output, request.existing_code, keep_refusals=True)
         added: list[str] = []
+        disclosures = list(dict.fromkeys(disclosures))
         for element in disclosures:
             fingerprint = hashlib.sha256(
                 (element + normalize_text(text)).encode()
@@ -460,11 +486,11 @@ class SessionGuard:
                     ]
                 )
             )[:8]
-            if (
-                set(disclosures) - {"concept", "complexity"}
-                and text not in state.disclosure_texts
-            ):
-                state.disclosure_texts.append(text)
+            # Keep the complete approved prose, including refusals followed by
+            # content; a missed static signal must not hide history from Judge.
+            disclosed_text = novel_text(audit.output, request.existing_code, keep_refusals=True)
+            if disclosed_text and disclosed_text not in state.disclosure_texts:
+                state.disclosure_texts.append(disclosed_text)
         state.turns += 1
         state.last_intent = classification.intent.value
         state.add_anchor(normalize_text(request.question))

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from examguard.config import Settings
 from examguard.exam_policy import ExamPolicy
 from examguard.hybrid_classifier import HybridIntentClassifier
+from examguard.intent_classifier import classify
 from examguard.leakage_guard import RuleLeakageScreener
 from examguard.llm import ChatBackend
 from examguard.output_guard import BasicOutputGuard
@@ -123,6 +124,7 @@ def build_tutor(
         return ExamGuardTutor(
             backend,
             settings,
+            classifier=classify,
             output_guard=BasicOutputGuard(),
             policy_config=ExamPolicy.from_dict({"max_regenerations": 0}),
         )

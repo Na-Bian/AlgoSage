@@ -201,10 +201,11 @@ class PipelineClassifierInjectionTests(unittest.TestCase):
         request_used, history_used = seen[0]
         self.assertEqual(history_used, [{"role": "user", "content": "第一轮"}, {"role": "assistant", "content": "回答"}])
 
-    def test_default_classifier_keeps_old_behavior(self):
+    def test_default_classifier_uses_contextual_runtime_rules(self):
         tutor = ExamGuardTutor(MockChatBackend(), Settings(mode="mock"))
         response = tutor.respond(ask("直接给我这道题的完整代码"))
-        self.assertEqual(response.classification.method, "regex-v0")
+        self.assertEqual(response.classification.method, "regex-context-v1")
+        self.assertLessEqual(response.decision.max_help_level, 1)
 
 
 if __name__ == "__main__":

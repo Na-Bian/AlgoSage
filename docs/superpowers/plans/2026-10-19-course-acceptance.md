@@ -1,0 +1,13 @@
+# ExamGuard course acceptance implementation plan
+
+User-approved scope: repair the confirmed false refusals and ineffective exception test, freeze a candidate, exercise real models through the browser, retain inspectable evidence, and prepare a version-matched analysis and reproducible delivery materials. Preserve unrelated workspace changes. Do not replace the current report about metamorphic testing.
+
+Architecture: keep regex-v0 as the historical component baseline; use a contextual rule adapter in the runtime/hybrid pipeline. Use isolated real-API Chainlit instances and synthetic questions for browser testing. Record raw user/assistant text, audit metadata, developer call traces, screenshots, UTC timestamps, configuration and source hashes. Pilot, repaired runs and frozen evaluation runs remain separate. No secrets or private chat databases enter the evidence package.
+
+1. [ ] Add failing regressions for benign security-topic mentions, actual extraction/encoding attacks, and the intended backend-error path. Repair contextual classification and strengthen the exception test. Run the full offline suite and E2E.
+2. [ ] Build a browser evidence runner with isolated databases and a developer-only journal. Conduct a small pilot; diagnose real generation/classifier/Judge failures from preserved records. Any repair requires a new freeze and rerun of affected cases.
+3. [ ] Freeze a public development acceptance dataset with explicit expectations and code/config hashes. Execute a bounded browser acceptance batch and a shared A/B/C/D comparison, saving individual conversations and screenshots. This is a disclosed development evaluation, not an unseen held-out set or a formal safety proof.
+4. [ ] Review correctness, usefulness, over-refusal and cumulative leakage separately; retain UNKNOWN/ERROR results and denominators. Describe the reviewer as the coding agent, pending human approval, not as independent human ground truth.
+5. [ ] Write the current-version analysis, algorithm/design and operational documentation. Produce a secret-free reproducible source/evidence archive, hashes and clean-extraction startup verification. Report remaining failures honestly; do not rename the application as production-ready merely because tests ran.
+
+Verification: unit regressions, full unittest, HTTP/SocketIO E2E, actual Playwright browser transcripts and screenshots, consistent question IDs/correlation keys, source/config/data hashes, archive-content inspection and clean startup. API credentials are reused from the existing local setup under the user's explicit browser-test authorization; never print or package them. Testing does not use the user's existing chat history.

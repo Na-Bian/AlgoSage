@@ -90,6 +90,7 @@ class ChainlitAppModuleTests(unittest.TestCase):
         )
         with mock.patch.object(self.module, "cl", fake_cl):
             asyncio.run(inspect.unwrap(self.module.on_chat_start)())
+        fake_cl.Message.assert_not_called()
         ctx = svc.get_context("authenticated-start")
         self.assertEqual(ctx.principal_id, "trusted-student")
         self.assertIs(
@@ -98,6 +99,42 @@ class ChainlitAppModuleTests(unittest.TestCase):
                 "another-chat", principal_id="trusted-student"
             ).session_guard,
         )
+
+    def test_bootstrap_welcome_uses_public_runtime_settings(self):
+        from examguard.config import Settings
+        from examguard.service import TutorService
+
+        service = TutorService(
+            Settings(
+                mode="mock",
+                model="display-model",
+                exam_mode=False,
+                api_key="private-key-sentinel",
+            )
+        )
+        with mock.patch.object(self.module, "get_service", return_value=service):
+            profiles = asyncio.run(inspect.unwrap(self.module.chat_profiles)(None))
+        self.assertEqual(len(profiles), 1)
+        self.assertTrue(profiles[0].default)
+        self.assertIn("display-model", profiles[0].markdown_description)
+        self.assertIn("练习演示", profiles[0].markdown_description)
+        self.assertNotIn("private-key-sentinel", profiles[0].markdown_description)
+
+    def test_teacher_demo_keeps_reset_action_available(self):
+        service = self.module.get_service()
+        service.allow_policy_override = True
+        sent = mock.Mock(send=mock.AsyncMock())
+        fake = SimpleNamespace(
+            context=SimpleNamespace(session=SimpleNamespace(id="teacher-welcome")),
+            user_session=SimpleNamespace(get=lambda key: None),
+            Message=mock.Mock(return_value=sent),
+            Action=mock.Mock(),
+            ChatSettings=mock.Mock(return_value=sent),
+        )
+        with mock.patch.object(self.module, "cl", fake):
+            asyncio.run(inspect.unwrap(self.module.on_chat_start)())
+        self.assertEqual(len(fake.Message.call_args.kwargs["actions"]), 1)
+        self.assertEqual(fake.Action.call_args.kwargs["name"], "reset_session")
 
     def test_disconnect_preserves_shared_thread_context_and_guard(self):
         svc = self.module.get_service()

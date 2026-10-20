@@ -1,7 +1,7 @@
 """Chainlit 端到端冒烟检查（需要 venv：chainlit / socketio）。
 
 以子进程启动 run_app.py，用 python-socketio 客户端模拟浏览器：
-连接 -> 收到欢迎消息 -> 正常提问收到回答 -> 越权请求收到策略拒答。
+加载原生欢迎页 -> 连接时不追加欢迎消息 -> 正常提问收到回答 -> 越权请求收到策略拒答。
 
 运行：
     .venv/bin/python e2e_chainlit_check.py
@@ -20,6 +20,9 @@ import sys
 import time
 import uuid
 import tempfile
+import shutil
+import sqlite3
+from pathlib import Path
 
 HOST = "127.0.0.1"
 
@@ -56,9 +59,19 @@ def main() -> int:
         EG_CLASSIFIER_MODE="regex",
         EG_OUTPUT_GUARD="rules",
         EG_ALLOW_POLICY_SWITCH="false",
-        EG_STATE_FILE="",
+        EG_STATE_FILE="state.sqlite3",
+        EG_QUESTION_ID="persistence-q",
     )
     temp = tempfile.TemporaryDirectory(prefix="examguard-e2e-")
+    # Chainlit removes APP_ROOT/.files on shutdown. Keep the test server's
+    # runtime separate so running this check cannot erase live uploads.
+    project_root = Path(__file__).resolve().parent
+    runtime_root = Path(temp.name)
+    (runtime_root / ".chainlit").mkdir()
+    shutil.copy2(project_root / ".chainlit/config.toml", runtime_root / ".chainlit/config.toml")
+    shutil.copytree(project_root / "public", runtime_root / "public")
+    shutil.copy2(project_root / "chainlit.md", runtime_root / "chainlit.md")
+    (runtime_root / "runtime.env").write_text("EG_EXAM_ID=e2e-from-app-root\n")
     provider_file = temp.name + "/providers.json"
     with open(provider_file, "w") as handle:
         json.dump(
@@ -75,17 +88,29 @@ def main() -> int:
             handle,
         )
     env.update(
-        EG_CHAT_FILE=temp.name + "/chats.sqlite3",
-        EG_AUTH_SECRET_FILE=temp.name + "/auth.secret",
+        CHAINLIT_APP_ROOT=temp.name,
+        CHAINLIT_ENV_FILE="runtime.env",
+        EG_CHAT_FILE="chats.sqlite3",
+        EG_AUTH_SECRET_FILE="auth.secret",
         EG_PROVIDERS_FILE=provider_file,
-        CHAINLIT_AUTH_SECRET="e2e-secret-only-do-not-use-for-deployment" * 2,
     )
-    server = subprocess.Popen(
-        [sys.executable, "run_app.py", "--host", HOST, "--port", str(port)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=env,
-    )
+    env.pop("CHAINLIT_AUTH_SECRET", None)
+    env.pop("EG_EXAM_ID", None)
+    server_log = (runtime_root / "server.log").open("ab")
+
+    def launch(cwd):
+        return subprocess.Popen(
+            [sys.executable, str(project_root / "run_app.py"), "--host", HOST, "--port", str(port)],
+            stdout=server_log, stderr=subprocess.STDOUT, env=env, cwd=cwd,
+        )
+
+    def safety_snapshot(owner):
+        with sqlite3.connect(runtime_root / "state.sqlite3") as db:
+            row = db.execute("SELECT snapshot FROM risk_states WHERE principal_key=?",
+                             ("principal:" + owner,)).fetchone()
+        return json.loads(row[0]) if row else {}
+
+    server = launch(project_root)
     failures: list[str] = []
     try:
         wait_http(base)
@@ -93,6 +118,11 @@ def main() -> int:
 
         http = requests.Session()
         http.post(base + "/auth/header", timeout=10).raise_for_status()
+        bootstrap = http.get(base + "/project/settings", timeout=10)
+        bootstrap.raise_for_status()
+        profiles = bootstrap.json()["chatProfiles"]
+        if not profiles or "ExamGuard" not in profiles[0]["markdown_description"]:
+            failures.append("HTTP 初始化配置缺少原生欢迎文案")
         sio = socketio.Client(logger=False, engineio_logger=False, http_session=http)
         received: list[dict] = []
         all_received: list[dict] = []
@@ -128,7 +158,7 @@ def main() -> int:
             wait_timeout=15,
         )
         sio.emit("connection_successful")
-        time.sleep(2.5)  # 等待 on_chat_start 的欢迎消息
+        time.sleep(2.5)  # 等待会话与 Provider 初始化
 
         def assistant_texts() -> list[str]:
             return [
@@ -138,8 +168,8 @@ def main() -> int:
             ]
 
         welcome = assistant_texts()
-        if not any("ExamGuard" in w for w in welcome):
-            failures.append(f"未收到欢迎消息，assistant 消息: {welcome!r}")
+        if welcome:
+            failures.append(f"新会话不应追加欢迎消息以替换原生页面: {welcome!r}")
 
         def send(text: str) -> None:
             received.clear()
@@ -259,11 +289,39 @@ def main() -> int:
             if not any("绕过考试规则" in a for a in assistant_texts()):
                 failures.append("Provider/settings switch bypassed exam gate")
             sio.disconnect()
+            owner = http.get(base + "/user", timeout=10).json()["identifier"]
+            before_restart = safety_snapshot(owner)
+            if not before_restart or "eg_workspace" not in http.cookies:
+                failures.append("workspace identity or risk snapshot was not persisted")
+            secret_before = (runtime_root / "auth.secret").read_bytes()
+            server.terminate()
+            server.wait(timeout=10)
+            other_cwd = runtime_root / "other-launch-directory"
+            other_cwd.mkdir()
+            server = launch(other_cwd)
+            wait_http(base)
+            # Simulate expiry of the short API login; only the durable cookie remains.
+            del http.cookies["access_token"]
+            if http.get(base + "/user", timeout=10).status_code != 401:
+                failures.append("workspace credential bypassed short API authentication")
+            http.post(base + "/auth/header", timeout=10).raise_for_status()
+            if http.get(base + "/user", timeout=10).json()["identifier"] != owner:
+                failures.append("restart/login expiry changed workspace identity")
+            if (runtime_root / "auth.secret").read_bytes() != secret_before:
+                failures.append("restart from another cwd changed signing secret")
+            if (other_cwd / ".examguard").exists() or (other_cwd / "chats.sqlite3").exists():
+                failures.append("restart created a second runtime database in cwd")
+            with sqlite3.connect(runtime_root / "state.sqlite3") as db:
+                if db.execute("SELECT DISTINCT exam_id FROM risk_states").fetchall() != [("e2e-from-app-root",)]:
+                    failures.append("relative env file was not loaded from app root")
             resumed = socketio.Client(
                 logger=False, engineio_logger=False, http_session=http
             )
             restored = []
             resumed.on("resume_thread", lambda data: restored.append(data))
+            resumed.on("new_message", on_new_message)
+            resumed.on("task_end", on_task_end)
+            resumed.on("stream_token", on_stream_token)
             resumed.connect(
                 base,
                 socketio_path="/ws/socket.io",
@@ -285,6 +343,19 @@ def main() -> int:
                 for m in restored[0].get("steps", [])
             ):
                 failures.append("saved conversation did not resume")
+            if safety_snapshot(owner) != before_restart:
+                failures.append("resume changed or reset the durable risk budget")
+            if not restored or (restored[0].get("metadata") or {}).get("chat_settings", {}).get(
+                "provider_selection"
+            ) != "offline-second::other-model":
+                failures.append("restart lost the selected provider")
+            sio = resumed
+            send("请再解释什么是 KMP 前缀函数")
+            after_restart = safety_snapshot(owner)
+            if sum(v["turns"] for v in after_restart.values()) != sum(
+                v["turns"] for v in before_restart.values()
+            ) + 1:
+                failures.append("continued turn did not extend the original risk budget")
             resumed.disconnect()
             http.delete(
                 base + "/project/thread", json={"threadId": thread_id}, timeout=10
@@ -314,6 +385,8 @@ def main() -> int:
             server.wait(timeout=10)
         except subprocess.TimeoutExpired:
             server.kill()
+            server.wait(timeout=5)
+        server_log.close()
         temp.cleanup()
 
     if failures:
@@ -322,7 +395,7 @@ def main() -> int:
             print(" -", item)
         return 1
     print(
-        "E2E PASS: 问答与流式事件 / 对话保存恢复搜索重命名删除 / 跨工作区隔离 / Provider切换 / 考试门控 / 无密钥泄漏 全部通过"
+        "E2E PASS: 问答与流式事件 / 对话保存恢复搜索重命名删除 / 跨工作区隔离 / 跨目录重启与登录过期恢复 / 原安全预算继续累计 / Provider切换 / 考试门控 / 无密钥泄漏 全部通过"
     )
     return 0
 

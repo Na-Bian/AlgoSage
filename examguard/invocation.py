@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 import time
+import threading
 
 
 class TurnBudgetExceeded(RuntimeError):
@@ -15,6 +16,8 @@ class TurnLedger:
     max_calls: int
     deadline: float
     calls: list[dict] = field(default_factory=list)
+    started: float = field(default_factory=time.monotonic)
+    lock: object = field(default_factory=threading.Lock, repr=False)
 
     def total(self, key):
         if not self.calls:
@@ -41,7 +44,7 @@ _streaming: ContextVar[bool] = ContextVar(
 @contextmanager
 def turn_ledger(settings):
     ledger = TurnLedger(
-        getattr(settings, "max_calls_per_turn", 7),
+        getattr(settings, "max_calls_per_turn", 9),
         time.monotonic() + getattr(settings, "turn_timeout", 180.0),
     )
     token = _current.set(ledger)
@@ -61,13 +64,23 @@ def streaming_transport(enabled=True):
         _streaming.reset(token)
 
 
+def remaining_call_budget():
+    ledger = _current.get()
+    if ledger is None:
+        return None
+    with ledger.lock:
+        return max(0, ledger.max_calls - len(ledger.calls))
+
+
+def timing_summary(calls):
+    """Only counters and durations may enter ordinary performance logs."""
+    fields = {"stage", "status", "start_offset_ms", "latency_ms", "input_tokens", "output_tokens"}
+    return [{key: call[key] for key in fields if key in call} for call in calls]
+
+
 def generate(backend, messages, stage="generation", max_output_tokens=None):
     ledger = _current.get()
     remaining = None
-    if ledger:
-        remaining = ledger.deadline - time.monotonic()
-        if remaining <= 0 or len(ledger.calls) >= ledger.max_calls:
-            raise TurnBudgetExceeded("本轮调用预算已耗尽")
     started = time.monotonic()
     entry = {
         "stage": stage,
@@ -76,7 +89,13 @@ def generate(backend, messages, stage="generation", max_output_tokens=None):
         "output_tokens": None,
     }
     if ledger:
-        ledger.calls.append(entry)
+        # Both concurrent reviewers reserve against the same deadline and cap.
+        with ledger.lock:
+            remaining = ledger.deadline - time.monotonic()
+            if remaining <= 0 or len(ledger.calls) >= ledger.max_calls:
+                raise TurnBudgetExceeded("本轮调用预算已耗尽")
+            entry["start_offset_ms"] = round((started - ledger.started) * 1000)
+            ledger.calls.append(entry)
     try:
         use_stream = (
             stage == "generation"

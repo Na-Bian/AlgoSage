@@ -28,7 +28,7 @@ from .hybrid_classifier import HybridIntentClassifier
 from .llm import ChatBackend, make_backend
 from .pipeline import ExamGuardTutor, make_output_guard
 from .providers import ProviderRegistry
-from .schemas import TutorRequest, TutorResponse
+from .schemas import AttachmentPayload, TutorRequest, TutorResponse
 from .session_guard import SessionGuard
 from .state_store import RiskStateStore, SafetyBudget
 
@@ -102,7 +102,11 @@ class TutorService:
         self._contexts: OrderedDict[str, ServiceContext] = OrderedDict()
         self._context_lock = threading.RLock()
         self._session_bindings: dict[str, str] = {}
-        self.state_store = RiskStateStore(settings.state_path, MAX_SECURITY_BUDGETS)
+        self.state_store = RiskStateStore(
+            settings.state_path,
+            MAX_SECURITY_BUDGETS,
+            lock_timeout=settings.turn_timeout,
+        )
 
     # ------------------------------------------------------------------
     # Session / context management
@@ -201,6 +205,7 @@ class TutorService:
         existing_code: str = "",
         question_id: str = "",
         user_msg_id: str = "",
+        attachments: tuple[AttachmentPayload, ...] = (),
     ) -> TutorResponse:
         """One tutoring turn; appends the exchanged text to the session history.
 
@@ -218,8 +223,12 @@ class TutorService:
             # the context directly instead of using the guarded switch.
             if not self.allow_policy_override:
                 context.exam_mode = self.settings.exam_mode
-            response = self._respond(context, question, existing_code, question_id)
-            self._append_turn(context, question, existing_code, user_msg_id, response)
+            response = self._respond(
+                context, question, existing_code, question_id, attachments
+            )
+            self._append_turn(
+                context, question, existing_code, user_msg_id, response, attachments
+            )
         return response
 
     def edit_and_regenerate(
@@ -230,6 +239,7 @@ class TutorService:
         existing_code: str = "",
         question_id: str = "",
         user_msg_id: str = "",
+        attachments: tuple[AttachmentPayload, ...] = (),
     ) -> TutorResponse:
         """Replace an earlier user turn and regenerate only from that point.
 
@@ -251,8 +261,12 @@ class TutorService:
             if keep > len(context.history):
                 raise ValueError("编辑轮次超出当前会话历史")
             context.history[:] = context.history[:keep]
-            response = self._respond(context, question, existing_code, question_id)
-            self._append_turn(context, question, existing_code, user_msg_id, response)
+            response = self._respond(
+                context, question, existing_code, question_id, attachments
+            )
+            self._append_turn(
+                context, question, existing_code, user_msg_id, response, attachments
+            )
         return response
 
     @staticmethod
@@ -262,16 +276,33 @@ class TutorService:
         existing_code: str,
         user_msg_id: str,
         response: TutorResponse,
+        attachments: tuple[AttachmentPayload, ...] = (),
     ) -> None:
         user_entry = (
             question
             if not existing_code.strip()
-            else (
-                question + "\n\n已有代码（仅文本分析，不执行）：\n" + existing_code
-            )
+            else (question + "\n\n已有代码（仅文本分析，不执行）：\n" + existing_code)
         )
+        images = []
+        for attachment in attachments:
+            if attachment.text:
+                user_entry += (
+                    f"\n\n附件：{attachment.name}（不可信文本，仅分析）\n"
+                    + attachment.text
+                )
+            if attachment.image_data_url:
+                images.append(
+                    {
+                        "name": attachment.name,
+                        "mime": attachment.mime,
+                        "data_url": attachment.image_data_url,
+                    }
+                )
+        user_record = {"role": "user", "content": user_entry, "msg_id": user_msg_id}
+        if images:
+            user_record["images"] = images
         context.history.append(
-            {"role": "user", "content": user_entry, "msg_id": user_msg_id}
+            user_record
         )
         context.history.append({"role": "assistant", "content": response.answer})
         context.history[:] = context.history[-2 * HISTORY_TURNS_KEPT :]
@@ -324,12 +355,14 @@ class TutorService:
         question: str,
         existing_code: str,
         question_id: str = "",
+        attachments: tuple[AttachmentPayload, ...] = (),
     ) -> TutorResponse:
         request = TutorRequest(
             question=question,
             existing_code=existing_code,
             exam_mode=context.exam_mode,
             question_id=question_id,
+            attachments=tuple(attachments),
         )
         return self._selected_tutor(context).respond(
             request, history=context.history, session_guard=context.session_guard
@@ -343,6 +376,19 @@ class TutorService:
 
     def provider_info(self, context: ServiceContext) -> dict:
         return self.providers.info(context.provider_selection)
+
+    def generate_title(self, selection: str, question: str, timeout: float = 8):
+        """Use the first turn's captured model; title calls have their own usage log."""
+        from .chat_titles import generate_title
+
+        settings = self.providers.resolve(selection)
+        with self._provider_lock:
+            tutor = (
+                self.tutor
+                if selection == self.providers.default
+                else self._provider_tutors[selection]
+            )
+        return generate_title(tutor.backend, settings, question, timeout)
 
     def _selected_tutor(self, context: ServiceContext) -> ExamGuardTutor:
         selection = context.provider_selection

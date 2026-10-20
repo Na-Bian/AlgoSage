@@ -20,6 +20,9 @@ import argparse
 import logging
 import os
 import sys
+from pathlib import Path
+
+from examguard.runtime_paths import application_root, runtime_path, PROJECT_ROOT
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,7 +52,11 @@ def main() -> None:
     os.environ["CHAINLIT_PORT"] = str(args.port)
 
     # load_module 按文件路径加载目标模块（与 chainlit run <file>.py 一致）
-    target_file = args.target if args.target.endswith(".py") else args.target + ".py"
+    target = Path(args.target if args.target.endswith(".py") else args.target + ".py")
+    target_file = str(PROJECT_ROOT / target) if target.parent == Path(".") else str(target.resolve())
+    # Chainlit reads these values on import, including its .env/config/public paths.
+    os.environ["CHAINLIT_APP_ROOT"] = str(application_root())
+    os.environ["CHAINLIT_ENV_FILE"] = runtime_path("CHAINLIT_ENV_FILE", ".env")
 
     import uvicorn
 
@@ -65,9 +72,10 @@ def main() -> None:
     config.run.port = args.port
     config.run.module_name = target_file
     if os.path.basename(target_file) == "chainlit_app.py":
-        from examguard.local_identity import ensure_local_secret
+        from examguard.local_identity import ensure_local_secret, install_browser_identity
 
         ensure_local_secret()
+        install_browser_identity(app)
     load_module(target_file)
     ensure_jwt_secret()
     if not (

@@ -202,6 +202,40 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(observed, [1])
             self.assertEqual(b.session_guard.snapshot()["qid:q"]["turns"], 2)
 
+    def test_sqlite_does_not_serialize_different_principals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "state.sqlite3")
+            first, second = service(state_path=path), service(state_path=path)
+            a = first.new_context("a", principal_id="student-a")
+            b = second.new_context("b", principal_id="student-b")
+            entered, release, second_entered = (threading.Event() for _ in range(3))
+            first_respond, second_respond = first._respond, second._respond
+
+            def blocked(*args):
+                entered.set()
+                if not release.wait(3):
+                    raise RuntimeError("test timed out")
+                return first_respond(*args)
+
+            def observe(ctx, *args):
+                second_entered.set()
+                return second_respond(ctx, *args)
+
+            first._respond, second._respond = blocked, observe
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                one = pool.submit(first.chat, a, "解释 KMP 前缀函数", "", "q")
+                self.assertTrue(entered.wait(2))
+                two = pool.submit(second.chat, b, "解释 KMP 前缀函数", "", "q")
+                try:
+                    self.assertTrue(
+                        second_entered.wait(1),
+                        "different principals should not wait on one SQLite writer",
+                    )
+                finally:
+                    release.set()
+                one.result(timeout=3)
+                two.result(timeout=3)
+
     def test_invalid_input_does_not_poison_persistent_budget(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = service(state_path=str(Path(tmp) / "state.sqlite3"))
@@ -246,7 +280,7 @@ class SettingsBoundaryTests(unittest.TestCase):
             mock.patch.dict("os.environ", {}, clear=True),
         ):
             cfg = Settings.from_env()
-        self.assertEqual(cfg.state_path, ".examguard/state.sqlite3")
+        self.assertEqual(cfg.state_path, str(Path(__file__).resolve().parent.parent / ".examguard/state.sqlite3"))
         self.assertEqual(cfg.exam_id, "demo")
         self.assertEqual(cfg.question_id, "")
 

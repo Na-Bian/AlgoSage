@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import sqlite3
 import threading
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from chainlit.context import ChainlitContextException
 from chainlit.data.base import BaseDataLayer
 from chainlit.data.utils import queue_until_user_message
-from chainlit.context import ChainlitContextException
 from chainlit.types import (
     Feedback,
     PageInfo,
@@ -25,6 +26,8 @@ from chainlit.user import PersistedUser, User
 
 _MAX_PAGE = 100
 _MAX_NAME = 200
+_MAX_HISTORY_IMAGES = 6
+_MAX_HISTORY_IMAGE_CHARS = 4_000_000
 _STEP_FIELDS = {
     "name",
     "type",
@@ -138,6 +141,10 @@ class ChatDataLayer(BaseDataLayer):
                 );
                 CREATE TABLE IF NOT EXISTS deleted_threads (
                     thread_id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS thread_titles (
+                    thread_id TEXT PRIMARY KEY, status TEXT NOT NULL,
+                    source_hash TEXT, initial_name TEXT
                 );
                 """)
             self._conn.commit()
@@ -266,6 +273,9 @@ class ChatDataLayer(BaseDataLayer):
                 "DELETE FROM backend_history WHERE thread_id = ?", (thread_id,)
             )
             self._conn.execute("DELETE FROM threads WHERE id = ?", (thread_id,))
+            self._conn.execute(
+                "DELETE FROM thread_titles WHERE thread_id = ?", (thread_id,)
+            )
             self._conn.commit()
 
     async def list_threads(
@@ -350,6 +360,28 @@ class ChatDataLayer(BaseDataLayer):
                 if owner and user_id and owner != user_id:
                     raise PermissionError("thread owner cannot be changed")
                 new_owner = owner or user_id
+                if name is not None:
+                    if user_id is None:
+                        # Chainlit's rename endpoint omits user_id; its first-
+                        # interaction initialization supplies the authenticated id.
+                        self._conn.execute(
+                            "INSERT INTO thread_titles(thread_id,status) VALUES(?, 'manual') "
+                            "ON CONFLICT(thread_id) DO UPDATE SET status='manual'",
+                            (thread_id,),
+                        )
+                    else:
+                        title_job = self._conn.execute(
+                            "SELECT status FROM thread_titles WHERE thread_id=?",
+                            (thread_id,),
+                        ).fetchone()
+                        if title_job:
+                            if title_job["status"] == "pending" and row["name"] is None:
+                                self._conn.execute(
+                                    "UPDATE thread_titles SET initial_name=? WHERE thread_id=?",
+                                    (name[:_MAX_NAME], thread_id),
+                                )
+                            else:
+                                name = None  # Late initialization cannot undo a title.
                 self._conn.execute(
                     "UPDATE threads SET name=COALESCE(?, name), user_id=COALESCE(user_id, ?), "
                     "user_identifier=COALESCE(user_identifier, ?), tags=COALESCE(?, tags), metadata=COALESCE(?, metadata) WHERE id=?",
@@ -367,6 +399,67 @@ class ChatDataLayer(BaseDataLayer):
                     ),
                 )
             self._conn.commit()
+
+    def _title_history(self, thread_id: str, principal_id: str):
+        row = self._thread_row(thread_id)
+        if row is None or row["user_identifier"] != principal_id:
+            return None
+        saved = self._conn.execute(
+            "SELECT history FROM backend_history WHERE thread_id=? AND principal_id=?",
+            (thread_id, principal_id),
+        ).fetchone()
+        history = _decode(saved["history"], []) if saved else []
+        users = [m for m in history if m.get("role") == "user"]
+        if not users:
+            return None
+        first_hash = hashlib.sha256(_json(users[0]).encode()).hexdigest()
+        return row, users, first_hash
+
+    async def claim_title(self, thread_id: str, principal_id: str) -> bool:
+        """Persist one first-turn job, separately from browser-controlled metadata."""
+        with self._lock:
+            current = self._title_history(thread_id, principal_id)
+            if current is None or len(current[1]) != 1:
+                return False
+            row, _, source_hash = current
+            cursor = self._conn.execute(
+                "INSERT OR IGNORE INTO thread_titles(thread_id,status,source_hash,initial_name) "
+                "VALUES(?, 'pending', ?, ?)",
+                (thread_id, source_hash, row["name"]),
+            )
+            self._conn.commit()
+            return cursor.rowcount == 1
+
+    async def finish_title(
+        self, thread_id: str, principal_id: str, title: str | None
+    ) -> bool:
+        with self._lock:
+            job = self._conn.execute(
+                "SELECT * FROM thread_titles WHERE thread_id=?", (thread_id,)
+            ).fetchone()
+            current = self._title_history(thread_id, principal_id)
+            if not job or job["status"] != "pending" or current is None:
+                return False
+            row, _, source_hash = current
+            valid = (
+                bool(title)
+                and isinstance(title, str)
+                and len(title) <= 24
+                and "\n" not in title
+                and "\r" not in title
+                and job["source_hash"] == source_hash
+                and job["initial_name"] == row["name"]
+            )
+            if valid:
+                self._conn.execute(
+                    "UPDATE threads SET name=? WHERE id=?", (title, thread_id)
+                )
+            self._conn.execute(
+                "UPDATE thread_titles SET status=? WHERE thread_id=?",
+                ("auto" if valid else "failed", thread_id),
+            )
+            self._conn.commit()
+            return bool(valid)
 
     async def build_debug_url(self) -> str:
         return ""
@@ -392,6 +485,31 @@ class ChatDataLayer(BaseDataLayer):
                 msg_id = message.get("msg_id")
                 if isinstance(msg_id, str) and msg_id.strip():
                     entry["msg_id"] = msg_id.strip()[:64]
+                images = message.get("images")
+                if role == "user" and isinstance(images, list):
+                    safe_images = []
+                    for image in images[:_MAX_HISTORY_IMAGES]:
+                        if not isinstance(image, dict):
+                            continue
+                        name = image.get("name")
+                        mime = image.get("mime")
+                        data_url = image.get("data_url")
+                        if (
+                            isinstance(name, str)
+                            and isinstance(mime, str)
+                            and isinstance(data_url, str)
+                            and data_url.startswith("data:image/")
+                            and len(data_url) <= _MAX_HISTORY_IMAGE_CHARS
+                        ):
+                            safe_images.append(
+                                {
+                                    "name": name[:200],
+                                    "mime": mime[:100],
+                                    "data_url": data_url,
+                                }
+                            )
+                    if safe_images:
+                        entry["images"] = safe_images
                 safe_history.append(entry)
         provider = str(provider_selection or "")[:300]
         with self._lock:

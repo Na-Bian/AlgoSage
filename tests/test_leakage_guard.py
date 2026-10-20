@@ -10,6 +10,7 @@ from examguard.config import Settings
 from examguard.exam_policy import ExamPolicy
 from examguard.intent_classifier import classify
 from examguard.leakage_guard import (
+    LLMAnswerQualityReviewer,
     LayeredOutputGuard,
     LLMLeakageJudge,
     RuleLeakageScreener,
@@ -45,6 +46,16 @@ class JudgeBackend:
     def generate(self, messages):
         self.calls.append([dict(m) for m in messages])
         return LLMResult(self.payload, "fake-judge", 1, 1)
+
+
+class SequenceJudgeBackend:
+    def __init__(self, payloads: list[str]):
+        self.payloads = list(payloads)
+        self.calls: list[list[dict[str, str]]] = []
+
+    def generate(self, messages):
+        self.calls.append([dict(m) for m in messages])
+        return LLMResult(self.payloads.pop(0), "fake-judge", 1, 1)
 
 
 class RuleScreenerTests(unittest.TestCase):
@@ -165,20 +176,20 @@ class LayeredGuardTests(unittest.TestCase):
 
     def test_judge_leak_blocks(self):
         judge, _ = self.make_judge(
-            '{"leaked": true, "categories": ["full_solution"], "confidence": 0.9, "reason": "整题流程"}'
+            '{"leaked": true, "categories": ["full_solution"], "confidence": 0.9, "reason": "整题流程", "disclosures": []}'
         )
         guard = LayeredOutputGuard(RuleLeakageScreener(), judge)
         result = guard.review(
             "先排序，再双指针扫描即可。", decision_of(Intent.HINT, 2), True
         )
         self.assertFalse(result.approved)
-        self.assertEqual(result.method, "judge-v2")
+        self.assertEqual(result.method, "judge-v3")
         self.assertIn("full_solution", result.categories)
         self.assertIn("judge_leak", result.reason)
 
     def test_judge_pass_allows(self):
         judge, _ = self.make_judge(
-            '{"leaked": false, "categories": [], "confidence": 0.9, "reason": "概念解释"}'
+            '{"leaked": false, "categories": [], "confidence": 0.9, "reason": "概念解释", "disclosures": []}'
         )
         guard = LayeredOutputGuard(RuleLeakageScreener(), judge)
         result = guard.review(
@@ -187,7 +198,269 @@ class LayeredGuardTests(unittest.TestCase):
             True,
         )
         self.assertTrue(result.approved)
-        self.assertEqual(result.method, "rules+judge-v2")
+        self.assertEqual(result.method, "rules+judge-v3")
+
+    def test_false_verdict_with_stray_category_is_not_an_unknown_refusal(self):
+        judge = LLMLeakageJudge(
+            JudgeBackend(
+                '{"leaked":false,"categories":["other"],"confidence":0.95,'
+                '"reason":"局部修正","disclosures":[]}'
+            ),
+            Settings(mode="mock"),
+        )
+        result = LayeredOutputGuard(RuleLeakageScreener(), judge).review(
+            "把循环条件改为 l <= r 即可。",
+            decision_of(Intent.DEBUG, 3),
+            True,
+            question="只指出边界错误",
+        )
+        self.assertTrue(result.approved)
+        self.assertEqual(result.status, "pass")
+
+    def test_low_confidence_judge_is_retried_with_compact_schema(self):
+        backend = SequenceJudgeBackend(
+            [
+                '{"leaked":false,"categories":[],"confidence":0.05,'
+                '"reason":"不确定","disclosures":[]}',
+                '{"leaked":false,"categories":[],"confidence":0.96,'
+                '"reason":"一般概念","disclosures":[]}',
+            ]
+        )
+        judge = LLMLeakageJudge(backend, Settings(mode="mock"))
+        result = LayeredOutputGuard(RuleLeakageScreener(), judge).review(
+            "O(n) 表示上界。",
+            decision_of(Intent.KNOWLEDGE, 1),
+            True,
+            question="解释大 O",
+        )
+        self.assertTrue(result.approved)
+        self.assertEqual(len(backend.calls), 2)
+        self.assertIn("兜底输出审核员", backend.calls[1][0]["content"])
+
+    def test_malformed_judge_output_gets_one_repair_attempt(self):
+        backend = SequenceJudgeBackend(
+            [
+                "我无法判断。",
+                '{"leaked":false,"categories":[],"confidence":0.9,'
+                '"reason":"合法概念","disclosures":[]}',
+            ]
+        )
+        judge = LLMLeakageJudge(backend, Settings(mode="mock"))
+        result = LayeredOutputGuard(RuleLeakageScreener(), judge).review(
+            "编码只转换表示形式，不提供保密性。",
+            decision_of(Intent.KNOWLEDGE, 1),
+            True,
+        )
+        self.assertTrue(result.approved)
+        self.assertEqual(len(backend.calls), 2)
+
+    def test_leaked_true_with_invalid_ref_is_blocked_as_unverified(self):
+        judge = LLMLeakageJudge(
+            JudgeBackend(
+                '{"leaked":true,"categories":["key_steps"],"confidence":0.95,'
+                '"reason":"核心步骤","disclosures":[{"element":"transition","ref":null}]}'
+            ),
+            Settings(mode="mock"),
+        )
+        result = LayeredOutputGuard(RuleLeakageScreener(), judge).review(
+            "先取较大值，再更新边界。",
+            decision_of(Intent.HINT, 2),
+            True,
+        )
+        self.assertFalse(result.approved)
+        self.assertEqual(result.status, "block")
+        self.assertIn("judge_leak", result.reason)
+        self.assertNotIn("judge_unavailable", result.method)
+
+    def test_grounded_quality_issue_blocks_and_requests_regeneration(self):
+        bad = (
+            "大 O 记号描述的是算法运行时间的最坏情况。"
+            "大 Omega 描述最好情况，大 Theta 描述平均情况。"
+            "这三个符号因此分别对应算法分析中的三个不同成本场景，"
+            "所以只要看到 O、Omega 或 Theta 就能直接判断分析的是哪一种场景。"
+        )
+        quality_backend = SequenceJudgeBackend(
+            [
+                '{"issues":[{"kind":"factual","quote":"大 O 记号描述的是算法运行时间的最坏情况。",'
+                '"reason":"把上界等同于最坏情况"}],"confidence":0.95}',
+                '{"issues":[],"confidence":0.95}',
+            ]
+        )
+        generator = ScriptedBackend(
+            [bad, "大 O 是渐近上界；最坏情况只是可以应用它的一个具体成本函数。"]
+        )
+        settings = Settings(mode="mock", output_guard="layered")
+        tutor = ExamGuardTutor(
+            generator,
+            settings,
+            output_guard=LayeredOutputGuard(
+                RuleLeakageScreener(),
+                LLMLeakageJudge(
+                    JudgeBackend(
+                        '{"leaked":false,"categories":[],"confidence":0.95,'
+                        '"reason":"概念","disclosures":[]}'
+                    ),
+                    settings,
+                ),
+                LLMAnswerQualityReviewer(quality_backend, settings),
+            ),
+            policy_config=ExamPolicy.from_dict({"max_regenerations": 1}),
+        )
+        response = tutor.respond(TutorRequest("解释大 O"))
+        self.assertTrue(response.audit.approved)
+        self.assertEqual(response.regenerations, 1)
+        feedback = generator.calls[1][0]["content"]
+        self.assertIn("可核实的知识、算例或回答范围错误", feedback)
+
+    def test_quality_issue_with_invented_quote_is_ignored(self):
+        settings = Settings(mode="mock")
+        judge = LLMLeakageJudge(
+            JudgeBackend(
+                '{"leaked":false,"categories":[],"confidence":0.95,'
+                '"reason":"概念","disclosures":[]}'
+            ),
+            settings,
+        )
+        quality = LLMAnswerQualityReviewer(
+            JudgeBackend(
+                '{"issues":[{"kind":"factual","quote":"草稿中不存在的话",'
+                '"reason":"错误"}],"confidence":0.95}'
+            ),
+            settings,
+        )
+        result = LayeredOutputGuard(
+            RuleLeakageScreener(), judge, quality
+        ).review(
+            "O(n) 是渐近上界，表示函数增长不会超过线性函数；"
+            "它并不单独等同于最坏情况，具体含义取决于所分析的成本函数。",
+            decision_of(Intent.KNOWLEDGE, 1),
+            True,
+        )
+        self.assertTrue(result.approved)
+
+    def test_quality_review_unavailable_does_not_create_unknown(self):
+        class BrokenQuality:
+            def generate(self, messages):
+                raise TimeoutError("quality timeout")
+
+        settings = Settings(mode="mock")
+        judge = LLMLeakageJudge(
+            JudgeBackend(
+                '{"leaked":false,"categories":[],"confidence":0.95,'
+                '"reason":"概念","disclosures":[]}'
+            ),
+            settings,
+        )
+        quality = LLMAnswerQualityReviewer(BrokenQuality(), settings)
+        result = LayeredOutputGuard(
+            RuleLeakageScreener(), judge, quality
+        ).review(
+            "O(n) 是渐近上界，描述增长速度不超过线性函数；"
+            "它并不单独等同于最坏情况，具体含义取决于所分析的成本函数。",
+            decision_of(Intent.KNOWLEDGE, 1),
+            True,
+        )
+        self.assertTrue(result.approved)
+        self.assertEqual(result.status, "pass")
+
+    def test_quality_review_catches_common_hash_and_scope_errors(self):
+        draft = (
+            "Base64 是编码。SHA-256 属于加密，所以可以用密钥解密。"
+            "哈希是单向加密，因此适合直接用于可逆的数据保护。\n"
+            "### 1. 编码\n### 2. 加密\n### 3. 区别\n### 4. 额外实现建议\n"
+        ) + "补充实现建议。" * 120
+        quality = LLMAnswerQualityReviewer(
+            JudgeBackend('{"issues":[],"confidence":0.95}'),
+            Settings(mode="mock"),
+        )
+        issues = quality.review(
+            draft,
+            decision_of(Intent.KNOWLEDGE, 1),
+            True,
+            question="只解释编码和加密的区别，不要给实现建议。",
+        )
+        self.assertTrue(issues)
+        self.assertIn("factual", {issue["kind"] for issue in issues})
+        self.assertIn("scope", {issue["kind"] for issue in issues})
+
+    def test_quality_review_does_not_flag_explicit_negations(self):
+        draft = (
+            "Base64 不是加密算法，也不是压缩算法。"
+            "它把每三个字节编码成四个可打印字符，解码不需要密钥。"
+            "SHA-256 不是加密算法，而是哈希函数，不能通过解密恢复原文。"
+        )
+        quality = LLMAnswerQualityReviewer(
+            JudgeBackend('{"issues":[],"confidence":0.95}'),
+            Settings(mode="mock"),
+        )
+        issues = quality.review(
+            draft,
+            decision_of(Intent.KNOWLEDGE, 1),
+            True,
+            question="只解释编码和加密的区别。",
+        )
+        self.assertEqual(issues, ())
+
+    def test_quality_scope_accepts_detailed_explanation_with_summary(self):
+        draft = (
+            "### 定义\n编码改变表示形式，加密依赖密钥保护机密性。"
+            "两者目标不同，但都可能涉及字符转换。\n"
+            "### 相同与不同\nBase64 将每三个字节表示为四个字符，"
+            "而 AES 使用分组密码和密钥。\n"
+            "### 例子\n同一段文本经过编码后仍可被旁观者直接读取，"
+            "经过正确加密后则不能在没有密钥时恢复。\n"
+            "### 总结\n编码解决表示和传输，加密解决保密性。"
+        )
+        draft += "补充解释。" * 180
+        quality = LLMAnswerQualityReviewer(
+            JudgeBackend('{"issues":[],"confidence":0.95}'),
+            Settings(mode="mock"),
+        )
+        issues = quality.review(
+            draft,
+            decision_of(Intent.KNOWLEDGE, 1),
+            True,
+            question="只解释编码和加密的区别，不要给实现建议。",
+        )
+        self.assertEqual(issues, ())
+
+    def test_quality_review_recomputes_literal_base64_examples(self):
+        draft = (
+            "假设二进制数据是 `01100001 11010111 10101100`，"
+            "经过 Base64 编码后可能是 `Eh0`。"
+            "这说明编码结果仍然可以被公开规则直接还原。"
+            "编码规则不依赖密钥，也没有增加任何秘密信息或计算困难性。"
+        )
+        quality = LLMAnswerQualityReviewer(
+            JudgeBackend('{"issues":[],"confidence":0.95}'),
+            Settings(mode="mock"),
+        )
+        issues = quality.review(
+            draft,
+            decision_of(Intent.KNOWLEDGE, 1),
+            True,
+            question="解释 Base64 是编码还是加密。",
+        )
+        self.assertTrue(issues)
+        self.assertIn("Ydes", issues[0]["reason"])
+
+    def test_quality_review_accepts_correct_base64_example(self):
+        draft = (
+            "文本 `Hello` 的 Base64 编码是 `SGVsbG8=`。"
+            "任何人都能按公开字符表还原它，因此 Base64 不提供保密性。"
+            "它解决的是文本通道中的表示兼容性问题。"
+        )
+        quality = LLMAnswerQualityReviewer(
+            JudgeBackend('{"issues":[],"confidence":0.95}'),
+            Settings(mode="mock"),
+        )
+        issues = quality.review(
+            draft,
+            decision_of(Intent.KNOWLEDGE, 1),
+            True,
+            question="解释 Base64 是编码还是加密。",
+        )
+        self.assertEqual(issues, ())
 
     def test_judge_unavailable_returns_unknown(self):
         judge, _ = self.make_judge("抱歉我不确定")  # 非 JSON
@@ -215,7 +488,7 @@ class LayeredGuardTests(unittest.TestCase):
 
     def test_judge_prompt_carries_context_and_untrusted_labels(self):
         judge, backend = self.make_judge(
-            '{"leaked": false, "categories": [], "confidence": 0.9, "reason": "ok"}'
+            '{"leaked": false, "categories": [], "confidence": 0.9, "reason": "ok", "disclosures": []}'
         )
         guard = LayeredOutputGuard(RuleLeakageScreener(), judge)
         guard.review(

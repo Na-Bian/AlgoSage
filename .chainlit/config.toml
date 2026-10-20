@@ -27,7 +27,7 @@ allow_origins = ["*"]
 unsafe_allow_html = false
 
 # Process and display mathematical expressions. This can clash with "$" characters in messages.
-latex = false
+latex = true
 
 # Enable rendering of user messages markdown
 user_message_markdown = true
@@ -56,8 +56,8 @@ reaction_on_message_received = false
 
 # Authorize users to spontaneously upload files with messages
 [features.spontaneous_file_upload]
-    # ExamGuard 仅接受文本输入（含围栏代码块）；关闭文件上传以缩小注入面
-    enabled = false
+    # 图片用于多模态模型；文档仅在服务端提取文本，不执行、不运行宏。
+    enabled = true
     # Define accepted file types using MIME types
     # Examples:
     # 1. For specific file types:
@@ -67,9 +67,20 @@ reaction_on_message_received = false
     # 3. For specific file extensions:
     #    accept = { "application/octet-stream" = [".xyz", ".pdb"] }
     # Note: Using "*/*" is not recommended as it may cause browser warnings
-    accept = ["*/*"]
-    max_files = 20
-    max_size_mb = 500
+    accept = [
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "application/pdf",
+        "application/json",
+        "application/x-ipynb+json",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "text/*",
+    ]
+    max_files = 6
+    max_size_mb = 20
 
 [features.audio]
     # Enable audio features

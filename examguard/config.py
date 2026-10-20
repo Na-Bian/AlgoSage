@@ -5,13 +5,15 @@ import json
 import math
 import os
 
+from .runtime_paths import runtime_path
+
 
 def _load_dotenv() -> None:
     try:
         from dotenv import load_dotenv
     except ImportError:
         return
-    load_dotenv()
+    load_dotenv(runtime_path("CHAINLIT_ENV_FILE", ".env"))
 
 
 @dataclass(frozen=True)
@@ -24,7 +26,7 @@ class Settings:
     timeout: float = 30.0
     max_output_tokens: int = 512
     token_parameter: str = "max_tokens"
-    # P1：意图分类器模式。regex=冻结的正则基线（默认，离线可用）；
+    # P1：意图分类器模式。regex=带主题上下文过滤的规则（默认，离线可用）；
     # hybrid=规则+LLM 混合（需要 APP_MODE=api，LLM 不可用时自动回退正则）。
     classifier_mode: str = "regex"
     # P2：输出审核层。basic=第一阶段冻结基线（供消融对照）；rules=规则预筛
@@ -40,10 +42,15 @@ class Settings:
     exam_id: str = "demo"
     # Empty in explicitly constructed offline/test settings; runtime defaults to SQLite.
     state_path: str = ""
-    max_calls_per_turn: int = 7
+    # 9 covers classification + generation + one Judge repair + quality review,
+    # plus one audited regeneration cycle with Judge and quality review.
+    max_calls_per_turn: int = 9
     turn_timeout: float = 180.0
     classifier_max_output_tokens: int = 256
-    judge_max_output_tokens: int = 256
+    judge_max_output_tokens: int = 768
+    quality_max_output_tokens: int = 512
+    concise_max_output_tokens: int = 768
+    parallel_reviews: bool = True
     min_classifier_confidence: float = 0.7
 
     def __post_init__(self) -> None:
@@ -51,6 +58,8 @@ class Settings:
             "max_calls_per_turn",
             "classifier_max_output_tokens",
             "judge_max_output_tokens",
+            "quality_max_output_tokens",
+            "concise_max_output_tokens",
         ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
@@ -108,21 +117,29 @@ class Settings:
             token_parameter=token_parameter,
             classifier_mode=classifier_mode,
             output_guard=output_guard,
-            policy_file=os.environ.get("EG_POLICY_FILE", "").strip(),
+            policy_file=runtime_path("EG_POLICY_FILE", ""),
             extra_body=extra_body,
             question_id=os.environ.get("EG_QUESTION_ID", "").strip(),
             exam_id=os.environ.get("EG_EXAM_ID", "demo").strip(),
-            state_path=os.environ.get(
+            state_path=runtime_path(
                 "EG_STATE_FILE", ".examguard/state.sqlite3"
-            ).strip(),
-            max_calls_per_turn=int(os.environ.get("EG_MAX_CALLS_PER_TURN", "7")),
+            ),
+            max_calls_per_turn=int(os.environ.get("EG_MAX_CALLS_PER_TURN", "9")),
             turn_timeout=float(os.environ.get("EG_TURN_TIMEOUT_SECONDS", "180")),
             classifier_max_output_tokens=int(
                 os.environ.get("EG_CLASSIFIER_MAX_OUTPUT_TOKENS", "256")
             ),
             judge_max_output_tokens=int(
-                os.environ.get("EG_JUDGE_MAX_OUTPUT_TOKENS", "256")
+                os.environ.get("EG_JUDGE_MAX_OUTPUT_TOKENS", "768")
             ),
+            quality_max_output_tokens=int(
+                os.environ.get("EG_QUALITY_MAX_OUTPUT_TOKENS", "512")
+            ),
+            concise_max_output_tokens=int(
+                os.environ.get("EG_CONCISE_MAX_OUTPUT_TOKENS", "768")
+            ),
+            parallel_reviews=os.environ.get("EG_PARALLEL_REVIEWS", "true").lower()
+            in {"true", "1", "yes"},
             min_classifier_confidence=float(
                 os.environ.get("EG_MIN_CLASSIFIER_CONFIDENCE", ".7")
             ),

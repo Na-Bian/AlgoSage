@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .config import Settings
+from .runtime_paths import runtime_path
 
 
 class ProviderRegistry:
@@ -25,9 +26,9 @@ class ProviderRegistry:
         }
         self._add(default, default=True)
         if entries is None:
-            path = os.environ.get(
+            path = runtime_path(
                 "EG_PROVIDERS_FILE", ".examguard/providers.json"
-            ).strip()
+            )
             if path and Path(path).is_file():
                 parsed = json.loads(Path(path).read_text(encoding="utf-8"))
                 if not isinstance(parsed, dict) or set(parsed) != {"providers"}:

@@ -21,9 +21,8 @@ STATE = re.compile(
 )
 
 
-def novel_text(answer: str, existing_code: str = "") -> str:
-    text = answer
-    # Remove exact supplied lines, allowing whitespace-only formatting changes.
+def _supplied_line_patterns(existing_code: str):
+    """Exact supplied code lines, allowing whitespace-only formatting changes."""
     for line in existing_code.splitlines():
         line = line.strip()
         if len(line) < 5 or not re.search(r"[=(){};\[\]]", line):
@@ -31,7 +30,24 @@ def novel_text(answer: str, existing_code: str = "") -> str:
         pattern = r"\s*".join(re.escape(c) for c in re.sub(r"\s+", "", line))
         # A continuation (old_rhs + a[i]) is new, not an exact quote.
         pattern += r"(?![ \t]*[A-Za-z0-9_+\-*/%&|<>=()\[\].])"
+        yield pattern
+
+
+def mask_existing_code(answer: str, existing_code: str) -> str:
+    """Length-preserving provenance view, so original evidence spans stay valid."""
+    text = answer
+    for pattern in _supplied_line_patterns(existing_code):
+        text = re.sub(pattern, lambda match: " " * len(match.group(0)), text)
+    return text
+
+
+def novel_text(answer: str, existing_code: str = "", *, keep_refusals: bool = False) -> str:
+    text = answer
+    for pattern in _supplied_line_patterns(existing_code):
         text = re.sub(pattern, " [学生原有内容] ", text)
+    # Semantic extraction must inspect content after a refusal/disclaimer too.
+    if keep_refusals:
+        return text
     # Refusal and general concept names alone do not reveal a state/algorithm.
     return "\n".join(
         line

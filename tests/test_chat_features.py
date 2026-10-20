@@ -46,8 +46,9 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
             chainlit_app, "run_turn", side_effect=RuntimeError("PRIVATE DRAFT")
         ):
             await inspect.unwrap(chainlit_app.on_message)(
-                SimpleNamespace(content="解释前缀")
+                SimpleNamespace(content="解释前缀", id="backend-error-test")
             )
+        self.assertIn("RuntimeError", reply.content)
         self.assertNotIn("PRIVATE DRAFT", reply.content)
         reply.stream_token.assert_not_awaited()
 
