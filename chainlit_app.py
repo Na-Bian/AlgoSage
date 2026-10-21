@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import time
+from pathlib import Path
 from weakref import WeakValueDictionary
 
 import chainlit as cl
@@ -121,6 +122,40 @@ def get_chat_store():
             runtime_path("EG_CHAT_FILE", ".examguard/chats.sqlite3")
         )
     return _chat_store
+
+
+# Chainlit's standard element endpoint returns metadata. Local uploads also
+# need a durable byte endpoint because the temporary upload path is removed
+# after the websocket session ends.
+try:  # pragma: no cover - exercised through the running Chainlit server
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+    from chainlit.data.acl import is_thread_author
+    from chainlit.server import UserParam, app as _chainlit_server_app
+
+    @_chainlit_server_app.get(
+        "/project/element/{thread_id}/{element_id}/content",
+        include_in_schema=False,
+    )
+    async def get_persisted_element_content(
+        thread_id: str, element_id: str, current_user: UserParam
+    ):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        await is_thread_author(current_user.identifier, thread_id)
+        store = get_chat_store()
+        path = store.get_element_path(thread_id, element_id)
+        if not path or not Path(path).is_file():
+            raise HTTPException(status_code=404, detail="Element not found")
+        element = await store.get_element(thread_id, element_id)
+        return FileResponse(
+            path,
+            media_type=(element or {}).get("mime") or "application/octet-stream",
+            filename=(element or {}).get("name") or element_id,
+        )
+except ImportError:
+    # The service layer and unit tests do not require the HTTP route.
+    pass
 
 
 async def send_provider_settings(context) -> None:

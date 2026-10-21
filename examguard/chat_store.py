@@ -5,8 +5,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import shutil
 import sqlite3
 import threading
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -28,6 +30,7 @@ _MAX_PAGE = 100
 _MAX_NAME = 200
 _MAX_HISTORY_IMAGES = 6
 _MAX_HISTORY_IMAGE_CHARS = 4_000_000
+_MAX_ELEMENT_BYTES = 20 * 1024 * 1024
 _STEP_FIELDS = {
     "name",
     "type",
@@ -114,6 +117,13 @@ class ChatDataLayer(BaseDataLayer):
         if path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._temporary_element_root = None
+        if path == ":memory:":
+            self._temporary_element_root = tempfile.mkdtemp(prefix="examguard-elements-")
+            self._element_root = Path(self._temporary_element_root)
+        else:
+            self._element_root = Path(path).parent / "elements"
+        self._element_root.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
@@ -146,6 +156,22 @@ class ChatDataLayer(BaseDataLayer):
                     thread_id TEXT PRIMARY KEY, status TEXT NOT NULL,
                     source_hash TEXT, initial_name TEXT
                 );
+                CREATE TABLE IF NOT EXISTS elements (
+                    id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, for_id TEXT,
+                    type TEXT NOT NULL, name TEXT NOT NULL, mime TEXT,
+                    display TEXT NOT NULL, size TEXT, language TEXT,
+                    storage_path TEXT NOT NULL, size_bytes INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_elements_thread
+                    ON elements(thread_id, created_at ASC, id ASC);
+                CREATE TABLE IF NOT EXISTS feedbacks (
+                    id TEXT PRIMARY KEY, for_id TEXT NOT NULL UNIQUE,
+                    thread_id TEXT NOT NULL, value INTEGER NOT NULL,
+                    comment TEXT, created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_feedbacks_thread
+                    ON feedbacks(thread_id);
                 """)
             self._conn.commit()
 
@@ -159,6 +185,28 @@ class ChatDataLayer(BaseDataLayer):
             "SELECT data FROM steps WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
             (row["id"],),
         ).fetchall()
+        feedbacks = self._conn.execute(
+            "SELECT * FROM feedbacks WHERE thread_id = ?", (row["id"],)
+        ).fetchall()
+        feedback_by_step = {
+            item["for_id"]: {
+                "forId": item["for_id"],
+                "id": item["id"],
+                "value": item["value"],
+                "comment": item["comment"],
+            }
+            for item in feedbacks
+        }
+        step_dicts = []
+        for item in steps:
+            step = _decode(item["data"], {})
+            if step.get("id") in feedback_by_step:
+                step["feedback"] = feedback_by_step[step["id"]]
+            step_dicts.append(step)
+        elements = self._conn.execute(
+            "SELECT * FROM elements WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
+            (row["id"],),
+        ).fetchall()
         return {
             "id": row["id"],
             "createdAt": row["created_at"],
@@ -167,8 +215,27 @@ class ChatDataLayer(BaseDataLayer):
             "userIdentifier": row["user_identifier"],
             "tags": _decode(row["tags"], None),
             "metadata": _decode(row["metadata"], None),
-            "steps": [_decode(item["data"], {}) for item in steps],
-            "elements": [],
+            "steps": step_dicts,
+            "elements": [self._element_dict(item) for item in elements],
+        }
+
+    @staticmethod
+    def _element_url(thread_id: str, element_id: str) -> str:
+        return f"/project/element/{thread_id}/{element_id}/content"
+
+    def _element_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            "id": row["id"],
+            "threadId": row["thread_id"],
+            "type": row["type"],
+            "chainlitKey": row["id"],
+            "url": self._element_url(row["thread_id"], row["id"]),
+            "name": row["name"],
+            "display": row["display"],
+            "size": row["size"],
+            "language": row["language"],
+            "forId": row["for_id"],
+            "mime": row["mime"],
         }
 
     async def get_user(self, identifier: str) -> Optional[PersistedUser]:
@@ -204,20 +271,128 @@ class ChatDataLayer(BaseDataLayer):
         return await self.get_user(user.identifier)
 
     async def delete_feedback(self, feedback_id: str) -> bool:
-        return False
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM feedbacks WHERE id = ?", (feedback_id,)
+            )
+            self._conn.commit()
+        return cursor.rowcount > 0
 
     async def upsert_feedback(self, feedback: Feedback) -> str:
-        return feedback.id or ""
+        feedback_id = str(feedback.id or uuid4())
+        thread_id = str(feedback.threadId or "")
+        if not thread_id:
+            row = self._conn.execute(
+                "SELECT thread_id FROM steps WHERE id = ?", (feedback.forId,)
+            ).fetchone()
+            thread_id = row["thread_id"] if row else ""
+        if not thread_id or int(feedback.value) not in {0, 1}:
+            raise ValueError("feedback must target a valid thread and have value 0 or 1")
+        with self._lock:
+            step = self._conn.execute(
+                "SELECT thread_id FROM steps WHERE id = ?", (feedback.forId,)
+            ).fetchone()
+            if step is None or step["thread_id"] != thread_id:
+                raise PermissionError("feedback target does not belong to thread")
+            self._conn.execute(
+                "INSERT INTO feedbacks(id, for_id, thread_id, value, comment, created_at) VALUES(?,?,?,?,?,?) "
+                "ON CONFLICT(for_id) DO UPDATE SET id=excluded.id, value=excluded.value, comment=excluded.comment",
+                (
+                    feedback_id,
+                    feedback.forId,
+                    thread_id,
+                    int(feedback.value),
+                    str(feedback.comment)[:2000] if feedback.comment is not None else None,
+                    _now(),
+                ),
+            )
+            self._conn.commit()
+        return feedback_id
 
     @_queue_local
     async def create_element(self, element):
-        return None
+        element_id = str(element.id)
+        thread_id = str(element.thread_id or "")
+        if not thread_id:
+            raise ValueError("element thread_id is required")
+        if element.path:
+            source = Path(element.path)
+            content = source.read_bytes()
+        elif isinstance(element.content, str):
+            content = element.content.encode()
+        elif isinstance(element.content, (bytes, bytearray)):
+            content = bytes(element.content)
+        else:
+            raise ValueError("element must provide a local path or content")
+        if not content or len(content) > _MAX_ELEMENT_BYTES:
+            raise ValueError("element content exceeds the persistent size limit")
+        relative = Path(hashlib.sha256(element_id.encode()).hexdigest())
+        target_dir = self._element_root / hashlib.sha256(thread_id.encode()).hexdigest()[:24]
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / relative.name
+        temporary = target.with_suffix(".tmp")
+        temporary.write_bytes(content)
+        temporary.replace(target)
+        with self._lock:
+            if self._conn.execute(
+                "SELECT 1 FROM deleted_threads WHERE thread_id = ?", (thread_id,)
+            ).fetchone():
+                target.unlink(missing_ok=True)
+                raise PermissionError("deleted thread cannot receive elements")
+            self._conn.execute(
+                "INSERT OR IGNORE INTO threads(id, created_at, name, user_id, user_identifier, tags, metadata) "
+                "VALUES(?, ?, NULL, NULL, NULL, NULL, NULL)",
+                (thread_id, _now()),
+            )
+            self._conn.execute(
+                "INSERT INTO elements(id, thread_id, for_id, type, name, mime, display, size, language, storage_path, size_bytes, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET thread_id=excluded.thread_id, for_id=excluded.for_id, "
+                "type=excluded.type, name=excluded.name, mime=excluded.mime, display=excluded.display, "
+                "size=excluded.size, language=excluded.language, storage_path=excluded.storage_path, "
+                "size_bytes=excluded.size_bytes",
+                (
+                    element_id, thread_id, getattr(element, "for_id", None),
+                    str(element.type), str(element.name)[:200], str(element.mime or "")[:100],
+                    str(element.display or "inline"), getattr(element, "size", None),
+                    getattr(element, "language", None), str(target), len(content), _now(),
+                ),
+            )
+            self._conn.commit()
 
     async def get_element(self, thread_id: str, element_id: str):
-        return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM elements WHERE thread_id = ? AND id = ?",
+                (thread_id, element_id),
+            ).fetchone()
+        return self._element_dict(row) if row else None
+
+    def get_element_path(self, thread_id: str, element_id: str) -> Optional[str]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT storage_path FROM elements WHERE thread_id = ? AND id = ?",
+                (thread_id, element_id),
+            ).fetchone()
+        return row["storage_path"] if row else None
 
     @_queue_local
     async def delete_element(self, element_id: str, thread_id: Optional[str] = None):
+        with self._lock:
+            query = "SELECT storage_path FROM elements WHERE id = ?"
+            args = [element_id]
+            if thread_id:
+                query += " AND thread_id = ?"
+                args.append(thread_id)
+            row = self._conn.execute(query, args).fetchone()
+            if row:
+                self._conn.execute(
+                    "DELETE FROM elements WHERE id = ?" + (" AND thread_id = ?" if thread_id else ""),
+                    args,
+                )
+                self._conn.commit()
+        if row:
+            Path(row["storage_path"]).unlink(missing_ok=True)
         return None
 
     @_queue_local
@@ -264,6 +439,9 @@ class ChatDataLayer(BaseDataLayer):
 
     async def delete_thread(self, thread_id: str):
         with self._lock:
+            element_rows = self._conn.execute(
+                "SELECT storage_path FROM elements WHERE thread_id = ?", (thread_id,)
+            ).fetchall()
             self._conn.execute(
                 "INSERT OR IGNORE INTO deleted_threads(thread_id, deleted_at) VALUES(?, ?)",
                 (thread_id, _now()),
@@ -276,7 +454,11 @@ class ChatDataLayer(BaseDataLayer):
             self._conn.execute(
                 "DELETE FROM thread_titles WHERE thread_id = ?", (thread_id,)
             )
+            self._conn.execute("DELETE FROM elements WHERE thread_id = ?", (thread_id,))
+            self._conn.execute("DELETE FROM feedbacks WHERE thread_id = ?", (thread_id,))
             self._conn.commit()
+        for item in element_rows:
+            Path(item["storage_path"]).unlink(missing_ok=True)
 
     async def list_threads(
         self, pagination: Pagination, filters: ThreadFilter
@@ -467,6 +649,8 @@ class ChatDataLayer(BaseDataLayer):
     async def close(self) -> None:
         with self._lock:
             self._conn.close()
+        if self._temporary_element_root:
+            shutil.rmtree(self._temporary_element_root, ignore_errors=True)
 
     async def save_backend_history(
         self,

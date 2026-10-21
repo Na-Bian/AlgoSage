@@ -4,7 +4,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from chainlit.types import Pagination, ThreadFilter
+from chainlit.types import Feedback
 from chainlit.user import User
 
 from examguard.chat_store import ChatDataLayer
@@ -211,3 +213,42 @@ class ChatStoreTests(unittest.TestCase):
         assert run(store.get_thread("victim"))["steps"][0]["output"] == "original"
         assert run(store.get_thread("attacker"))["steps"] == []
         run(store.close())
+
+    def test_uploaded_element_and_feedback_survive_restart(self):
+        path = self.root / "chat.sqlite3"
+        source = self.root / "notes.pdf"
+        source.write_bytes(b"PDF fixture for persisted history")
+        store = ChatDataLayer(str(path))
+        run(store.create_user(User(identifier="alice")))
+        run(store.update_thread("t1", name="History", user_id="alice"))
+        run(store.create_step(step("s1", "t1", "answer", "2026-01-01T00:00:00Z")))
+        element = SimpleNamespace(
+            id="e1", thread_id="t1", for_id="s1", type="file", name="notes.pdf",
+            mime="application/pdf", display="inline", size="medium", language=None,
+            path=str(source), url=None, object_key=None, chainlit_key="upload-e1",
+        )
+        run(store.create_element(element))
+        feedback_id = run(
+            store.upsert_feedback(
+                Feedback(forId="s1", value=1, threadId="t1", comment="有帮助")
+            )
+        )
+        self.assertTrue(feedback_id)
+        thread = run(store.get_thread("t1"))
+        self.assertEqual(thread["elements"][0]["name"], "notes.pdf")
+        self.assertEqual(thread["steps"][0]["feedback"]["value"], 1)
+        self.assertIn("/project/element/t1/e1/content", thread["elements"][0]["url"])
+        run(store.close())
+
+        reopened = ChatDataLayer(str(path))
+        thread = run(reopened.get_thread("t1"))
+        self.assertEqual(thread["elements"][0]["mime"], "application/pdf")
+        self.assertEqual(thread["steps"][0]["feedback"]["comment"], "有帮助")
+        element_dict = run(reopened.get_element("t1", "e1"))
+        self.assertEqual(element_dict["id"], "e1")
+        self.assertTrue(Path(reopened.get_element_path("t1", "e1")).is_file())
+        self.assertTrue(run(reopened.delete_feedback(feedback_id)))
+        self.assertIsNone(run(reopened.get_thread("t1"))["steps"][0].get("feedback"))
+        run(reopened.delete_thread("t1"))
+        self.assertIsNone(reopened.get_element_path("t1", "e1"))
+        run(reopened.close())
