@@ -184,8 +184,9 @@ class StudentAuthRoutesTests(unittest.TestCase):
         install_student_auth(app, lambda: auth)
         client = TestClient(app)
 
-        page = client.get("/auth/hust/register")
-        self.assertEqual(page.status_code, 200)
+        page = client.get("/auth/hust/register", follow_redirects=False)
+        self.assertEqual(page.status_code, 301)
+        self.assertEqual(page.headers["location"], "/register")
         response = client.post(
             "/auth/hust/register/request-code",
             json={
@@ -394,3 +395,12 @@ class ProfileRouteTests(unittest.TestCase):
         response = self.client.get("/profile", follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/login")
+
+    def test_custom_auth_pages_replace_chainlit_login(self):
+        for path, mode in [("/login", "login"), ("/register", "register"), ("/forgot-password", "reset")]:
+            self.app.dependency_overrides[self.current_user_dependency()] = lambda: None
+            response = self.client.get(path, follow_redirects=False)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("text/html", response.headers["content-type"])
+            self.assertIn(f'data-mode="{mode}"', response.text)
+            self.assertIn("HUST 学生登录", response.text)

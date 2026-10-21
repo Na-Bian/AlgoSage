@@ -154,6 +154,20 @@ class ProfileUpdateRequest(BaseModel):
     new_password: str | None = None
 
 
+def _student_from_request(request: Request) -> Any:
+    from chainlit.auth import decode_jwt, get_token_from_cookies
+
+    token = get_token_from_cookies(request.cookies)
+    if not token:
+        return None
+    try:
+        user = decode_jwt(token)
+    except Exception:
+        return None
+    identifier = getattr(user, "identifier", "")
+    return user if identifier.startswith("student:") else None
+
+
 def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=None) -> None:
     """Install HUST profile APIs, avatar delivery, and the standalone profile page."""
     if getattr(app.state, "examguard_profile_routes_installed", False):
@@ -166,6 +180,7 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
     from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
     profile_html_path = Path(__file__).resolve().parent.parent / "public" / "profile-page.html"
+    auth_html_path = Path(__file__).resolve().parent.parent / "public" / "auth-page.html"
 
     def student_auth():
         return student_auth_factory()
@@ -223,11 +238,12 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
         return response
 
     @router.get("/profile", include_in_schema=False)
-    async def profile_page(current_user: UserParam):
+    async def profile_page(request: Request):
+        current_user = _student_from_request(request)
         if not current_user:
             return RedirectResponse(url="/login", status_code=303)
-        identifier = getattr(current_user, "identifier", "")
-        if not identifier.startswith("student:"):
+        account = student_auth().store.get_account(_student_id(current_user))
+        if not account:
             response = RedirectResponse(url="/login", status_code=303)
             response.delete_cookie("access_token", path="/")
             return response
@@ -300,7 +316,34 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
         payload = _profile_payload(account)
         return _issue_profile_cookie(request, account, payload)
 
-    _move_routes_before_catchall(router, ("/auth/profile", "/auth/avatar", "/profile"))
+    auth_html_path = Path(__file__).resolve().parent.parent / "public" / "auth-page.html"
+
+    def auth_page(mode: str):
+        html = auth_html_path.read_text(encoding="utf-8")
+        return HTMLResponse(html.replace('data-mode="login"', f'data-mode="{mode}"'))
+
+    @router.get("/login", include_in_schema=False)
+    async def custom_login_page(request: Request):
+        if _student_from_request(request):
+            return RedirectResponse(url="/", status_code=303)
+        return auth_page("login")
+
+    @router.get("/register", include_in_schema=False)
+    async def custom_register_page(request: Request):
+        if _student_from_request(request):
+            return RedirectResponse(url="/", status_code=303)
+        return auth_page("register")
+
+    @router.get("/forgot-password", include_in_schema=False)
+    async def custom_forgot_password_page(request: Request):
+        if _student_from_request(request):
+            return RedirectResponse(url="/", status_code=303)
+        return auth_page("reset")
+
+    _move_routes_before_catchall(router, ("/auth/profile", "/auth/avatar", "/profile", "/login", "/register", "/forgot-password"))
+    _move_routes_before_catchall(router, ("/auth/profile", "/auth/avatar", "/profile", "/login", "/register", "/forgot-password"))
+
+
 
 
 
@@ -899,73 +942,22 @@ def _chainlit_router(app: Any):
 
 def _move_routes_before_catchall(router: Any, prefixes: tuple[str, ...]) -> None:
     owned = [
-        route for route in router.routes
+        (index, route) for index, route in enumerate(router.routes)
         if getattr(route, "path", "").startswith(prefixes)
     ]
     if not owned:
         return
-    remaining = [route for route in router.routes if route not in owned]
+    owned_indices = {index for index, route in owned}
+    routes = [route for index, route in owned]
+    remaining = [route for index, route in enumerate(router.routes) if index not in owned_indices]
     catchall_index = next(
         (index for index, route in enumerate(remaining)
          if getattr(route, "path", "") == "/{full_path:path}"),
         len(remaining),
     )
-    router.routes[:] = remaining[:catchall_index] + owned + remaining[catchall_index:]
+    router.routes[:] = remaining[:catchall_index] + routes + remaining[catchall_index:]
 
 
-def _auth_page(title: str, endpoint_prefix: str, require_password: bool) -> str:
-    password_fields = """
-      <label>密码<input id="password" type="password" autocomplete="new-password" required></label>
-    """ if require_password else ""
-    confirm_fields = """
-      <label>新密码<input id="new-password" type="password" autocomplete="new-password" required></label>
-    """ if endpoint_prefix.endswith("password-reset") else ""
-    return f"""<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title} · ExamGuard</title>
-<style>
-body{{font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;background:#f6f7fb;color:#172033;margin:0}}
-main{{max-width:430px;margin:8vh auto;background:white;padding:28px;border-radius:16px;box-shadow:0 14px 40px #17203314}}
-h1{{font-size:22px}} label{{display:block;margin:14px 0;font-weight:600}} input{{width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border:1px solid #ccd2dd;border-radius:9px}}
-button{{width:100%;margin-top:16px;padding:11px;border:0;border-radius:999px;background:#4d6bfe;color:white;font-weight:700;cursor:pointer}}
-.secondary{{display:block;text-align:center;margin-top:14px;color:#4d6bfe}} .message{{min-height:22px;color:#7a2f31}}
-</style></head><body><main><h1>{title}</h1>
-<form id="form">
-  <label>学号<input id="student-id" placeholder="U202113566" required></label>
-  {password_fields}{confirm_fields}
-  <label>验证码<input id="code" inputmode="numeric" pattern="[0-9]{{6}}" required></label>
-  <button type="button" id="send">发送验证码</button>
-  <button type="submit">提交</button><p class="message" id="message"></p>
-</form>
-<a class="secondary" href="/login">已有账号？登录</a>
-</main><script>
-const message=document.querySelector('#message');
-async function post(path, body) {{
-  const response=await fetch(path,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
-  const data=await response.json().catch(()=>({{}}));
-  if(!response.ok) throw new Error(data.detail||'请求未完成');
-  return data;
-}}
-document.querySelector('#send').addEventListener('click',async event=>{{
-  event.preventDefault(); message.textContent='';
-  const id=document.querySelector('#student-id').value.trim().toUpperCase();
-  try {{
-    const body={{student_id:id}}; const password=document.querySelector('#password'); const nickname=document.querySelector('#nickname');
-    if(password) body.password=password.value; if(nickname) body.nickname=nickname.value;
-    await post('{endpoint_prefix}/request-code',body); message.textContent='验证码已发送，请查收教育邮箱。';
-  }} catch(error) {{ message.textContent=error.message; }}
-}});
-document.querySelector('#form').addEventListener('submit',async event=>{{
-  event.preventDefault(); message.textContent='';
-  const id=document.querySelector('#student-id').value.trim().toUpperCase();
-  const code=document.querySelector('#code').value.trim();
-  try {{
-    const body={{student_id:id,code}}; const password=document.querySelector('#password'); const nickname=document.querySelector('#nickname'); const newPassword=document.querySelector('#new-password');
-    if(password) body.password=password.value; if(nickname) body.nickname=nickname.value; if(newPassword) body.new_password=newPassword.value;
-    await post('{endpoint_prefix}/confirm',body); location.href='/login';
-  }} catch(error) {{ message.textContent=error.message; }}
-}});
-</script></body></html>"""
 
 
 def install_student_auth(app: Any, service_factory) -> None:
@@ -977,7 +969,7 @@ def install_student_auth(app: Any, service_factory) -> None:
     router = _chainlit_router(app)
 
     from fastapi import HTTPException
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
     def service():
         return service_factory()
 
@@ -993,8 +985,8 @@ def install_student_auth(app: Any, service_factory) -> None:
         return HTTPException(status_code=503, detail="请求暂未完成，请稍后再试")
 
     @router.get("/auth/hust/register", include_in_schema=False)
-    async def register_page():
-        return HTMLResponse(_auth_page("注册 ExamGuard", "/auth/hust/register", True))
+    async def legacy_register_page():
+        return RedirectResponse(url="/register", status_code=301)
 
     @router.post("/auth/hust/register/request-code")
     async def register_code(payload: RegistrationCodeRequest, request: Request):
@@ -1022,10 +1014,8 @@ def install_student_auth(app: Any, service_factory) -> None:
         return {"status": "created", "identifier": account.identifier}
 
     @router.get("/auth/hust/forgot-password", include_in_schema=False)
-    async def reset_page():
-        return HTMLResponse(
-            _auth_page("重置密码", "/auth/hust/password-reset", False)
-        )
+    async def legacy_reset_page():
+        return RedirectResponse(url="/forgot-password", status_code=301)
 
     @router.post("/auth/hust/password-reset/request-code")
     async def password_reset_code(payload: ResetCodeRequest, request: Request):
@@ -1126,10 +1116,21 @@ def install_student_auth(app: Any, service_factory) -> None:
     async def invalidate_reset_sessions(request: Request, call_next):
         path = request.url.path
         if path.startswith(
-            ("/auth/hust", "/login", "/logout", "/assets", "/public", "/favicon")
+            ("/auth/hust", "/login", "/register", "/forgot-password", "/logout", "/assets", "/public", "/favicon")
         ):
             return await call_next(request)
         from chainlit.auth import decode_jwt, get_token_from_cookies
+
+        if path == "/" and request.method == "GET":
+            token = get_token_from_cookies(request.cookies)
+            try:
+                decoded = decode_jwt(token) if token else None
+            except Exception:
+                decoded = None
+            if not decoded:
+                from fastapi.responses import RedirectResponse
+
+                return RedirectResponse(url="/login", status_code=303)
 
         token = get_token_from_cookies(request.cookies)
         if not token:
@@ -1162,4 +1163,7 @@ def install_student_auth(app: Any, service_factory) -> None:
             return response
         return await call_next(request)
 
-    _move_routes_before_catchall(router, ("/auth/hust/", "/auth/profile"))
+    _move_routes_before_catchall(
+        router,
+        ("/auth/hust/", "/auth/profile", "/login", "/register", "/forgot-password"),
+    )

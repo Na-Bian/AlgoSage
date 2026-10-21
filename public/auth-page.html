@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>HUST 登录 · ExamGuard</title>
+  <link rel="icon" href="/favicon" type="image/svg+xml">
+  <script>
+    (function () {
+      var preference = null;
+      try { preference = localStorage.getItem("vite-ui-theme"); } catch (_) {}
+      var dark = preference === "dark"
+        || ((preference === null || preference === "system")
+          && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", dark);
+    })();
+  </script>
+  <link rel="stylesheet" href="/public/custom.css">
+  <link rel="stylesheet" href="/public/auth-page.css">
+</head>
+<body class="eg-auth-page" data-mode="login">
+  <div class="eg-auth-left">
+    <a class="eg-auth-brand" href="/login"><img class="eg-auth-logo" id="auth-logo" src="/logo?theme=light" alt="ExamGuard"></a>
+    <div class="eg-auth-center">
+      <div class="eg-auth-panel">
+        <h1 class="eg-auth-title" id="auth-title">HUST 学生登录</h1>
+        <p class="eg-auth-subtitle">使用学号与教育邮箱验证码访问考试受限助教。</p>
+        <div class="eg-auth-tabs" role="tablist">
+          <button class="eg-auth-tab" type="button" data-target="login" aria-selected="true">登录</button>
+          <button class="eg-auth-tab" type="button" data-target="register" aria-selected="false">注册</button>
+          <button class="eg-auth-tab" type="button" data-target="reset" aria-selected="false">找回密码</button>
+        </div>
+
+        <form class="eg-auth-form" id="login-form" data-active="true">
+          <div class="eg-auth-field">
+            <label for="login-student-id">学号</label>
+            <input id="login-student-id" autocomplete="username" placeholder="U202113566" required>
+          </div>
+          <div class="eg-auth-field">
+            <label for="login-password">密码</label>
+            <div class="eg-auth-password-wrap">
+              <input id="login-password" type="password" autocomplete="current-password" required>
+              <button class="eg-auth-eye" type="button" data-toggle-password="login-password" aria-label="显示密码">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <button class="eg-auth-primary" type="submit">登录</button>
+          <div class="eg-auth-switch">还没有账号？<button type="button" data-goto="register">用教育邮箱注册</button></div>
+        </form>
+
+        <form class="eg-auth-form" id="register-form">
+          <div class="eg-auth-field"><label for="register-nickname">昵称</label><input id="register-nickname" maxlength="40" autocomplete="nickname" required></div>
+          <div class="eg-auth-field"><label for="register-student-id">学号</label><input id="register-student-id" placeholder="U202113566" required></div>
+          <div class="eg-auth-field"><label for="register-password">密码</label><input id="register-password" type="password" autocomplete="new-password" minlength="12" required></div>
+          <div class="eg-auth-field"><label for="register-confirm">确认密码</label><input id="register-confirm" type="password" autocomplete="new-password" minlength="12" required></div>
+          <div class="eg-auth-field">
+            <label for="register-code">邮箱验证码</label>
+            <div class="eg-auth-code-row"><input id="register-code" inputmode="numeric" pattern="[0-9]{6}" required><button class="eg-auth-send-code" type="button" data-send="register">发送验证码</button></div>
+          </div>
+          <button class="eg-auth-primary" type="submit">创建账号</button>
+          <div class="eg-auth-switch">已有账号？<button type="button" data-goto="login">直接登录</button></div>
+        </form>
+
+        <form class="eg-auth-form" id="reset-form">
+          <div class="eg-auth-field"><label for="reset-student-id">学号</label><input id="reset-student-id" placeholder="U202113566" required></div>
+          <div class="eg-auth-field">
+            <label for="reset-code">邮箱验证码</label>
+            <div class="eg-auth-code-row"><input id="reset-code" inputmode="numeric" pattern="[0-9]{6}" required><button class="eg-auth-send-code" type="button" data-send="reset">发送验证码</button></div>
+          </div>
+          <div class="eg-auth-field"><label for="reset-password">新密码</label><input id="reset-password" type="password" autocomplete="new-password" minlength="12" required></div>
+          <div class="eg-auth-field"><label for="reset-confirm">确认新密码</label><input id="reset-confirm" type="password" autocomplete="new-password" minlength="12" required></div>
+          <button class="eg-auth-primary" type="submit">重置密码</button>
+          <div class="eg-auth-switch">想起密码了？<button type="button" data-goto="login">返回登录</button></div>
+        </form>
+
+        <p class="eg-auth-status" id="auth-status"></p>
+      </div>
+    </div>
+  </div>
+  <div class="eg-auth-right" aria-hidden="true">
+    <img src="/favicon" alt="">
+  </div>
+  <script src="/public/auth-page.js?v=20261021-chainlit-style"></script>
+</body>
+</html>
