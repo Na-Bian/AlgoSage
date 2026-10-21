@@ -278,6 +278,29 @@ class ChatDataLayer(BaseDataLayer):
             self._conn.commit()
         return cursor.rowcount > 0
 
+    async def delete_feedback_for(self, feedback_id: str, principal_id: str) -> bool:
+        """Delete feedback only when the feedback's thread belongs to principal."""
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT f.thread_id, t.user_identifier, t.user_id
+                FROM feedbacks AS f
+                JOIN threads AS t ON t.id = f.thread_id
+                WHERE f.id = ?
+                """,
+                (feedback_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            owner = row["user_identifier"] or row["user_id"]
+            if owner != principal_id:
+                raise PermissionError("feedback does not belong to the caller")
+            cursor = self._conn.execute(
+                "DELETE FROM feedbacks WHERE id = ?", (feedback_id,)
+            )
+            self._conn.commit()
+        return cursor.rowcount > 0
+
     async def upsert_feedback(self, feedback: Feedback) -> str:
         feedback_id = str(feedback.id or uuid4())
         thread_id = str(feedback.threadId or "")
@@ -294,6 +317,51 @@ class ChatDataLayer(BaseDataLayer):
             ).fetchone()
             if step is None or step["thread_id"] != thread_id:
                 raise PermissionError("feedback target does not belong to thread")
+            self._conn.execute(
+                "INSERT INTO feedbacks(id, for_id, thread_id, value, comment, created_at) VALUES(?,?,?,?,?,?) "
+                "ON CONFLICT(for_id) DO UPDATE SET id=excluded.id, value=excluded.value, comment=excluded.comment",
+                (
+                    feedback_id,
+                    feedback.forId,
+                    thread_id,
+                    int(feedback.value),
+                    str(feedback.comment)[:2000] if feedback.comment is not None else None,
+                    _now(),
+                ),
+            )
+            self._conn.commit()
+        return feedback_id
+
+    async def upsert_feedback_for(
+        self, feedback: Feedback, principal_id: str
+    ) -> str:
+        """Create or update feedback after checking the target thread owner."""
+        feedback_id = str(feedback.id or uuid4())
+        thread_id = str(feedback.threadId or "")
+        if not thread_id:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT thread_id FROM steps WHERE id = ?", (feedback.forId,)
+                ).fetchone()
+                thread_id = row["thread_id"] if row else ""
+        if not thread_id or int(feedback.value) not in {0, 1}:
+            raise ValueError("feedback must target a valid thread and have value 0 or 1")
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT s.thread_id AS step_thread_id,
+                       t.user_identifier, t.user_id
+                FROM steps AS s
+                JOIN threads AS t ON t.id = s.thread_id
+                WHERE s.id = ?
+                """,
+                (feedback.forId,),
+            ).fetchone()
+            if row is None or row["step_thread_id"] != thread_id:
+                raise PermissionError("feedback target does not belong to thread")
+            owner = row["user_identifier"] or row["user_id"]
+            if owner != principal_id:
+                raise PermissionError("feedback target does not belong to the caller")
             self._conn.execute(
                 "INSERT INTO feedbacks(id, for_id, thread_id, value, comment, created_at) VALUES(?,?,?,?,?,?) "
                 "ON CONFLICT(for_id) DO UPDATE SET id=excluded.id, value=excluded.value, comment=excluded.comment",

@@ -100,6 +100,87 @@ class ChainlitAppModuleTests(unittest.TestCase):
             ).session_guard,
         )
 
+    def test_feedback_http_routes_are_owner_scoped(self):
+        from fastapi.testclient import TestClient
+        from chainlit.server import app, get_current_user
+
+        store = self.module._chat_store
+        asyncio.run(store.update_thread("alice-thread", user_id="alice"))
+        asyncio.run(store.update_thread("bob-thread", user_id="bob"))
+        asyncio.run(
+            store.create_step(
+                {
+                    "id": "answer-1",
+                    "threadId": "alice-thread",
+                    "type": "assistant_message",
+                    "name": "answer",
+                    "output": "answer",
+                    "createdAt": "2026-01-01T00:00:00Z",
+                }
+            )
+        )
+
+        with TestClient(app) as client:
+            self.addCleanup(app.dependency_overrides.clear)
+            app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+                identifier="bob"
+            )
+            denied = client.put(
+                "/feedback",
+                json={
+                    "feedback": {
+                        "forId": "answer-1",
+                        "value": 1,
+                        "threadId": "alice-thread",
+                    },
+                    "sessionId": "unrelated-session",
+                },
+            )
+            self.assertEqual(denied.status_code, 403)
+            self.assertIsNone(store.get_thread("alice-thread")["steps"][0].get("feedback"))
+
+            app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+                identifier="alice"
+            )
+            allowed = client.put(
+                "/feedback",
+                json={
+                    "feedback": {
+                        "forId": "answer-1",
+                        "value": 1,
+                        "threadId": "alice-thread",
+                        "comment": "helpful",
+                    },
+                    "sessionId": "unrelated-session",
+                },
+            )
+            self.assertEqual(allowed.status_code, 200)
+            feedback_id = allowed.json()["feedbackId"]
+            self.assertEqual(
+                store.get_thread("alice-thread")["steps"][0]["feedback"]["comment"],
+                "helpful",
+            )
+
+            app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+                identifier="bob"
+            )
+            denied_delete = client.delete(
+                "/feedback", json={"feedbackId": feedback_id}
+            )
+            self.assertEqual(denied_delete.status_code, 403)
+            self.assertIn("feedback", store.get_thread("alice-thread")["steps"][0])
+
+            app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+                identifier="alice"
+            )
+            allowed_delete = client.delete(
+                "/feedback", json={"feedbackId": feedback_id}
+            )
+            self.assertEqual(allowed_delete.status_code, 200)
+            self.assertNotIn(
+                "feedback", store.get_thread("alice-thread")["steps"][0]
+            )
+
     def test_bootstrap_welcome_uses_public_runtime_settings(self):
         from examguard.config import Settings
         from examguard.service import TutorService

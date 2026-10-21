@@ -252,3 +252,39 @@ class ChatStoreTests(unittest.TestCase):
         run(reopened.delete_thread("t1"))
         self.assertIsNone(reopened.get_element_path("t1", "e1"))
         run(reopened.close())
+
+    def test_feedback_writes_and_deletes_are_owner_scoped(self):
+        store = ChatDataLayer(str(self.root / "chat.sqlite3"))
+        run(store.update_thread("alice-thread", user_id="alice"))
+        run(store.update_thread("bob-thread", user_id="bob"))
+        run(store.create_step(step("a1", "alice-thread", "answer", "2026-01-01T00:00:00Z")))
+
+        feedback_id = run(
+            store.upsert_feedback_for(
+                Feedback(forId="a1", value=1, threadId="alice-thread"),
+                "alice",
+            )
+        )
+        thread = run(store.get_thread("alice-thread"))
+        self.assertEqual(thread["steps"][0]["feedback"]["value"], 1)
+
+        with self.assertRaises(PermissionError):
+            run(
+                store.upsert_feedback_for(
+                    Feedback(forId="a1", value=0, threadId="alice-thread"),
+                    "bob",
+                )
+            )
+        thread = run(store.get_thread("alice-thread"))
+        self.assertEqual(thread["steps"][0]["feedback"]["value"], 1)
+
+        with self.assertRaises(PermissionError):
+            run(store.delete_feedback_for(feedback_id, "bob"))
+        thread = run(store.get_thread("alice-thread"))
+        self.assertIn("feedback", thread["steps"][0])
+
+        self.assertTrue(run(store.delete_feedback_for(feedback_id, "alice")))
+        self.assertFalse(run(store.delete_feedback_for("missing", "alice")))
+        thread = run(store.get_thread("alice-thread"))
+        self.assertNotIn("feedback", thread["steps"][0])
+        run(store.close())

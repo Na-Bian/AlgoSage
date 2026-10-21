@@ -129,7 +129,9 @@ def get_chat_store():
 # after the websocket session ends.
 try:  # pragma: no cover - exercised through the running Chainlit server
     from fastapi import HTTPException
+    from fastapi.routing import APIRoute
     from fastapi.responses import FileResponse
+    from chainlit.types import DeleteFeedbackRequest, UpdateFeedbackRequest
     from chainlit.data.acl import is_thread_author
     from chainlit.server import UserParam, app as _chainlit_server_app
 
@@ -153,6 +155,49 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             media_type=(element or {}).get("mime") or "application/octet-stream",
             filename=(element or {}).get("name") or element_id,
         )
+
+    # Chainlit authenticates /feedback but delegates ownership entirely to the
+    # data layer without passing the caller. Replace its routes with owner-
+    # checked versions so one workspace cannot alter another workspace's rating.
+    for route in list(_chainlit_server_app.router.routes):
+        if (
+            isinstance(route, APIRoute)
+            and route.path == "/feedback"
+            and route.methods.intersection({"PUT", "DELETE"})
+        ):
+            _chainlit_server_app.router.routes.remove(route)
+
+    @_chainlit_server_app.put("/feedback", include_in_schema=False)
+    async def update_owned_feedback(
+        update: UpdateFeedbackRequest, current_user: UserParam
+    ):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        try:
+            feedback_id = await get_chat_store().upsert_feedback_for(
+                update.feedback, current_user.identifier
+            )
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return {"success": True, "feedbackId": feedback_id}
+
+    @_chainlit_server_app.delete("/feedback", include_in_schema=False)
+    async def delete_owned_feedback(
+        payload: DeleteFeedbackRequest, current_user: UserParam
+    ):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        try:
+            deleted = await get_chat_store().delete_feedback_for(
+                payload.feedbackId, current_user.identifier
+            )
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Feedback not found")
+        return {"success": True}
 except ImportError:
     # The service layer and unit tests do not require the HTTP route.
     pass
