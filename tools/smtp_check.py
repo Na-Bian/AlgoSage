@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -21,7 +22,7 @@ from algosage.emailer import (  # noqa: E402
 )
 
 
-def main() -> int:
+async def main() -> int:
     parser = argparse.ArgumentParser(description="Send an AlgoSage SMTP delivery check")
     parser.add_argument("--to", required=True, help="recipient email address")
     args = parser.parse_args()
@@ -32,7 +33,7 @@ def main() -> int:
         print("SAGE_EMAIL_SENDER must be 'smtp' for this check", file=sys.stderr)
         return 2
 
-    sender.send(
+    await sender.send(
         EmailMessage(
             to_address=args.to,
             subject="AlgoSage SMTP check",
@@ -47,4 +48,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(asyncio.run(main()))
