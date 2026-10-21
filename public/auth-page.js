@@ -19,12 +19,13 @@
   const setError = (message, { authFailure = false } = {}) => {
     const feedback = document.getElementById("login-feedback");
     const error = document.getElementById("login-error");
+    const forgotLink = document.getElementById("forgot-link");
     const studentInput = document.getElementById("login-student-id");
     const passwordInput = document.getElementById("login-password");
     authFailed = authFailure || (authFailed && view === "login");
     if (view === "login") {
-      feedback.hidden = !(authFailure || Boolean(message));
       feedback.dataset.visible = String(authFailure || Boolean(message));
+      forgotLink.hidden = !authFailed;
       const describedBy = authFailure || Boolean(message) ? "login-error" : null;
       if (describedBy) {
         studentInput.setAttribute("aria-describedby", describedBy);
@@ -58,6 +59,7 @@
     if (!button) return;
     button.disabled = busy;
     button.setAttribute("aria-busy", String(busy));
+    button.classList.toggle("is-loading", busy);
     if (label && form.id === "login-form") label.textContent = busy ? "登录中…" : "登录";
     if (label && form.id === "register-form") label.textContent = busy ? "创建中…" : "创建账号";
     if (label && form.id === "reset-form") label.textContent = busy ? "重置中…" : "重置密码";
@@ -103,7 +105,6 @@
 
     if (!studentId || !password) {
       setError("请输入学号和密码。");
-      feedback.hidden = false;
       return;
     }
 
@@ -117,7 +118,6 @@
 
       if (response.status === 401) {
         setError("学号或密码不正确，请重试。", { authFailure: true });
-        feedback.hidden = false;
         passwordInput.focus({ preventScroll: true });
         return;
       }
@@ -128,7 +128,6 @@
       }
 
       authFailed = false;
-      feedback.hidden = true;
       status("登录成功，正在进入应用…", "success");
       location.href = "/";
     } catch (error) {

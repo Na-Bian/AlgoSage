@@ -418,6 +418,6 @@ class ProfileRouteTests(unittest.TestCase):
             self.assertIn("/public/brand-logo.png", response.text)
             self.assertNotIn('class="eg-auth-tabs"', response.text)
             if path == "/login":
-                self.assertIn('id="login-feedback" class="login-feedback" hidden', response.text)
-                self.assertIn('id="forgot-link"', response.text)
+                self.assertIn('id="login-feedback" class="login-feedback" data-visible="false"', response.text)
+                self.assertIn('id="forgot-link" class="forgot-link" href="/forgot-password" hidden', response.text)
                 self.assertIn(">登录 AlgoSage</h1>", response.text)
