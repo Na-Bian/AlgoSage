@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import io
 import json
 import os
 import re
@@ -18,6 +19,7 @@ from uuid import uuid4
 
 from argon2 import PasswordHasher
 from fastapi import Request
+from PIL import Image as PillowImage
 from pydantic import BaseModel
 from chainlit.server import UserParam
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
@@ -26,6 +28,8 @@ from .emailer import EmailMessage, EmailSender
 
 _HUST_PATTERN = re.compile(r"^U202[0-9]1[0-9]{4}$")
 _CODE_ALPHABET = "0123456789"
+_AVATAR_SIZE = 256
+_MAX_AVATAR_UPLOAD = 5 * 1024 * 1024
 
 
 class AuthValidationError(ValueError):
@@ -46,7 +50,7 @@ class AuthCredentialsError(PermissionError):
 
 @dataclass(frozen=True)
 class AuthConfig:
-    mode: str = "local"
+    mode: str = "hust"
     email_domain: str = "hust.edu.cn"
     student_id_pattern: str = r"^U202[0-9]1[0-9]{4}$"
     password_min_length: int = 12
@@ -61,7 +65,7 @@ class AuthConfig:
     @classmethod
     def from_env(cls) -> "AuthConfig":
         return cls(
-            mode=os.environ.get("EG_AUTH_MODE", "local").strip().lower(),
+            mode="hust",
             email_domain=os.environ.get(
                 "EG_STUDENT_EMAIL_DOMAIN", "hust.edu.cn"
             ).strip().lower(),
@@ -95,8 +99,8 @@ class AuthConfig:
         )
 
     def validate(self) -> None:
-        if self.mode not in {"local", "hust"}:
-            raise ValueError("EG_AUTH_MODE must be 'local' or 'hust'")
+        if self.mode != "hust":
+            raise ValueError("ExamGuard authentication is HUST-only")
         re.compile(self.student_id_pattern)
         if self.password_min_length < 12:
             raise ValueError("password minimum length cannot be below 12")
@@ -148,6 +152,156 @@ class ProfileUpdateRequest(BaseModel):
     nickname: str
     current_password: str | None = None
     new_password: str | None = None
+
+
+def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=None) -> None:
+    """Install HUST profile APIs, avatar delivery, and the standalone profile page."""
+    if getattr(app.state, "examguard_profile_routes_installed", False):
+        return
+    app.state.examguard_profile_routes_installed = True
+
+    router = _chainlit_router(app)
+
+    from fastapi import HTTPException, Request, Response
+    from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+
+    profile_html_path = Path(__file__).resolve().parent.parent / "public" / "profile-page.html"
+
+    def student_auth():
+        return student_auth_factory()
+
+    def _student_id(current_user: Any) -> str:
+        identifier = getattr(current_user, "identifier", "")
+        if not identifier.startswith("student:"):
+            raise HTTPException(status_code=403, detail="HUST student account required")
+        return identifier.removeprefix("student:")
+
+    def _profile_payload(account: dict[str, Any]) -> dict[str, Any]:
+        avatar_updated_at = account.get("avatar_updated_at") or ""
+        has_avatar = bool(account.get("avatar_mime"))
+        return {
+            "mode": "hust",
+            "identifier": f"student:{account['student_id']}",
+            "nickname": account["nickname"],
+            "student_id": account["student_id"],
+            "email": account["email"],
+            "created_at": account["created_at"],
+            "updated_at": account["updated_at"],
+            "session_version": int(account["session_version"]),
+            "can_change_password": True,
+            "has_avatar": has_avatar,
+            "avatar_updated_at": avatar_updated_at,
+            "avatar_url": (
+                f"/auth/avatar/me?v={avatar_updated_at}" if has_avatar else ""
+            ),
+        }
+
+    def _issue_profile_cookie(
+        request: Request, account: dict[str, Any], payload: dict[str, Any]
+    ):
+        from chainlit.auth import create_jwt
+        from chainlit.auth.cookie import set_auth_cookie
+        from chainlit.user import User
+
+        avatar_url = (
+            f"/auth/avatar/me?v={account.get('avatar_updated_at') or ''}"
+            if account.get("avatar_mime")
+            else ""
+        )
+        user = User(
+            identifier=f"student:{account['student_id']}",
+            display_name=account["nickname"],
+            metadata={
+                "provider": "hust-student",
+                "student_id": account["student_id"],
+                "session_version": int(account["session_version"]),
+                "image": avatar_url,
+            },
+        )
+        response = JSONResponse(payload)
+        set_auth_cookie(request, response, create_jwt(user))
+        return response
+
+    @router.get("/profile", include_in_schema=False)
+    async def profile_page(current_user: UserParam):
+        if not current_user:
+            return RedirectResponse(url="/login", status_code=303)
+        identifier = getattr(current_user, "identifier", "")
+        if not identifier.startswith("student:"):
+            response = RedirectResponse(url="/login", status_code=303)
+            response.delete_cookie("access_token", path="/")
+            return response
+        return HTMLResponse(profile_html_path.read_text(encoding="utf-8"))
+
+    @router.get("/auth/avatar/me", include_in_schema=False)
+    async def read_avatar(current_user: UserParam):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        avatar = student_auth().store.get_avatar(_student_id(current_user))
+        if not avatar:
+            raise HTTPException(status_code=404, detail="Avatar not found")
+        content, mime = avatar
+        return Response(
+            content=content,
+            media_type=mime,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @router.put("/auth/avatar", include_in_schema=False)
+    async def update_avatar(request: Request, current_user: UserParam):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        student_id = _student_id(current_user)
+        origin = request.headers.get("origin", "")
+        if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
+            raise HTTPException(status_code=403, detail="Cross-origin request rejected")
+        content = await request.body()
+        try:
+            account = student_auth().update_avatar(student_id=student_id, content=content)
+        except AuthValidationError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        payload = _profile_payload(account)
+        return _issue_profile_cookie(request, account, payload)
+
+    @router.get("/auth/profile")
+    async def read_profile(current_user: UserParam):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        account = student_auth().store.get_account(_student_id(current_user))
+        if not account:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        return _profile_payload(account)
+
+    @router.patch("/auth/profile")
+    async def update_profile(
+        payload: ProfileUpdateRequest, request: Request, current_user: UserParam
+    ):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        student_id = _student_id(current_user)
+        origin = request.headers.get("origin", "")
+        if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
+            raise HTTPException(status_code=403, detail="Cross-origin request rejected")
+        try:
+            account = student_auth().update_profile(
+                student_id=student_id,
+                nickname=payload.nickname,
+                current_password=payload.current_password,
+                new_password=payload.new_password,
+            )
+        except AuthValidationError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except AuthCredentialsError as error:
+            raise HTTPException(status_code=423, detail=str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        payload = _profile_payload(account)
+        return _issue_profile_cookie(request, account, payload)
+
+    _move_routes_before_catchall(router, ("/auth/profile", "/auth/avatar", "/profile"))
+
 
 
 def _now() -> datetime:
@@ -213,6 +367,19 @@ class StudentAuthStore:
             """
         )
         self._conn.commit()
+        columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(student_accounts)").fetchall()
+        }
+        migrations = {
+            "avatar_mime": "ALTER TABLE student_accounts ADD COLUMN avatar_mime TEXT",
+            "avatar_data": "ALTER TABLE student_accounts ADD COLUMN avatar_data BLOB",
+            "avatar_updated_at": "ALTER TABLE student_accounts ADD COLUMN avatar_updated_at TEXT",
+        }
+        for column, statement in migrations.items():
+            if column not in columns:
+                self._conn.execute(statement)
+        self._conn.commit()
 
     def close(self) -> None:
         with self._lock:
@@ -221,9 +388,33 @@ class StudentAuthStore:
     def get_account(self, student_id: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT * FROM student_accounts WHERE student_id = ?", (student_id,)
+                """SELECT student_id,nickname,email,password_hash,status,email_verified_at,
+                          session_version,failed_login_count,locked_until,created_at,updated_at,
+                          avatar_mime,avatar_updated_at
+                   FROM student_accounts WHERE student_id = ?""",
+                (student_id,),
             ).fetchone()
         return dict(row) if row else None
+
+    def get_avatar(self, student_id: str) -> tuple[bytes, str] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT avatar_data,avatar_mime FROM student_accounts WHERE student_id=?",
+                (student_id,),
+            ).fetchone()
+        if not row or not row["avatar_data"]:
+            return None
+        return bytes(row["avatar_data"]), row["avatar_mime"] or "image/png"
+
+    def set_avatar(self, student_id: str, content: bytes, mime: str) -> bool:
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE student_accounts SET avatar_data=?,avatar_mime=?,avatar_updated_at=?,updated_at=? "
+                "WHERE student_id=?",
+                (content, mime, _iso(_now()), _iso(_now()), student_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount > 0
 
     def create_account(
         self,
@@ -633,13 +824,43 @@ class StudentAuthService:
             raise PermissionError("student account was not found")
         return updated
 
+    def update_avatar(self, *, student_id: str, content: bytes) -> dict[str, Any]:
+        if not content:
+            raise AuthValidationError("请选择头像文件")
+        if len(content) > _MAX_AVATAR_UPLOAD:
+            raise AuthValidationError("头像文件不能超过 5MB")
+        try:
+            with PillowImage.open(io.BytesIO(content)) as source:
+                source.load()
+                image = source.convert("RGBA")
+        except Exception as error:
+            raise AuthValidationError("头像仅支持 PNG、JPEG 或 WebP") from error
+
+        # Center-crop before resizing, so mobile photos do not become stretched.
+        width, height = image.size
+        edge = min(width, height)
+        left = (width - edge) // 2
+        top = (height - edge) // 2
+        avatar = image.crop((left, top, left + edge, top + edge)).resize(
+            (_AVATAR_SIZE, _AVATAR_SIZE), PillowImage.Resampling.LANCZOS
+        )
+        output = io.BytesIO()
+        avatar.save(output, format="PNG", optimize=True)
+        normalized = output.getvalue()
+        if not self.store.set_avatar(student_id, normalized, "image/png"):
+            raise PermissionError("student account was not found")
+        updated = self.store.get_account(student_id)
+        if not updated:
+            raise PermissionError("student account was not found")
+        return updated
+
 
 def auth_service_from_env() -> StudentAuthService:
     from .emailer import email_sender_from_env
 
     config = AuthConfig.from_env()
     if config.mode != "hust":
-        raise ValueError("student auth is only available when EG_AUTH_MODE=hust")
+        raise ValueError("student authentication service is not configured")
     secret = os.environ.get("CHAINLIT_AUTH_SECRET", "")
     if not secret:
         raise ValueError("CHAINLIT_AUTH_SECRET is required for HUST authentication")
@@ -663,6 +884,33 @@ def _client_ip(request: Any) -> str:
         if forwarded:
             return forwarded.split(",")[0].strip()
     return getattr(getattr(request, "client", None), "host", "") or "unknown"
+
+
+def _chainlit_router(app: Any):
+    """Return the router that owns Chainlit's UI catch-all route."""
+    included = next(
+        (route for route in app.routes if type(route).__name__ == "_IncludedRouter"),
+        None,
+    )
+    if included is None:
+        return app.router
+    return included.original_router
+
+
+def _move_routes_before_catchall(router: Any, prefixes: tuple[str, ...]) -> None:
+    owned = [
+        route for route in router.routes
+        if getattr(route, "path", "").startswith(prefixes)
+    ]
+    if not owned:
+        return
+    remaining = [route for route in router.routes if route not in owned]
+    catchall_index = next(
+        (index for index, route in enumerate(remaining)
+         if getattr(route, "path", "") == "/{full_path:path}"),
+        len(remaining),
+    )
+    router.routes[:] = remaining[:catchall_index] + owned + remaining[catchall_index:]
 
 
 def _auth_page(title: str, endpoint_prefix: str, require_password: bool) -> str:
@@ -726,6 +974,8 @@ def install_student_auth(app: Any, service_factory) -> None:
         return
     app.state.examguard_student_auth_installed = True
 
+    router = _chainlit_router(app)
+
     from fastapi import HTTPException
     from fastapi.responses import HTMLResponse, JSONResponse
     def service():
@@ -742,11 +992,11 @@ def install_student_auth(app: Any, service_factory) -> None:
             return HTTPException(status_code=423, detail=str(error))
         return HTTPException(status_code=503, detail="请求暂未完成，请稍后再试")
 
-    @app.get("/auth/hust/register", include_in_schema=False)
+    @router.get("/auth/hust/register", include_in_schema=False)
     async def register_page():
         return HTMLResponse(_auth_page("注册 ExamGuard", "/auth/hust/register", True))
 
-    @app.post("/auth/hust/register/request-code")
+    @router.post("/auth/hust/register/request-code")
     async def register_code(payload: RegistrationCodeRequest, request: Request):
         try:
             await service().request_registration_code(
@@ -761,7 +1011,7 @@ def install_student_auth(app: Any, service_factory) -> None:
             raise failure(error) from error
         return {"status": "sent"}
 
-    @app.post("/auth/hust/register/confirm")
+    @router.post("/auth/hust/register/confirm")
     async def register_confirm(payload: RegistrationConfirmRequest):
         try:
             account = service().confirm_registration(
@@ -771,13 +1021,13 @@ def install_student_auth(app: Any, service_factory) -> None:
             raise failure(error) from error
         return {"status": "created", "identifier": account.identifier}
 
-    @app.get("/auth/hust/forgot-password", include_in_schema=False)
+    @router.get("/auth/hust/forgot-password", include_in_schema=False)
     async def reset_page():
         return HTMLResponse(
             _auth_page("重置密码", "/auth/hust/password-reset", False)
         )
 
-    @app.post("/auth/hust/password-reset/request-code")
+    @router.post("/auth/hust/password-reset/request-code")
     async def password_reset_code(payload: ResetCodeRequest, request: Request):
         try:
             await service().request_password_reset_code(
@@ -788,7 +1038,7 @@ def install_student_auth(app: Any, service_factory) -> None:
         # Unknown accounts get the same successful shape as existing accounts.
         return {"status": "sent"}
 
-    @app.post("/auth/hust/password-reset/confirm")
+    @router.post("/auth/hust/password-reset/confirm")
     async def password_reset_confirm(payload: ResetConfirmRequest):
         try:
             service().confirm_password_reset(
@@ -800,7 +1050,7 @@ def install_student_auth(app: Any, service_factory) -> None:
             raise failure(error) from error
         return {"status": "reset"}
 
-    @app.get("/auth/hust/profile")
+    @router.get("/auth/hust/profile")
     async def get_profile(current_user: UserParam):
         principal = getattr(current_user, "identifier", "")
         if not current_user or not principal.startswith("student:"):
@@ -817,7 +1067,7 @@ def install_student_auth(app: Any, service_factory) -> None:
             "session_version": int(account["session_version"]),
         }
 
-    @app.patch("/auth/hust/profile")
+    @router.patch("/auth/hust/profile")
     async def update_profile(
         payload: ProfileUpdateRequest, request: Request, current_user: UserParam
     ):
@@ -889,6 +1139,13 @@ def install_student_auth(app: Any, service_factory) -> None:
         except Exception:
             return await call_next(request)
         identifier = getattr(user, "identifier", "")
+        if identifier.startswith("browser:"):
+            from fastapi.responses import RedirectResponse
+
+            response = RedirectResponse(url="/login", status_code=303)
+            response.delete_cookie("access_token", path="/")
+            response.headers["Cache-Control"] = "no-store"
+            return response
         if not identifier.startswith("student:"):
             return await call_next(request)
         account = service().store.get_account(identifier.removeprefix("student:"))
@@ -905,21 +1162,4 @@ def install_student_auth(app: Any, service_factory) -> None:
             return response
         return await call_next(request)
 
-    # Chainlit's UI catch-all is held by an included router. Keep explicit
-    # student-auth routes ahead of it so GET pages are not swallowed by the
-    # frontend fallback.
-    auth_routes = [
-        route for route in app.routes
-        if getattr(route, "path", "").startswith("/auth/hust/")
-    ]
-    other_routes = [route for route in app.routes if route not in auth_routes]
-    included_index = next(
-        (index for index, route in enumerate(other_routes)
-         if type(route).__name__ == "_IncludedRouter"),
-        len(other_routes),
-    )
-    app.routes[:] = (
-        other_routes[:included_index]
-        + auth_routes
-        + other_routes[included_index:]
-    )
+    _move_routes_before_catchall(router, ("/auth/hust/", "/auth/profile"))

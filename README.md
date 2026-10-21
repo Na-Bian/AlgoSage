@@ -181,7 +181,9 @@ D 系列不接受 `basic` 冒充完整审核。隔离对照用于验证各组件
 
 运行器为浏览器生成签名的本地工作区身份，签名密钥保存在 `EG_AUTH_SECRET_FILE`（默认 `.examguard/auth.secret`）或使用既有 `CHAINLIT_AUTH_SECRET`。短期登录保持 15 天；独立的 HttpOnly 工作区 Cookie 保留身份一年，剩余不足 30 天且正常访问时续期。短期登录过期后可自动恢复原工作区，沿用历史所有权、模型选择和累计安全预算。已有有效登录优先迁移，不更换身份；工作区凭据具有独立用途签名，不能直接作为 API/Socket 登录令牌。此身份用于本地工作区历史隔离；清理全部 Cookie、换浏览器或签名密钥丢失后仍需新身份，正式考试仍需接入真实学生认证。此运行器使用一个服务进程；不要直接改为多 worker 部署，当前对话串行锁在进程内。
 
-`EG_AUTH_MODE=hust` 启用学生登录。注册和密码重置页在 `/auth/hust/register` 与 `/auth/hust/forgot-password`；登录使用 Chainlit 原生表单，用户名是学号。系统把邮箱派生为 `学号@hust.edu.cn`，密码用 Argon2id 存储，验证码一次性有效并有频率限制。实名 principal 为 `student:<学号>`，已有匿名历史不会自动合并。开发环境可用 `EG_EMAIL_SENDER=outbox`，生产环境必须配置 SMTP。
+学生登录默认启用，认证方式固定为 HUST 教育邮箱身份。注册和密码重置页在 `/auth/hust/register` 与 `/auth/hust/forgot-password`；登录使用 Chainlit 原生表单，用户名是学号。系统把邮箱派生为 `学号@hust.edu.cn`，密码用 Argon2id 存储，验证码一次性有效并有频率限制。实名 principal 为 `student:<学号>`，已有匿名历史不会自动合并。开发环境可用 `EG_EMAIL_SENDER=outbox`，生产环境必须配置 SMTP。
+
+登录后右上角显示 Chainlit 原生账号头像。头像菜单中的“个人信息”进入独立 `/profile` 页面，可更换头像、修改昵称和密码；学号和教育邮箱只读。菜单中的“退出登录”使用 Chainlit 原生退出逻辑。
 
 通过 `run_app.py` 启动时，`.env`、数据库、签名密钥、Provider 与策略文件的相对路径以应用目录为基准；默认是启动器所在项目目录，显式 `CHAINLIT_APP_ROOT` 可指定另一运行目录。改变终端当前目录不会新建另一份历史库，绝对路径配置仍可使用。备份或迁移工作区应在停止服务后保留 `.examguard/chats.sqlite3`、`.examguard/elements/`、`.examguard/state.sqlite3`、`.examguard/auth.secret`（或外部配置的同一签名密钥）；运行中的 SQLite 应使用数据库备份接口。不要把这些私有运行数据放入公开交付包。
 

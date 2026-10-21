@@ -270,6 +270,20 @@ class ChatDataLayer(BaseDataLayer):
             self._conn.commit()
         return await self.get_user(user.identifier)
 
+    async def update_user_display_name(self, identifier: str, display_name: str) -> Optional[PersistedUser]:
+        clean_name = display_name.strip()[:200]
+        if not clean_name:
+            raise ValueError("display name cannot be empty")
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE users SET display_name=?, metadata=metadata WHERE identifier=?",
+                (clean_name, identifier),
+            )
+            self._conn.commit()
+        if cursor.rowcount == 0:
+            return None
+        return await self.get_user(identifier)
+
     async def delete_feedback(self, feedback_id: str) -> bool:
         with self._lock:
             cursor = self._conn.execute(

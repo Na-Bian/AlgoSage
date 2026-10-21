@@ -117,7 +117,39 @@ def main() -> int:
         import requests
 
         http = requests.Session()
-        http.post(base + "/auth/header", timeout=10).raise_for_status()
+        from email import policy
+        from email.parser import BytesParser
+
+        outbox = runtime_root / ".examguard" / "dev-outbox"
+
+        def read_code(student_id):
+            matches = []
+            for path in outbox.glob("*.eml"):
+                message = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
+                if student_id in message.get("To", ""):
+                    matches.append((path.stat().st_mtime, message))
+            if not matches:
+                raise RuntimeError(f"missing verification email for {student_id}")
+            message = max(matches, key=lambda item: item[0])[1]
+            return message.get_body(preferencelist=("plain",)).get_content().split("：", 1)[1].splitlines()[0].strip()
+
+        def register(student_id, nickname):
+            password = "correct-horse-battery"
+            requests.post(base + "/auth/hust/register/request-code", json={
+                "nickname": nickname, "student_id": student_id, "password": password,
+            }, timeout=10).raise_for_status()
+            requests.post(base + "/auth/hust/register/confirm", json={
+                "student_id": student_id, "code": read_code(student_id),
+            }, timeout=10).raise_for_status()
+
+        def login(session, student_id):
+            session.post(base + "/login", data={
+                "username": student_id, "password": "correct-horse-battery",
+            }, timeout=10).raise_for_status()
+
+        register("U202113566", "E2E学生")
+        register("U202119999", "E2E其他")
+        login(http, "U202113566")
         bootstrap = http.get(base + "/project/settings", timeout=10)
         bootstrap.raise_for_status()
         profiles = bootstrap.json()["chatProfiles"]
@@ -261,7 +293,7 @@ def main() -> int:
             if len(search["data"]) != 1:
                 failures.append("renamed conversation not searchable")
             other = requests.Session()
-            other.post(base + "/auth/header", timeout=10).raise_for_status()
+            login(other, "U202119999")
             if other.get(
                 base + "/project/thread/" + thread_id, timeout=10
             ).status_code not in {401, 403}:
@@ -291,8 +323,8 @@ def main() -> int:
             sio.disconnect()
             owner = http.get(base + "/user", timeout=10).json()["identifier"]
             before_restart = safety_snapshot(owner)
-            if not before_restart or "eg_workspace" not in http.cookies:
-                failures.append("workspace identity or risk snapshot was not persisted")
+            if not before_restart:
+                failures.append("risk snapshot was not persisted")
             secret_before = (runtime_root / "auth.secret").read_bytes()
             server.terminate()
             server.wait(timeout=10)
@@ -300,11 +332,11 @@ def main() -> int:
             other_cwd.mkdir()
             server = launch(other_cwd)
             wait_http(base)
-            # Simulate expiry of the short API login; only the durable cookie remains.
+            # Simulate expiry of the short API login; HUST login is required again.
             del http.cookies["access_token"]
             if http.get(base + "/user", timeout=10).status_code != 401:
                 failures.append("workspace credential bypassed short API authentication")
-            http.post(base + "/auth/header", timeout=10).raise_for_status()
+            login(http, "U202113566")
             if http.get(base + "/user", timeout=10).json()["identifier"] != owner:
                 failures.append("restart/login expiry changed workspace identity")
             if (runtime_root / "auth.secret").read_bytes() != secret_before:

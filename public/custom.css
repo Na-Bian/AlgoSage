@@ -101,11 +101,6 @@
   font-weight: 700;
 }
 
-/* 本地工作区没有账号；HUST 模式由脚本标记后显示原生账号头像。 */
-html:not([data-eg-auth-mode="hust"]) #user-nav-button {
-  display: none !important;
-}
-
 /* 个人信息弹窗沿用应用变量和动效，深浅主题由 CSS 变量自然切换。 */
 #eg-profile-overlay {
   position: fixed;

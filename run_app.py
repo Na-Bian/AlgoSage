@@ -72,10 +72,9 @@ def main() -> None:
     config.run.port = args.port
     config.run.module_name = target_file
     if os.path.basename(target_file) == "chainlit_app.py":
-        from examguard.local_identity import ensure_local_secret, install_browser_identity
+        from examguard.local_identity import ensure_local_secret
 
         ensure_local_secret()
-        install_browser_identity(app)
     load_module(target_file)
     ensure_jwt_secret()
     if not (

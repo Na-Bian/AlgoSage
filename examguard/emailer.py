@@ -103,7 +103,7 @@ def _mime_message(message: EmailMessage, *, from_address: str) -> EmailMessage:
 
 
 def email_sender_from_env() -> EmailSender:
-    mode = os.environ.get("EG_EMAIL_SENDER", "").strip().lower()
+    mode = os.environ.get("EG_EMAIL_SENDER", "outbox").strip().lower()
     if mode == "outbox":
         root = Path(
             runtime_path("EG_EMAIL_OUTBOX_DIR", ".examguard/dev-outbox")
@@ -130,4 +130,4 @@ def email_sender_from_env() -> EmailSender:
             in {"true", "1", "yes"},
             timeout=float(os.environ.get("EG_SMTP_TIMEOUT_SECONDS", "10")),
         )
-    raise ValueError("EG_EMAIL_SENDER must be 'outbox' or 'smtp' for HUST auth")
+    raise ValueError("EG_EMAIL_SENDER must be 'outbox' or 'smtp'")

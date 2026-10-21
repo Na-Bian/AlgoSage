@@ -31,7 +31,6 @@ from examguard.config import Settings
 from examguard.service import TutorService, HISTORY_TURNS_KEPT
 from examguard.providers import ProviderRegistry
 from examguard.invocation import streaming_transport, timing_summary
-from examguard.local_identity import browser_user
 from examguard.runtime_paths import runtime_path
 from examguard.attachments import prepare_attachment_elements
 
@@ -117,31 +116,27 @@ def get_student_auth():
     return _student_auth
 
 
-if os.environ.get("EG_AUTH_MODE", "local").strip().lower() == "hust":
-    @cl.password_auth_callback
-    async def hust_password_auth(username: str, password: str):
-        from chainlit.user import User
+@cl.password_auth_callback
+async def hust_password_auth(username: str, password: str):
+    from chainlit.user import User
 
-        try:
-            account = get_student_auth().authenticate(username, password)
-        except Exception:
-            logger.exception("HUST login authentication failed without exposing credentials")
-            return None
-        if account is None:
-            return None
-        return User(
-            identifier=account.identifier,
-            display_name=account.nickname,
-            metadata={
-                "provider": "hust-student",
-                "student_id": account.student_id,
-                "session_version": account.session_version,
-            },
-        )
-else:
-    @cl.header_auth_callback
-    def local_browser_auth(headers):
-        return browser_user(headers)
+    try:
+        account = get_student_auth().authenticate(username, password)
+    except Exception:
+        logger.exception("HUST login authentication failed without exposing credentials")
+        return None
+    if account is None:
+        return None
+    return User(
+        identifier=account.identifier,
+        display_name=account.nickname,
+        metadata={
+            "provider": "hust-student",
+            "student_id": account.student_id,
+            "session_version": account.session_version,
+            "image": f"/auth/avatar/me?v={account.session_version}",
+        },
+    )
 
 
 @cl.data_layer
@@ -231,10 +226,12 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             raise HTTPException(status_code=404, detail="Feedback not found")
         return {"success": True}
 
-    if os.environ.get("EG_AUTH_MODE", "local").strip().lower() == "hust":
-        from examguard.student_auth import install_student_auth
+    from examguard.student_auth import install_profile_routes
 
-        install_student_auth(_chainlit_server_app, get_student_auth)
+    from examguard.student_auth import install_student_auth
+
+    install_student_auth(_chainlit_server_app, get_student_auth)
+    install_profile_routes(_chainlit_server_app, get_student_auth, get_chat_store)
 except ImportError:
     # The service layer and unit tests do not require the HTTP route.
     pass

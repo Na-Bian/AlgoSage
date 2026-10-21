@@ -219,21 +219,20 @@
   }
 })();
 
-/* HUST 账号头像：查看/修改个人信息，退出登录继续使用 Chainlit 原生菜单项。 */
+/* 账号头像：查看/修改个人信息，退出登录继续使用 Chainlit 原生菜单项。 */
 (function enableStudentProfile() {
   const OVERLAY_ID = "eg-profile-overlay";
 
-  function isStudentAuth() {
-    return fetch("/auth/config", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((config) => {
-        const enabled = config && config.passwordAuth === true;
-        document.documentElement.dataset.egAuthMode = enabled ? "hust" : "local";
-        return enabled;
+  function loadProfile() {
+    return fetch("/auth/profile", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((profile) => {
+        document.documentElement.dataset.egAuthMode = profile ? profile.mode : "none";
+        return profile;
       })
       .catch(() => {
-        document.documentElement.dataset.egAuthMode = "local";
-        return false;
+        document.documentElement.dataset.egAuthMode = "none";
+        return null;
       });
   }
 
@@ -248,21 +247,21 @@
     surface.innerHTML = `
       <div id="eg-profile-card">
         <h2 class="eg-profile-title" id="eg-profile-title">个人信息</h2>
-        <p class="eg-profile-subtitle">学号和教育邮箱由学校账号绑定，不能在这里修改。</p>
+        <p class="eg-profile-subtitle" id="eg-profile-subtitle"></p>
         <form id="eg-profile-form">
           <div class="eg-profile-field">
             <label for="eg-profile-nickname">昵称</label>
             <input id="eg-profile-nickname" maxlength="40" autocomplete="nickname" required>
           </div>
           <div class="eg-profile-field">
-            <label for="eg-profile-student-id">学号</label>
+            <label for="eg-profile-student-id" id="eg-profile-account-label">学号</label>
             <input id="eg-profile-student-id" readonly>
           </div>
-          <div class="eg-profile-field">
+          <div class="eg-profile-field" id="eg-profile-email-field">
             <label for="eg-profile-email">教育邮箱</label>
             <input id="eg-profile-email" readonly>
           </div>
-          <div class="eg-profile-password">
+          <div class="eg-profile-password" id="eg-profile-password-section">
             <h3>修改密码</h3>
             <div class="eg-profile-field">
               <label for="eg-profile-current-password">当前密码</label>
@@ -311,9 +310,17 @@
       const response = await fetch("/auth/hust/profile", { cache: "no-store" });
       if (!response.ok) throw new Error("个人信息读取失败");
       const profile = await response.json();
+      const hust = profile.mode === "hust";
+      surface.dataset.mode = profile.mode;
+      surface.querySelector("#eg-profile-subtitle").textContent = hust
+        ? "学号和教育邮箱由学校账号绑定，不能在这里修改。"
+        : "本地工作区身份保存在当前浏览器 Cookie 中。";
+      surface.querySelector("#eg-profile-account-label").textContent = hust ? "学号" : "工作区标识";
+      surface.querySelector("#eg-profile-email-field").style.display = hust ? "" : "none";
+      surface.querySelector("#eg-profile-password-section").style.display = hust ? "" : "none";
       surface.querySelector("#eg-profile-nickname").value = profile.nickname || "";
-      surface.querySelector("#eg-profile-student-id").value = profile.student_id || "";
-      surface.querySelector("#eg-profile-email").value = profile.email || "";
+      surface.querySelector("#eg-profile-student-id").value = hust ? profile.student_id : profile.identifier;
+      if (hust) surface.querySelector("#eg-profile-email").value = profile.email || "";
       status("");
       setTimeout(() => surface.querySelector("#eg-profile-nickname").focus(), 30);
     } catch (error) {
@@ -347,7 +354,7 @@
         body.current_password = current;
         body.new_password = next;
       }
-      const response = await fetch("/auth/hust/profile", {
+      const response = await fetch("/auth/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -383,7 +390,7 @@
   }
 
   function scanMenu() {
-    if (document.documentElement.dataset.egAuthMode !== "hust") return;
+      if (!["hust", "local"].includes(document.documentElement.dataset.egAuthMode)) return;
     document.querySelectorAll('[role="menu"][data-state="open"]').forEach(addProfileMenuItem);
   }
 
@@ -396,8 +403,8 @@
   }
 
   function bootProfile() {
-    isStudentAuth().then((enabled) => {
-      if (enabled) startProfileUI();
+    loadProfile().then((profile) => {
+      if (profile) startProfileUI();
     });
   }
 

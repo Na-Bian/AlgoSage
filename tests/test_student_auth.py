@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+from fastapi.testclient import TestClient
 
 from examguard.emailer import OutboxEmailSender
 from examguard.student_auth import (
@@ -308,3 +309,88 @@ class StudentProfileRouteTests(unittest.TestCase):
             },
         )
         self.assertEqual(denied.status_code, 423)
+
+
+class ProfileRouteTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.sender = FakeEmailSender()
+        self.auth = service(self.root, self.sender)
+        secret = mock.patch.dict(
+            "os.environ", {"CHAINLIT_AUTH_SECRET": "profile-route-secret-value-32-chars"}
+        )
+        secret.start()
+        self.addCleanup(secret.stop)
+        run(
+            self.auth.request_registration_code(
+                nickname="验收同学",
+                student_id="U202113566",
+                password="correct-horse-battery",
+                ip="127.0.0.1",
+            )
+        )
+        self.auth.confirm_registration(
+            student_id="U202113566",
+            code=code_from(self.sender.messages[0]),
+        )
+        from fastapi import FastAPI
+
+        from examguard.student_auth import install_profile_routes
+
+        self.app = FastAPI()
+        install_profile_routes(self.app, lambda: self.auth)
+        self.client = TestClient(self.app)
+        current = SimpleNamespace(identifier="student:U202113566")
+        self.app.dependency_overrides[
+            self.current_user_dependency()
+        ] = lambda: current
+        self.addCleanup(self.app.dependency_overrides.clear)
+
+    def current_user_dependency(self):
+        from chainlit.server import get_current_user
+
+        return get_current_user
+
+    def test_profile_read_update_and_avatar_upload(self):
+        from PIL import Image
+        import io
+
+        response = self.client.get("/auth/profile")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["student_id"], "U202113566")
+        self.assertFalse(response.json()["has_avatar"])
+
+        renamed = self.client.patch(
+            "/auth/profile", json={"nickname": "界面验收同学"}
+        )
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(renamed.json()["nickname"], "界面验收同学")
+
+        image = Image.new("RGB", (700, 400), "#4d6bfe")
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        uploaded = self.client.put(
+            "/auth/avatar",
+            content=output.getvalue(),
+            headers={"Content-Type": "image/png"},
+        )
+        self.assertEqual(uploaded.status_code, 200)
+        self.assertTrue(uploaded.json()["has_avatar"])
+        avatar = self.client.get("/auth/avatar/me")
+        self.assertEqual(avatar.status_code, 200)
+        self.assertEqual(avatar.headers["content-type"], "image/png")
+        self.assertEqual(self.auth.store.get_avatar("U202113566")[1], "image/png")
+
+        page = self.client.get("/profile")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("个人信息", page.text)
+        self.assertIn("profile-page.css", page.text)
+
+    def test_profile_page_redirects_unauthenticated_user(self):
+        self.app.dependency_overrides[self.current_user_dependency()] = lambda: None
+        response = self.client.get("/profile")
+        response = self.client.get("/profile", follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/login")
