@@ -4,84 +4,137 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>登录 · AlgoSage 知衡</title>
+  <title>登录 · AlgoSage</title>
   <link rel="icon" href="/favicon" type="image/svg+xml">
-  <script>
-    (function () {
-      var preference = null;
-      try { preference = localStorage.getItem("vite-ui-theme"); } catch (_) {}
-      var dark = preference === "dark"
-        || ((preference === null || preference === "system")
-          && window.matchMedia("(prefers-color-scheme: dark)").matches);
-      document.documentElement.classList.toggle("dark", dark);
-    })();
-  </script>
-  <link rel="stylesheet" href="/public/custom.css">
   <link rel="stylesheet" href="/public/auth-page.css">
 </head>
-<body class="eg-auth-page" data-mode="login">
-  <div class="eg-auth-left">
-    <a class="eg-auth-brand" href="/login"><img class="eg-auth-logo" id="brand-logo" src="/public/brand-logo.png" alt="AlgoSage"></a>
-    <div class="eg-auth-center">
-      <div class="eg-auth-panel">
-        <h1 class="eg-auth-title" id="auth-title">AlgoSage 登录</h1>
-        <p class="eg-auth-subtitle">使用学号与教育邮箱验证码访问考试受限助教。</p>
-        <div class="eg-auth-tabs" role="tablist">
-          <button class="eg-auth-tab" type="button" data-target="login" aria-selected="true">登录</button>
-          <button class="eg-auth-tab" type="button" data-target="register" aria-selected="false">注册</button>
-          <button class="eg-auth-tab" type="button" data-target="reset" aria-selected="false">找回密码</button>
-        </div>
+<body class="eg-auth-page" data-view="login">
+  <main class="auth-left" aria-labelledby="auth-title">
+    <a class="auth-brand" href="/login" aria-label="AlgoSage">
+      <img src="/public/brand-logo.png" alt="AlgoSage">
+    </a>
 
-        <form class="eg-auth-form" id="login-form" data-active="true">
-          <div class="eg-auth-field">
+    <div class="auth-center">
+      <div class="auth-panel">
+        <h1 class="auth-title" id="auth-title">登录 AlgoSage</h1>
+
+        <form id="login-form" class="auth-view" data-view="login" novalidate>
+          <div class="input-field">
             <label for="login-student-id">学号</label>
-            <input id="login-student-id" autocomplete="username" placeholder="U202113566" required>
+            <div class="input-shell">
+              <span class="input-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </span>
+            <input id="login-student-id" name="studentId" type="text" autocomplete="username" spellcheck="false" required>
+            </div>
           </div>
-          <div class="eg-auth-field">
+
+          <div class="input-field">
             <label for="login-password">密码</label>
-            <div class="eg-auth-password-wrap">
-              <input id="login-password" type="password" autocomplete="current-password" required>
-              <button class="eg-auth-eye" type="button" data-toggle-password="login-password" aria-label="显示密码">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            <div class="input-shell">
+              <span class="input-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              </span>
+              <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+              <button type="button" class="eye-button" data-toggle-password="login-password" aria-label="显示密码" aria-pressed="false">
+                <svg class="eye-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/></svg>
               </button>
             </div>
           </div>
-          <button class="eg-auth-primary" type="submit">登录</button>
-          <div class="eg-auth-switch">还没有账号？<button type="button" data-goto="register">用教育邮箱注册</button></div>
+
+          <div id="login-feedback" class="login-feedback" hidden>
+            <p id="login-error" class="login-error" role="alert">学号或密码不正确，请重试。</p>
+            <a id="forgot-link" class="forgot-link" href="/forgot-password">找回密码</a>
+          </div>
+
+          <button id="login-submit" class="primary-button" type="submit">
+            <span class="button-label">登录</span>
+          </button>
+
+          <p class="auth-switch">
+            <span>还没有账号？</span>
+            <a href="/register">注册</a>
+          </p>
         </form>
 
-        <form class="eg-auth-form" id="register-form">
-          <div class="eg-auth-field"><label for="register-nickname">昵称</label><input id="register-nickname" maxlength="40" autocomplete="nickname" required></div>
-          <div class="eg-auth-field"><label for="register-student-id">学号</label><input id="register-student-id" placeholder="U202113566" required></div>
-          <div class="eg-auth-field"><label for="register-password">密码</label><input id="register-password" type="password" autocomplete="new-password" minlength="12" required></div>
-          <div class="eg-auth-field"><label for="register-confirm">确认密码</label><input id="register-confirm" type="password" autocomplete="new-password" minlength="12" required></div>
-          <div class="eg-auth-field">
+        <form id="register-form" class="auth-view" data-view="register" novalidate>
+          <div class="input-field">
+            <label for="register-nickname">昵称</label>
+            <div class="input-shell"><input id="register-nickname" type="text" maxlength="40" autocomplete="nickname" required></div>
+          </div>
+          <div class="input-field">
+            <label for="register-student-id">学号</label>
+            <div class="input-shell"><input id="register-student-id" type="text" autocomplete="username" spellcheck="false" required></div>
+          </div>
+          <div class="input-field">
+            <label for="register-password">密码</label>
+            <div class="input-shell">
+              <input id="register-password" type="password" autocomplete="new-password" minlength="12" required>
+              <button type="button" class="eye-button" data-toggle-password="register-password" aria-label="显示密码" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="input-field">
+            <label for="register-confirm">确认密码</label>
+            <div class="input-shell"><input id="register-confirm" type="password" autocomplete="new-password" minlength="12" required></div>
+          </div>
+          <div class="input-field">
             <label for="register-code">邮箱验证码</label>
-            <div class="eg-auth-code-row"><input id="register-code" inputmode="numeric" pattern="[0-9]{6}" required><button class="eg-auth-send-code" type="button" data-send="register">发送验证码</button></div>
+            <div class="code-row">
+              <div class="input-shell compact"><input id="register-code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></div>
+              <button id="register-send" class="code-button" type="button">发送验证码</button>
+            </div>
           </div>
-          <button class="eg-auth-primary" type="submit">创建账号</button>
-          <div class="eg-auth-switch">已有账号？<button type="button" data-goto="login">直接登录</button></div>
+          <button class="primary-button" type="submit"><span class="button-label">创建账号</span></button>
+          <p class="auth-switch"><span>已有账号？</span><a href="/login">直接登录</a></p>
         </form>
 
-        <form class="eg-auth-form" id="reset-form">
-          <div class="eg-auth-field"><label for="reset-student-id">学号</label><input id="reset-student-id" placeholder="U202113566" required></div>
-          <div class="eg-auth-field">
+        <form id="reset-form" class="auth-view" data-view="reset" novalidate>
+          <div class="input-field">
+            <label for="reset-student-id">学号</label>
+            <div class="input-shell"><input id="reset-student-id" type="text" autocomplete="username" spellcheck="false" required></div>
+          </div>
+          <div class="input-field">
             <label for="reset-code">邮箱验证码</label>
-            <div class="eg-auth-code-row"><input id="reset-code" inputmode="numeric" pattern="[0-9]{6}" required><button class="eg-auth-send-code" type="button" data-send="reset">发送验证码</button></div>
+            <div class="code-row">
+              <div class="input-shell compact"><input id="reset-code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></div>
+              <button id="reset-send" class="code-button" type="button">发送验证码</button>
+            </div>
           </div>
-          <div class="eg-auth-field"><label for="reset-password">新密码</label><input id="reset-password" type="password" autocomplete="new-password" minlength="12" required></div>
-          <div class="eg-auth-field"><label for="reset-confirm">确认新密码</label><input id="reset-confirm" type="password" autocomplete="new-password" minlength="12" required></div>
-          <button class="eg-auth-primary" type="submit">重置密码</button>
-          <div class="eg-auth-switch">想起密码了？<button type="button" data-goto="login">返回登录</button></div>
+          <div class="input-field">
+            <label for="reset-password">新密码</label>
+            <div class="input-shell">
+              <input id="reset-password" type="password" autocomplete="new-password" minlength="12" required>
+              <button type="button" class="eye-button" data-toggle-password="reset-password" aria-label="显示密码" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="input-field">
+            <label for="reset-confirm">确认新密码</label>
+            <div class="input-shell"><input id="reset-confirm" type="password" autocomplete="new-password" minlength="12" required></div>
+          </div>
+          <button class="primary-button" type="submit"><span class="button-label">重置密码</span></button>
+          <p class="auth-switch"><span>想起密码了？</span><a href="/login">返回登录</a></p>
         </form>
 
-        <p class="eg-auth-status" id="auth-status"></p>
+        <p id="auth-status" class="auth-status" role="status"></p>
       </div>
     </div>
-  </div>
-  <div class="eg-auth-right" aria-hidden="true">
-  <img src="/public/brand-logo.png" alt="">
-  </div>
-  <script src="/public/auth-page.js?v=20261021-chainlit-style"></script>
+  </main>
+
+  <aside class="auth-brand-panel" aria-hidden="true">
+    <div class="brand-orbit" data-orbit="1"></div>
+    <div class="brand-orbit" data-orbit="2"></div>
+    <div class="brand-glow" data-glow="1"></div>
+    <div class="brand-glow" data-glow="2"></div>
+    <div class="brand-display">
+      <img src="/public/brand-logo.png" alt="">
+    </div>
+  </aside>
+
+  <script src="/public/auth-page.js?v=20261021-login-refactor"></script>
 </body>
 </html>

@@ -320,7 +320,7 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
 
     def auth_page(mode: str):
         html = auth_html_path.read_text(encoding="utf-8")
-        return HTMLResponse(html.replace('data-mode="login"', f'data-mode="{mode}"'))
+        return HTMLResponse(html.replace('data-view="login"', f'data-view="{mode}"'))
 
     @router.get("/login", include_in_schema=False)
     async def custom_login_page(request: Request):

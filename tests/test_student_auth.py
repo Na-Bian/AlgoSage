@@ -413,6 +413,11 @@ class ProfileRouteTests(unittest.TestCase):
             response = self.client.get(path, follow_redirects=False)
             self.assertEqual(response.status_code, 200)
             self.assertIn("text/html", response.headers["content-type"])
-            self.assertIn(f'data-mode="{mode}"', response.text)
+            self.assertIn(f'data-view="{mode}"', response.text)
             self.assertIn("AlgoSage", response.text)
             self.assertIn("/public/brand-logo.png", response.text)
+            self.assertNotIn('class="eg-auth-tabs"', response.text)
+            if path == "/login":
+                self.assertIn('id="login-feedback" class="login-feedback" hidden', response.text)
+                self.assertIn('id="forgot-link"', response.text)
+                self.assertIn(">登录 AlgoSage</h1>", response.text)
