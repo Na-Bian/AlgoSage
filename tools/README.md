@@ -1,9 +1,9 @@
 # Browser acceptance evidence
 
-This is a development evaluation of the real student UI. It reuses the existing
-local provider configuration; `.env` and runtime databases must never be packaged.
-The journal intentionally includes rejected drafts for local developer review.
-Never expose `browser_acceptance_app.py` on a public network or use user chat data.
+This is a development evaluation of the real student UI. It reuses the local
+provider configuration. Never package `.env` or runtime databases. The journal
+keeps rejected drafts for local developer review. Do not expose
+`browser_acceptance_app.py` on a public network or feed it user chat data.
 
 1. Run `.venv/bin/python -m unittest discover -s tests -q` and
    `.venv/bin/python e2e_chainlit_check.py`.
@@ -20,16 +20,18 @@ Never expose `browser_acceptance_app.py` on a public network or use user chat da
    ordinary DOM composer submission, and independent browser identities for single
    cases. Multi-turn chains retain one identity. It does not send prompts by API.
 
-Every turn produces JSON, a PNG and an appended browser/journal JSONL record. The
-record includes the expected behavior, submitted prompt, server classification,
+Every turn produces JSON, a PNG and an appended browser/journal JSONL record.
+The record covers the expected behavior, submitted prompt, server classification,
 generation/Judge trace, final answer, browser DOM text, task completion event,
-elapsed time and thread correlation. Browser transport failures are saved separately.
-Classify UNKNOWN and infrastructure errors separately from leakage and false refusal.
-Do not treat the application's own audit pass as correctness or human helpfulness.
+elapsed time and thread correlation. Browser transport failures are saved
+separately. Report UNKNOWN and infrastructure errors separately from leakage and
+false refusal. The application's audit pass is not evidence of correctness or
+human helpfulness.
 
-Controls: A uses a plain exam prompt; B the frozen regex classifier/basic output
-check; C the contextual hybrid classifier/basic output check; D adds rule/Judge
-review, regeneration and SessionGuard. Shared deterministic preflight applies to
-B/C/D; A disables it through the L3 ablation policy. These are configuration bundle
-comparisons, not a clean causal estimate of every individual component. Same model,
-decode settings and prompts; a single stochastic run, no fresh heldout claim.
+Controls: A uses a plain exam prompt, B the frozen regex classifier and basic
+output check, C the contextual hybrid classifier and basic output check, and D
+adds rule/Judge review, regeneration and SessionGuard. Shared deterministic
+preflight applies to B/C/D; A disables it through the L3 ablation policy. These
+compare configuration bundles under one model, decode settings and prompt set.
+A single stochastic run cannot estimate each component's separate causal effect
+or serve as a fresh heldout result.

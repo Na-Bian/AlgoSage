@@ -1,4 +1,4 @@
-# Module contracts — audit repair version (2026-10-17)
+# Module contracts: audit repair version (2026-10-17)
 
 `TutorService` is the common Chainlit/Streamlit/CLI boundary. It owns trusted settings/policy and server question binding, retained exam/principal budgets and whole-turn serialization. `new_context(session_id, exam_mode=None, principal_id=None)` accepts only server-authenticated principal identities; anonymous sessions cannot be securely linked across new IDs. `drop_context` clears disposable history only; `reset_security_state` requires the teacher demo permission.
 
