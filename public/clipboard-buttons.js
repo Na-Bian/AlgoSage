@@ -218,3 +218,189 @@
     start();
   }
 })();
+
+/* HUST 账号头像：查看/修改个人信息，退出登录继续使用 Chainlit 原生菜单项。 */
+(function enableStudentProfile() {
+  const OVERLAY_ID = "eg-profile-overlay";
+
+  function isStudentAuth() {
+    return fetch("/auth/config", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((config) => {
+        const enabled = config && config.passwordAuth === true;
+        document.documentElement.dataset.egAuthMode = enabled ? "hust" : "local";
+        return enabled;
+      })
+      .catch(() => {
+        document.documentElement.dataset.egAuthMode = "local";
+        return false;
+      });
+  }
+
+  function dialog() {
+    let surface = document.getElementById(OVERLAY_ID);
+    if (surface) return surface;
+    surface = document.createElement("div");
+    surface.id = OVERLAY_ID;
+    surface.setAttribute("role", "dialog");
+    surface.setAttribute("aria-modal", "true");
+    surface.setAttribute("aria-labelledby", "eg-profile-title");
+    surface.innerHTML = `
+      <div id="eg-profile-card">
+        <h2 class="eg-profile-title" id="eg-profile-title">个人信息</h2>
+        <p class="eg-profile-subtitle">学号和教育邮箱由学校账号绑定，不能在这里修改。</p>
+        <form id="eg-profile-form">
+          <div class="eg-profile-field">
+            <label for="eg-profile-nickname">昵称</label>
+            <input id="eg-profile-nickname" maxlength="40" autocomplete="nickname" required>
+          </div>
+          <div class="eg-profile-field">
+            <label for="eg-profile-student-id">学号</label>
+            <input id="eg-profile-student-id" readonly>
+          </div>
+          <div class="eg-profile-field">
+            <label for="eg-profile-email">教育邮箱</label>
+            <input id="eg-profile-email" readonly>
+          </div>
+          <div class="eg-profile-password">
+            <h3>修改密码</h3>
+            <div class="eg-profile-field">
+              <label for="eg-profile-current-password">当前密码</label>
+              <input id="eg-profile-current-password" type="password" autocomplete="current-password">
+            </div>
+            <div class="eg-profile-field">
+              <label for="eg-profile-new-password">新密码</label>
+              <input id="eg-profile-new-password" type="password" autocomplete="new-password" minlength="12">
+            </div>
+            <div class="eg-profile-field">
+              <label for="eg-profile-confirm-password">确认新密码</label>
+              <input id="eg-profile-confirm-password" type="password" autocomplete="new-password" minlength="12">
+            </div>
+          </div>
+          <p id="eg-profile-status"></p>
+          <div class="eg-profile-actions">
+            <button type="button" id="eg-profile-cancel">取消</button>
+            <button type="submit" id="eg-profile-save">保存</button>
+          </div>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(surface);
+    surface.querySelector("#eg-profile-cancel").addEventListener("click", closeProfile);
+    surface.addEventListener("click", (event) => {
+      if (event.target === surface) closeProfile();
+    });
+    surface.querySelector("#eg-profile-form").addEventListener("submit", saveProfile);
+    return surface;
+  }
+
+  function status(message, kind) {
+    const node = document.getElementById("eg-profile-status");
+    node.textContent = message || "";
+    if (kind) node.dataset.kind = kind;
+    else delete node.dataset.kind;
+  }
+
+  async function openProfile() {
+    const surface = dialog();
+    const form = surface.querySelector("#eg-profile-form");
+    form.reset();
+    status("正在读取个人信息…");
+    surface.dataset.open = "true";
+    try {
+      const response = await fetch("/auth/hust/profile", { cache: "no-store" });
+      if (!response.ok) throw new Error("个人信息读取失败");
+      const profile = await response.json();
+      surface.querySelector("#eg-profile-nickname").value = profile.nickname || "";
+      surface.querySelector("#eg-profile-student-id").value = profile.student_id || "";
+      surface.querySelector("#eg-profile-email").value = profile.email || "";
+      status("");
+      setTimeout(() => surface.querySelector("#eg-profile-nickname").focus(), 30);
+    } catch (error) {
+      status(error.message || "个人信息读取失败", "error");
+    }
+  }
+
+  function closeProfile() {
+    const surface = document.getElementById(OVERLAY_ID);
+    if (surface) surface.dataset.open = "false";
+  }
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    const surface = document.getElementById(OVERLAY_ID);
+    const nickname = surface.querySelector("#eg-profile-nickname").value.trim();
+    const current = surface.querySelector("#eg-profile-current-password").value;
+    const next = surface.querySelector("#eg-profile-new-password").value;
+    const confirm = surface.querySelector("#eg-profile-confirm-password").value;
+    if (!nickname) return status("请填写昵称", "error");
+    if (!current && !next && !confirm) {
+      // 只改昵称时不发送密码字段。
+    } else {
+      if (!current || !next || !confirm) return status("修改密码需要填写当前密码、新密码和确认密码", "error");
+      if (next !== confirm) return status("两次输入的新密码不一致", "error");
+    }
+    status("正在保存…");
+    try {
+      const body = { nickname };
+      if (current || next || confirm) {
+        body.current_password = current;
+        body.new_password = next;
+      }
+      const response = await fetch("/auth/hust/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "保存未完成");
+      const avatar = document.querySelector("#user-nav-button span > span:last-child");
+      if (avatar) avatar.textContent = (data.nickname || nickname).slice(0, 1);
+      closeProfile();
+    } catch (error) {
+      status(error.message || "保存未完成", "error");
+    }
+  }
+
+  function addProfileMenuItem(menu) {
+    if (menu.querySelector("#eg-profile-menu-item")) return;
+    const logout = [...menu.querySelectorAll('[role="menuitem"]')].pop();
+    const item = document.createElement("div");
+    item.id = "eg-profile-menu-item";
+    item.setAttribute("role", "menuitem");
+    item.className = "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-2.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50";
+    item.innerHTML = '<span class="eg-profile-dot"></span><span>个人信息</span>';
+    item.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      document.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape", bubbles: true, cancelable: true,
+      }));
+      setTimeout(openProfile, 40);
+    }, true);
+    if (logout && logout.parentElement === menu) menu.insertBefore(item, logout);
+    else menu.appendChild(item);
+  }
+
+  function scanMenu() {
+    if (document.documentElement.dataset.egAuthMode !== "hust") return;
+    document.querySelectorAll('[role="menu"][data-state="open"]').forEach(addProfileMenuItem);
+  }
+
+  function startProfileUI() {
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeProfile();
+    });
+    const observer = new MutationObserver(scanMenu);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-state"] });
+  }
+
+  function bootProfile() {
+    isStudentAuth().then((enabled) => {
+      if (enabled) startProfileUI();
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootProfile);
+  else bootProfile();
+})();

@@ -101,10 +101,72 @@
   font-weight: 700;
 }
 
-/* 本地工作区没有账号切换；头像菜单仅含无实际用途的退出登录入口。 */
-#user-nav-button {
-  display: none;
+/* 本地工作区没有账号；HUST 模式由脚本标记后显示原生账号头像。 */
+html:not([data-eg-auth-mode="hust"]) #user-nav-button {
+  display: none !important;
 }
+
+/* 个人信息弹窗沿用应用变量和动效，深浅主题由 CSS 变量自然切换。 */
+#eg-profile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: hsl(var(--foreground) / 0.35);
+  backdrop-filter: blur(3px);
+}
+#eg-profile-overlay[data-open="true"] { display: flex; }
+#eg-profile-card {
+  width: min(430px, 100%);
+  max-height: min(92svh, 720px);
+  overflow: auto;
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) + 2px);
+  box-shadow: 0 18px 60px hsl(var(--foreground) / 0.18);
+  padding: 24px;
+}
+#eg-profile-overlay[data-open="true"] #eg-profile-card {
+  animation: eg-profile-in var(--eg-motion-enter) var(--eg-motion-ease);
+}
+@keyframes eg-profile-in {
+  from { opacity: 0; transform: translateY(var(--eg-motion-distance)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.eg-profile-title { margin: 0; font-size: 1.15rem; font-weight: 700; }
+.eg-profile-subtitle { margin: 5px 0 18px; color: hsl(var(--muted-foreground)); font-size: .86rem; }
+.eg-profile-field { display: grid; gap: 6px; margin-top: 14px; }
+.eg-profile-field label { font-size: .82rem; font-weight: 650; }
+.eg-profile-field input {
+  width: 100%; box-sizing: border-box; min-height: 38px;
+  padding: 8px 11px; border-radius: 9px; font: inherit;
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--input));
+}
+.eg-profile-field input[readonly] {
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / .55);
+}
+.eg-profile-password { margin-top: 18px; padding-top: 14px; border-top: 1px solid hsl(var(--border)); }
+.eg-profile-password h3 { margin: 0 0 2px; font-size: .94rem; }
+.eg-profile-actions { display: flex; gap: 10px; margin-top: 20px; }
+.eg-profile-actions button {
+  min-height: 38px; flex: 1; border-radius: 999px; border: 0; cursor: pointer;
+  font-weight: 650; transition: transform var(--eg-motion-fast) var(--eg-motion-ease), opacity var(--eg-motion-fast) linear;
+}
+.eg-profile-actions button:hover { transform: translateY(-1px); }
+.eg-profile-actions button:active { transform: translateY(0); }
+#eg-profile-save { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+#eg-profile-cancel { background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); }
+#eg-profile-status { min-height: 20px; margin: 12px 0 0; color: hsl(var(--muted-foreground)); font-size: .84rem; }
+#eg-profile-status[data-kind="error"] { color: hsl(var(--destructive)); }
+.eg-profile-menu-item { display: flex; align-items: center; gap: 8px; }
+.eg-profile-menu-item .eg-profile-dot { width: 6px; height: 6px; border-radius: 50%; background: hsl(var(--primary)); }
 
 /* ---------- 布局：居中阅读宽度（DeepSeek 风格） ---------- */
 #messages {

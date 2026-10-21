@@ -19,6 +19,7 @@ from uuid import uuid4
 from argon2 import PasswordHasher
 from fastapi import Request
 from pydantic import BaseModel
+from chainlit.server import UserParam
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from .emailer import EmailMessage, EmailSender
@@ -141,6 +142,12 @@ class ResetConfirmRequest(BaseModel):
     student_id: str
     code: str
     new_password: str
+
+
+class ProfileUpdateRequest(BaseModel):
+    nickname: str
+    current_password: str | None = None
+    new_password: str | None = None
 
 
 def _now() -> datetime:
@@ -328,6 +335,15 @@ class StudentAuthStore:
                 "UPDATE student_accounts SET password_hash=?, failed_login_count=0, locked_until=NULL, "
                 "session_version=session_version+1, updated_at=? WHERE student_id=?",
                 (password_hash, changed, student_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount > 0
+
+    def update_nickname(self, student_id: str, nickname: str) -> bool:
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE student_accounts SET nickname=?, updated_at=? WHERE student_id=?",
+                (nickname, _iso(_now()), student_id),
             )
             self._conn.commit()
         return cursor.rowcount > 0
@@ -582,6 +598,41 @@ class StudentAuthService:
             session_version=int(account["session_version"]),
         )
 
+    def update_profile(
+        self,
+        *,
+        student_id: str,
+        nickname: str,
+        current_password: str | None = None,
+        new_password: str | None = None,
+    ) -> dict[str, Any]:
+        account = self.store.get_account(student_id)
+        if not account:
+            raise PermissionError("student account was not found")
+        nickname = nickname.strip()
+        if not 1 <= len(nickname) <= 40:
+            raise AuthValidationError("昵称长度需为 1-40 个字符")
+
+        password_changed = new_password is not None
+        if password_changed:
+            if not current_password:
+                raise AuthValidationError("修改密码需要当前密码")
+            try:
+                self._hasher.verify(account["password_hash"], current_password)
+            except (VerifyMismatchError, InvalidHashError) as error:
+                raise AuthCredentialsError("当前密码不正确") from error
+            self._validate_password(new_password, student_id, nickname)
+
+        if nickname != account["nickname"]:
+            if not self.store.update_nickname(student_id, nickname):
+                raise PermissionError("student account was not found")
+        if password_changed:
+            self.store.update_password(student_id, self._hasher.hash(new_password))
+        updated = self.store.get_account(student_id)
+        if not updated:
+            raise PermissionError("student account was not found")
+        return updated
+
 
 def auth_service_from_env() -> StudentAuthService:
     from .emailer import email_sender_from_env
@@ -676,7 +727,7 @@ def install_student_auth(app: Any, service_factory) -> None:
     app.state.examguard_student_auth_installed = True
 
     from fastapi import HTTPException
-    from fastapi.responses import HTMLResponse
+    from fastapi.responses import HTMLResponse, JSONResponse
     def service():
         return service_factory()
 
@@ -749,6 +800,78 @@ def install_student_auth(app: Any, service_factory) -> None:
             raise failure(error) from error
         return {"status": "reset"}
 
+    @app.get("/auth/hust/profile")
+    async def get_profile(current_user: UserParam):
+        principal = getattr(current_user, "identifier", "")
+        if not current_user or not principal.startswith("student:"):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        account = service().store.get_account(principal.removeprefix("student:"))
+        if not account:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        return {
+            "student_id": account["student_id"],
+            "nickname": account["nickname"],
+            "email": account["email"],
+            "created_at": account["created_at"],
+            "updated_at": account["updated_at"],
+            "session_version": int(account["session_version"]),
+        }
+
+    @app.patch("/auth/hust/profile")
+    async def update_profile(
+        payload: ProfileUpdateRequest, request: Request, current_user: UserParam
+    ):
+        principal = getattr(current_user, "identifier", "")
+        if not current_user or not principal.startswith("student:"):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        origin = request.headers.get("origin", "")
+        if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
+            raise HTTPException(status_code=403, detail="Cross-origin request rejected")
+        try:
+            account = service().update_profile(
+                student_id=principal.removeprefix("student:"),
+                nickname=payload.nickname,
+                current_password=payload.current_password,
+                new_password=payload.new_password,
+            )
+        except Exception as error:
+            raise failure(error) from error
+
+        if payload.new_password:
+            from chainlit.auth import create_jwt
+            from chainlit.auth.cookie import set_auth_cookie
+            from chainlit.user import User
+
+            user = User(
+                identifier=principal,
+                display_name=account["nickname"],
+                metadata={
+                    "provider": "hust-student",
+                    "student_id": account["student_id"],
+                    "session_version": int(account["session_version"]),
+                },
+            )
+            response = JSONResponse(
+                {
+                    "student_id": account["student_id"],
+                    "nickname": account["nickname"],
+                    "email": account["email"],
+                    "created_at": account["created_at"],
+                    "updated_at": account["updated_at"],
+                    "session_version": int(account["session_version"]),
+                }
+            )
+            set_auth_cookie(request, response, create_jwt(user))
+            return response
+        return {
+            "student_id": account["student_id"],
+            "nickname": account["nickname"],
+            "email": account["email"],
+            "created_at": account["created_at"],
+            "updated_at": account["updated_at"],
+            "session_version": int(account["session_version"]),
+        }
+
     @app.middleware("http")
     async def invalidate_reset_sessions(request: Request, call_next):
         path = request.url.path
@@ -781,3 +904,22 @@ def install_student_auth(app: Any, service_factory) -> None:
             response.headers["Cache-Control"] = "no-store"
             return response
         return await call_next(request)
+
+    # Chainlit's UI catch-all is held by an included router. Keep explicit
+    # student-auth routes ahead of it so GET pages are not swallowed by the
+    # frontend fallback.
+    auth_routes = [
+        route for route in app.routes
+        if getattr(route, "path", "").startswith("/auth/hust/")
+    ]
+    other_routes = [route for route in app.routes if route not in auth_routes]
+    included_index = next(
+        (index for index, route in enumerate(other_routes)
+         if type(route).__name__ == "_IncludedRouter"),
+        len(other_routes),
+    )
+    app.routes[:] = (
+        other_routes[:included_index]
+        + auth_routes
+        + other_routes[included_index:]
+    )

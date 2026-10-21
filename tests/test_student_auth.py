@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from examguard.emailer import OutboxEmailSender
 from examguard.student_auth import (
@@ -227,3 +229,82 @@ class StudentAuthRoutesTests(unittest.TestCase):
         )
         self.assertEqual(unknown.status_code, 200)
         self.assertEqual(len(sender.messages), 2)
+
+
+class StudentProfileRouteTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.sender = FakeEmailSender()
+        self.auth = service(self.root, self.sender)
+        # Create one account directly through the service, without waiting for email.
+        run(
+            self.auth.request_registration_code(
+                nickname="验收同学",
+                student_id="U202113566",
+                password="correct-horse-battery",
+                ip="127.0.0.1",
+            )
+        )
+        self.auth.confirm_registration(
+            student_id="U202113566", code=code_from(self.sender.messages[0])
+        )
+        secret = mock.patch.dict(
+            "os.environ", {"CHAINLIT_AUTH_SECRET": "profile-route-secret-value-32-chars"}
+        )
+        secret.start()
+        self.addCleanup(secret.stop)
+        from fastapi import FastAPI
+
+        from examguard.student_auth import install_student_auth
+
+        self.app = FastAPI()
+        install_student_auth(self.app, lambda: self.auth)
+
+    def test_profile_view_and_updates(self):
+        from chainlit.server import get_current_user
+        from fastapi.testclient import TestClient
+
+        alice = SimpleNamespace(identifier="student:U202113566")
+        client = TestClient(self.app)
+        self.app.dependency_overrides[get_current_user] = lambda: alice
+        self.addCleanup(self.app.dependency_overrides.clear)
+
+        profile = client.get("/auth/hust/profile")
+        self.assertEqual(profile.status_code, 200)
+        self.assertEqual(profile.json()["student_id"], "U202113566")
+        self.assertEqual(profile.json()["email"], "U202113566@hust.edu.cn")
+
+        renamed = client.patch(
+            "/auth/hust/profile", json={"nickname": "新昵称"}
+        )
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(renamed.json()["nickname"], "新昵称")
+        self.assertEqual(
+            self.auth.store.get_account("U202113566")["nickname"], "新昵称"
+        )
+
+        password_changed = client.patch(
+            "/auth/hust/profile",
+            json={
+                "nickname": "新昵称",
+                "current_password": "correct-horse-battery",
+                "new_password": "another-long-passphrase",
+            },
+        )
+        self.assertEqual(password_changed.status_code, 200)
+        self.assertEqual(password_changed.json()["session_version"], 2)
+        self.assertIsNotNone(
+            self.auth.authenticate("U202113566", "another-long-passphrase")
+        )
+
+        denied = client.patch(
+            "/auth/hust/profile",
+            json={
+                "nickname": "新昵称",
+                "current_password": "wrong-current-password",
+                "new_password": "another-long-passphrase",
+            },
+        )
+        self.assertEqual(denied.status_code, 423)
