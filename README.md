@@ -183,6 +183,8 @@ D 系列不接受 `basic` 冒充完整审核。隔离对照用于验证各组件
 
 学生登录默认启用，认证方式固定为 HUST 教育邮箱身份。注册和密码重置页在 `/auth/hust/register` 与 `/auth/hust/forgot-password`；登录使用 Chainlit 原生表单，用户名是学号。系统把邮箱派生为 `学号@hust.edu.cn`，密码用 Argon2id 存储，验证码一次性有效并有频率限制。实名 principal 为 `student:<学号>`，已有匿名历史不会自动合并。开发环境可用 `SAGE_EMAIL_SENDER=outbox`，生产环境把 `SAGE_EMAIL_SENDER` 改为 `smtp`，并配置学校认可的发信账号或内网 relay。SMTP 支持 `465` 隐式 TLS 和 `587` STARTTLS；`SAGE_SMTP_AUTH=false` 可用于由网络策略授权的内部 relay，启用认证时必须同时配置用户名和密码。上线前可用 `.venv/bin/python tools/smtp_check.py --to 收件人@hust.edu.cn` 做投递检查。
 
+QQ 邮箱 SMTP 使用 `smtp.qq.com:465`，`SAGE_SMTP_USERNAME` 填完整 QQ 邮箱，`SAGE_SMTP_PASSWORD` 填 QQ 邮箱后台生成的授权码；`SAGE_EMAIL_FROM` 必须使用同一个 QQ 邮箱。
+
 登录后右上角显示 Chainlit 原生账号头像。头像菜单中的“个人信息”进入独立 `/profile` 页面，可更换头像、修改昵称和密码；学号和教育邮箱只读。菜单中的“退出登录”使用 Chainlit 原生退出逻辑。
 
 通过 `run_app.py` 启动时，`.env`、数据库、签名密钥、Provider 与策略文件的相对路径以应用目录为基准；默认是启动器所在项目目录，显式 `CHAINLIT_APP_ROOT` 可指定另一运行目录。改变终端当前目录不会新建另一份历史库，绝对路径配置仍可使用。备份或迁移工作区应在停止服务后保留 `.algosage/chats.sqlite3`、`.algosage/elements/`、`.algosage/state.sqlite3`、`.algosage/auth.secret`（或外部配置的同一签名密钥）；运行中的 SQLite 应使用数据库备份接口。不要把这些私有运行数据放入公开交付包。
