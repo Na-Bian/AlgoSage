@@ -1,7 +1,9 @@
 /* HUST 个人信息独立页。复用应用里的主题变量和缓动曲线。 */
 body.eg-profile-page {
   margin: 0;
-  min-height: 100svh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
   background:
     radial-gradient(1200px 500px at 15% -10%, hsl(var(--primary) / .10), transparent 60%),
     hsl(var(--background));
@@ -76,7 +78,19 @@ body.eg-profile-page .quiet-button:hover {
 }
 body.eg-profile-page .profile-shell {
   width: min(880px, calc(100% - 32px));
-  margin: clamp(24px, 6vh, 64px) auto;
+  margin: clamp(16px, 4dvh, 56px) auto;
+  height: max(calc(100dvh - 136px), 360px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+body.eg-profile-page .profile-card {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--scrollbar-thumb)) transparent;
 }
 body.eg-profile-page .profile-hero {
   display: flex;
@@ -97,6 +111,8 @@ body.eg-profile-page .profile-subtitle {
   max-width: 56ch;
 }
 body.eg-profile-page .profile-card {
+  flex: 1;
+  min-height: 0;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) + 6px);
@@ -256,6 +272,17 @@ body.eg-profile-page :root:root.dark .profile-status[data-kind="success"] { colo
   body.eg-profile-page .profile-hero { align-items: flex-start; }
   body.eg-profile-page .form-footer { justify-content: stretch; }
   body.eg-profile-page .save-button { width: 100%; }
+}
+
+@media (max-height: 820px) {
+  body.eg-profile-page .eg-profile-topbar { min-height: 48px; padding-top: 8px; padding-bottom: 8px; }
+  body.eg-profile-page .brand-logo { width: 132px; }
+  body.eg-profile-page .profile-shell { margin-top: 14px; margin-bottom: 14px; }
+  body.eg-profile-page .profile-card { padding: 20px; }
+  body.eg-profile-page .profile-title { font-size: 24px; }
+  body.eg-profile-page .avatar-frame { width: 88px; height: 88px; }
+  body.eg-profile-page .avatar-zone { gap: 14px; padding-bottom: 16px; margin-bottom: 16px; }
+  body.eg-profile-page .section { padding-top: 14px; margin-top: 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
   body.eg-profile-page * { animation: none !important; transition: none !important; }
