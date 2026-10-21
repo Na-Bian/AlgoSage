@@ -8,9 +8,9 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from examguard.config import Settings
-from examguard.llm import MockChatBackend
-from examguard.service import TutorService
+from algosage.config import Settings
+from algosage.llm import MockChatBackend
+from algosage.service import TutorService
 
 
 def service(**settings):
@@ -63,7 +63,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIsNot(a.session_guard, b.session_guard)
 
     def test_lru_eviction_preserves_budget(self):
-        with mock.patch("examguard.service.MAX_LIVE_SESSIONS", 1):
+        with mock.patch("algosage.service.MAX_LIVE_SESSIONS", 1):
             svc = service()
             a = svc.new_context("a")
             svc.chat(a, "解释 KMP 前缀函数", question_id="q")
@@ -73,7 +73,7 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(svc.new_context("a").session_guard.snapshot(), before)
 
     def test_budget_capacity_rejects_new_principal_but_keeps_existing(self):
-        with mock.patch("examguard.service.MAX_SECURITY_BUDGETS", 1):
+        with mock.patch("algosage.service.MAX_SECURITY_BUDGETS", 1):
             svc = service()
             a = svc.new_context("a")
             svc.drop_context("a")
@@ -247,7 +247,7 @@ class PersistenceTests(unittest.TestCase):
     def test_sqlite_capacity_not_bypassed_by_restart(self):
         with (
             tempfile.TemporaryDirectory() as tmp,
-            mock.patch("examguard.service.MAX_SECURITY_BUDGETS", 1),
+            mock.patch("algosage.service.MAX_SECURITY_BUDGETS", 1),
         ):
             path = str(Path(tmp) / "state.sqlite3")
             service(state_path=path).new_context("a", principal_id="one")
@@ -276,27 +276,27 @@ class SettingsBoundaryTests(unittest.TestCase):
     def test_offline_defaults_and_runtime_state_path(self):
         self.assertEqual(Settings().state_path, "")
         with (
-            mock.patch("examguard.config._load_dotenv"),
+            mock.patch("algosage.config._load_dotenv"),
             mock.patch.dict("os.environ", {}, clear=True),
         ):
             cfg = Settings.from_env()
-        self.assertEqual(cfg.state_path, str(Path(__file__).resolve().parent.parent / ".examguard/state.sqlite3"))
+        self.assertEqual(cfg.state_path, str(Path(__file__).resolve().parent.parent / ".algosage/state.sqlite3"))
         self.assertEqual(cfg.exam_id, "demo")
         self.assertEqual(cfg.question_id, "")
 
     def test_env_fields(self):
         env = {
-            "EG_QUESTION_ID": "q1",
-            "EG_EXAM_ID": "exam1",
-            "EG_STATE_FILE": "",
-            "EG_MAX_CALLS_PER_TURN": "4",
-            "EG_TURN_TIMEOUT_SECONDS": "12.5",
-            "EG_CLASSIFIER_MAX_OUTPUT_TOKENS": "100",
-            "EG_JUDGE_MAX_OUTPUT_TOKENS": "120",
-            "EG_MIN_CLASSIFIER_CONFIDENCE": ".8",
+            "SAGE_QUESTION_ID": "q1",
+            "SAGE_EXAM_ID": "exam1",
+            "SAGE_STATE_FILE": "",
+            "SAGE_MAX_CALLS_PER_TURN": "4",
+            "SAGE_TURN_TIMEOUT_SECONDS": "12.5",
+            "SAGE_CLASSIFIER_MAX_OUTPUT_TOKENS": "100",
+            "SAGE_JUDGE_MAX_OUTPUT_TOKENS": "120",
+            "SAGE_MIN_CLASSIFIER_CONFIDENCE": ".8",
         }
         with (
-            mock.patch("examguard.config._load_dotenv"),
+            mock.patch("algosage.config._load_dotenv"),
             mock.patch.dict("os.environ", env, clear=True),
         ):
             cfg = Settings.from_env()

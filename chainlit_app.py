@@ -1,4 +1,4 @@
-"""ExamGuard Chainlit 学生端界面（方案 B 前端迁移）。
+"""AlgoSage Chainlit 学生端界面（方案 B 前端迁移）。
 
 启动：
     .venv/bin/python run_app.py          # 默认端口 8000
@@ -6,9 +6,9 @@
 
 设计约束：
 - 本文件只负责展示与输入拆分；意图分类、帮助等级、模型调用、输出审核
-  全部经由 examguard.service.TutorService 完成（业务逻辑与前端解耦）。
+  全部经由 algosage.service.TutorService 完成（业务逻辑与前端解耦）。
 - API Key 只存在于服务端进程；浏览器仅收到白名单元数据。
-- 考试模式默认由服务端 EXAM_MODE 决定；仅当以 EG_ALLOW_POLICY_SWITCH=true
+- 考试模式默认由服务端 EXAM_MODE 决定；仅当以 SAGE_ALLOW_POLICY_SWITCH=true
   启动（教师演示）时，界面上才会出现模式开关，学生常规运行无法绕过。
 - 旧 Streamlit 界面 app.py 保留为回退方案。
 """
@@ -27,14 +27,14 @@ from weakref import WeakValueDictionary
 import chainlit as cl
 from chainlit.input_widget import Select, Switch
 
-from examguard.config import Settings
-from examguard.service import TutorService, HISTORY_TURNS_KEPT
-from examguard.providers import ProviderRegistry
-from examguard.invocation import streaming_transport, timing_summary
-from examguard.runtime_paths import runtime_path
-from examguard.attachments import prepare_attachment_elements
+from algosage.config import Settings
+from algosage.service import TutorService, HISTORY_TURNS_KEPT
+from algosage.providers import ProviderRegistry
+from algosage.invocation import streaming_transport, timing_summary
+from algosage.runtime_paths import runtime_path
+from algosage.attachments import prepare_attachment_elements
 
-logger = logging.getLogger("examguard.chainlit")
+logger = logging.getLogger("algosage.chainlit")
 
 _FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
 
@@ -45,7 +45,7 @@ _LEVEL_BADGES = {
     3: "L3 · 局部代码诊断",
 }
 
-WELCOME_TMPL = """### 🛡️ ExamGuard · 算法考试受限助教
+WELCOME_TMPL = """### 🧭 AlgoSage · 知衡
 
 正式版开发中：面向算法学习与受限考试场景，提供分级辅助与输出审核；**不构成可靠的防泄漏保障**。
 
@@ -61,7 +61,7 @@ WELCOME_TMPL = """### 🛡️ ExamGuard · 算法考试受限助教
 - 直接提问算法概念或复杂度问题，回答会尽量讲透、配合具体例子；
 - 可附加 PNG/JPEG/WebP 图片，以及 PDF、DOCX、PPTX、XLSX、文本和常见代码文件；附件在服务端解析并按不可信输入审核；
 - 调试已有代码时，把代码放在 ``` 围栏代码块中一并粘贴（仅作文本分析，**不会执行**）；
-- 每条回答下方有一行安全摘要（意图 · 帮助等级 · 审核结论）；完整审计明细可用 `EG_UI_DETAIL=full` 启动查看。
+- 每条回答下方有一行安全摘要（意图 · 帮助等级 · 审核结论）；完整审计明细可用 `SAGE_UI_DETAIL=full` 启动查看。
 
 """
 
@@ -110,7 +110,7 @@ async def restore_conversation(service):
 def get_student_auth():
     global _student_auth
     if _student_auth is None:
-        from examguard.student_auth import auth_service_from_env
+        from algosage.student_auth import auth_service_from_env
 
         _student_auth = auth_service_from_env()
     return _student_auth
@@ -143,10 +143,10 @@ async def hust_password_auth(username: str, password: str):
 def get_chat_store():
     global _chat_store
     if _chat_store is None:
-        from examguard.chat_store import ChatDataLayer
+        from algosage.chat_store import ChatDataLayer
 
         _chat_store = ChatDataLayer(
-            runtime_path("EG_CHAT_FILE", ".examguard/chats.sqlite3")
+            runtime_path("SAGE_CHAT_FILE", ".algosage/chats.sqlite3")
         )
     return _chat_store
 
@@ -226,9 +226,9 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             raise HTTPException(status_code=404, detail="Feedback not found")
         return {"success": True}
 
-    from examguard.student_auth import install_profile_routes
+    from algosage.student_auth import install_profile_routes
 
-    from examguard.student_auth import install_student_auth
+    from algosage.student_auth import install_student_auth
 
     install_student_auth(_chainlit_server_app, get_student_auth)
     install_profile_routes(_chainlit_server_app, get_student_auth, get_chat_store)
@@ -340,7 +340,7 @@ async def schedule_title(
         emitter is None
         or not context.principal_id
         or getattr(session, "restored", False)
-        or os.environ.get("EG_AUTO_TITLES", "true").lower() in {"false", "0", "no"}
+        or os.environ.get("SAGE_AUTO_TITLES", "true").lower() in {"false", "0", "no"}
         or not response.audit.approved
         or response.audit.reason == "policy_denial"
         or len(response.call_trace) >= service.settings.max_calls_per_turn
@@ -531,7 +531,7 @@ def prepare_message_inputs(
 def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
     """把白名单元数据渲染为前端审计面板（纯函数，便于测试）。
 
-    展示密度由 EG_UI_DETAIL 控制（默认 brief 学生视图；full 供教师/研究用）：
+    展示密度由 SAGE_UI_DETAIL 控制（默认 brief 学生视图；full 供教师/研究用）：
     - brief：一行摘要——意图 · 帮助等级 · 审核结论 ·（会话累计风险非零时）；
     - full：完整表格（分类方法/置信度/风险标记/审核层/重生成/Token/耗时等）。
     任何模式都不含系统提示词、API Key 或用户原始输入。
@@ -547,7 +547,7 @@ def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
         verdict = f"⛔ 已拦截（{meta.get('audit_reason')}）"
     session_risk = meta.get("session_risk")
 
-    if os.environ.get("EG_UI_DETAIL", "brief").strip().lower() != "full":
+    if os.environ.get("SAGE_UI_DETAIL", "brief").strip().lower() != "full":
         parts = [f"意图 `{meta.get('intent')}`", badge, verdict]
         if session_risk is not None and float(session_risk) > 0:
             parts.append(f"会话累计风险 {float(session_risk):.2f}")
@@ -632,7 +632,7 @@ async def chat_profiles(_current_user=None, _language=None):
     # default profile renders the welcome natively without a profile selector.
     return [
         cl.ChatProfile(
-            name="ExamGuard",
+            name="AlgoSage",
             default=True,
             icon="/favicon",
             markdown_description=welcome_markdown(get_service()),
@@ -736,6 +736,6 @@ async def on_message(message: cl.Message) -> None:
 
     meta = TutorService.display_metadata(response)
     async with cl.Step(
-        name="🛡️ 安全审计与策略", type="run", icon="shield-check"
+        name="🧭 安全审计与策略", type="run", icon="shield-check"
     ) as step:
         step.output = render_audit_markdown(meta, latency_ms)

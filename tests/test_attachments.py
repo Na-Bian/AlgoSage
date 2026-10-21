@@ -5,15 +5,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from examguard.attachments import (
+from algosage.attachments import (
     AttachmentError,
     prepare_attachment_elements,
 )
-from examguard.config import Settings
-from examguard.llm import MockChatBackend
-from examguard.pipeline import ExamGuardTutor
-from examguard.schemas import AttachmentPayload, AuditResult, LLMResult, TutorRequest
-from examguard.service import TutorService
+from algosage.config import Settings
+from algosage.llm import MockChatBackend
+from algosage.pipeline import AlgoSageTutor
+from algosage.schemas import AttachmentPayload, AuditResult, LLMResult, TutorRequest
+from algosage.service import TutorService
 
 
 def element(path: Path, name: str, mime: str):
@@ -168,7 +168,7 @@ class AttachmentPipelineTests(unittest.TestCase):
                 return LLMResult("这是概念解释。", "vision-test", 1, 1)
 
         backend = RecordingBackend()
-        tutor = ExamGuardTutor(
+        tutor = AlgoSageTutor(
             backend, Settings(mode="mock", exam_mode=False)
         )
         request = TutorRequest(
@@ -198,7 +198,7 @@ class AttachmentPipelineTests(unittest.TestCase):
             def generate(self, messages):
                 raise AssertionError("injected attachment must not reach the model")
 
-        tutor = ExamGuardTutor(NeverCalled(), Settings(mode="mock", exam_mode=True))
+        tutor = AlgoSageTutor(NeverCalled(), Settings(mode="mock", exam_mode=True))
         response = tutor.respond(
             TutorRequest(
                 "解释一下复杂度",
@@ -225,7 +225,7 @@ class AttachmentPipelineTests(unittest.TestCase):
                 return AuditResult(True, draft, "test_pass")
 
         guard = Guard()
-        tutor = ExamGuardTutor(
+        tutor = AlgoSageTutor(
             MockChatBackend(),
             Settings(mode="mock", exam_mode=False),
             output_guard=guard,
@@ -276,7 +276,7 @@ class AttachmentPipelineTests(unittest.TestCase):
     def test_chat_store_persists_bounded_images_for_follow_up(self):
         import asyncio
         from chainlit.user import User
-        from examguard.chat_store import ChatDataLayer
+        from algosage.chat_store import ChatDataLayer
 
         store = ChatDataLayer(":memory:")
         self.addCleanup(lambda: asyncio.run(store.close()))
@@ -314,8 +314,8 @@ class AttachmentPipelineTests(unittest.TestCase):
         self.assertEqual(len(history[0]["images"]), 1)
 
     def test_bounded_attachment_fact_lookup_cannot_become_llm_only_jailbreak(self):
-        from examguard.hybrid_classifier import HybridIntentClassifier
-        from examguard.intent_classifier import is_bounded_attachment_lookup
+        from algosage.hybrid_classifier import HybridIntentClassifier
+        from algosage.intent_classifier import is_bounded_attachment_lookup
 
         class OvereagerClassifier:
             def generate(self, messages):

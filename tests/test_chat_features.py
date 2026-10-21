@@ -28,8 +28,8 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
             hasattr(chainlit_app, "deliver_response"),
             "approved streaming delivery missing",
         )
-        from examguard.service import TutorService
-        from examguard.config import Settings
+        from algosage.service import TutorService
+        from algosage.config import Settings
 
         svc = TutorService(Settings())
         reply = SimpleNamespace(content="", stream_token=AsyncMock(), send=AsyncMock())
@@ -61,8 +61,8 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
     async def test_restoring_while_other_turn_running_does_not_block_event_loop(self):
         import threading
         import time
-        from examguard.service import TutorService
-        from examguard.config import Settings
+        from algosage.service import TutorService
+        from algosage.config import Settings
 
         svc = TutorService(Settings())
         ctx = svc.new_context("resume-lock", principal_id="p")
@@ -94,10 +94,10 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
             hasattr(chainlit_app, "restore_conversation"),
             "authoritative thread history restore missing",
         )
-        from examguard.config import Settings
-        from examguard.providers import ProviderRegistry
-        from examguard.service import TutorService
-        from examguard.chat_store import ChatDataLayer
+        from algosage.config import Settings
+        from algosage.providers import ProviderRegistry
+        from algosage.service import TutorService
+        from algosage.chat_store import ChatDataLayer
         from chainlit.user import User
 
         store = ChatDataLayer(":memory:")
@@ -135,10 +135,10 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
             hasattr(chainlit_app, "restore_conversation"),
             "authoritative thread history restore missing",
         )
-        from examguard.config import Settings
-        from examguard.providers import ProviderRegistry
-        from examguard.service import TutorService
-        from examguard.chat_store import ChatDataLayer
+        from algosage.config import Settings
+        from algosage.providers import ProviderRegistry
+        from algosage.service import TutorService
+        from algosage.chat_store import ChatDataLayer
         from chainlit.user import User
 
         store = ChatDataLayer(":memory:")
@@ -177,10 +177,10 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
         await store.close()
 
     async def test_two_windows_append_turns_to_latest_private_history(self):
-        from examguard.config import Settings
-        from examguard.service import TutorService
-        from examguard.schemas import LLMResult
-        from examguard.chat_store import ChatDataLayer
+        from algosage.config import Settings
+        from algosage.service import TutorService
+        from algosage.schemas import LLMResult
+        from algosage.chat_store import ChatDataLayer
         from chainlit.user import User
 
         class Backend:

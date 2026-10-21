@@ -4,14 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from examguard.exam_policy import (
+from algosage.exam_policy import (
     DEFAULT_EXAM_LEVELS,
     ExamPolicy,
     PolicyConfigError,
 )
-from examguard.intent_classifier import classify
-from examguard.policy import decide
-from examguard.schemas import Intent, TutorRequest
+from algosage.intent_classifier import classify
+from algosage.policy import decide
+from algosage.schemas import Intent, TutorRequest
 
 PROJECT_POLICY = Path(__file__).parent.parent / "config" / "exam_policy.json"
 

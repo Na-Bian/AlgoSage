@@ -1,4 +1,5 @@
 import asyncio
+import os
 import tempfile
 import unittest
 from dataclasses import dataclass, field
@@ -7,8 +8,8 @@ from types import SimpleNamespace
 from unittest import mock
 from fastapi.testclient import TestClient
 
-from examguard.emailer import OutboxEmailSender
-from examguard.student_auth import (
+from algosage.emailer import OutboxEmailSender
+from algosage.student_auth import (
     AuthCodeError,
     AuthConfig,
     AuthCredentialsError,
@@ -176,7 +177,7 @@ class StudentAuthRoutesTests(unittest.TestCase):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
-        from examguard.student_auth import install_student_auth
+        from algosage.student_auth import install_student_auth
 
         app = FastAPI()
         sender = FakeEmailSender()
@@ -259,7 +260,7 @@ class StudentProfileRouteTests(unittest.TestCase):
         self.addCleanup(secret.stop)
         from fastapi import FastAPI
 
-        from examguard.student_auth import install_student_auth
+        from algosage.student_auth import install_student_auth
 
         self.app = FastAPI()
         install_student_auth(self.app, lambda: self.auth)
@@ -338,7 +339,7 @@ class ProfileRouteTests(unittest.TestCase):
         )
         from fastapi import FastAPI
 
-        from examguard.student_auth import install_profile_routes
+        from algosage.student_auth import install_profile_routes
 
         self.app = FastAPI()
         install_profile_routes(self.app, lambda: self.auth)
@@ -391,10 +392,20 @@ class ProfileRouteTests(unittest.TestCase):
 
     def test_profile_page_redirects_unauthenticated_user(self):
         self.app.dependency_overrides[self.current_user_dependency()] = lambda: None
-        response = self.client.get("/profile")
         response = self.client.get("/profile", follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/login")
+
+    def test_legacy_environment_variables_are_promoted(self):
+        from algosage.config import Settings
+
+        with mock.patch.dict(
+            os.environ,
+            {"EG_CLASSIFIER_MODE": "hybrid", "SAGE_CLASSIFIER_MODE": ""},
+            clear=False,
+        ):
+            settings = Settings.from_env()
+            self.assertEqual(settings.classifier_mode, "hybrid")
 
     def test_custom_auth_pages_replace_chainlit_login(self):
         for path, mode in [("/login", "login"), ("/register", "register"), ("/forgot-password", "reset")]:
@@ -403,4 +414,5 @@ class ProfileRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn("text/html", response.headers["content-type"])
             self.assertIn(f'data-mode="{mode}"', response.text)
-            self.assertIn("HUST 学生登录", response.text)
+            self.assertIn("AlgoSage", response.text)
+            self.assertIn("/public/brand-logo.png", response.text)

@@ -6,9 +6,9 @@ Chainlit 前端编辑用户消息后会移除该消息之后的显示并再次�
 """
 import unittest
 
-from examguard.config import Settings
-from examguard.service import TutorService
-from examguard.schemas import LLMResult
+from algosage.config import Settings
+from algosage.service import TutorService
+from algosage.schemas import LLMResult
 
 
 class ScriptedBackend:

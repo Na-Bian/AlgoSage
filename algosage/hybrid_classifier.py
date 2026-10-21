@@ -1,4 +1,4 @@
-"""规则 + LLM 的混合意图分类器（P1，通过 EG_CLASSIFIER_MODE=hybrid 启用）。
+"""规则 + LLM 的混合意图分类器（P1，通过 SAGE_CLASSIFIER_MODE=hybrid 启用）。
 
 设计要点（与作业指南"有实质内容的防护"对应）：
 - 规则层使用 ``classify_contextual`` 过滤单纯的主题提及；冻结的 ``classify``
@@ -33,7 +33,7 @@ from .invocation import generate
 from .exam_policy import ExamPolicy
 from .visual_context import select_images, with_images
 
-logger = logging.getLogger("examguard.hybrid_classifier")
+logger = logging.getLogger("algosage.hybrid_classifier")
 
 _KNOWN_FLAGS = {
     "instruction_override",

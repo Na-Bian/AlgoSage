@@ -14,6 +14,13 @@ def _load_dotenv() -> None:
     except ImportError:
         return
     load_dotenv(runtime_path("CHAINLIT_ENV_FILE", ".env"))
+    # AlgoSage uses SAGE_* names. Existing AlgoSage deployments continue to
+    # work by promoting EG_* values only when a SAGE_* override is absent.
+    for key, value in list(os.environ.items()):
+        if key.startswith("EG_"):
+            new_key = f"SAGE_{key[3:]}"
+            if not os.environ.get(new_key):
+                os.environ[new_key] = value
 
 
 @dataclass(frozen=True)
@@ -85,22 +92,22 @@ class Settings:
         token_parameter = os.environ.get("LLM_TOKEN_PARAMETER", "max_tokens")
         if token_parameter not in {"max_tokens", "max_completion_tokens"}:
             raise ValueError("Unsupported LLM_TOKEN_PARAMETER")
-        classifier_mode = os.environ.get("EG_CLASSIFIER_MODE", "regex").lower().strip()
+        classifier_mode = os.environ.get("SAGE_CLASSIFIER_MODE", "regex").lower().strip()
         if classifier_mode not in {"regex", "hybrid"}:
-            raise ValueError("EG_CLASSIFIER_MODE must be regex or hybrid")
-        output_guard = os.environ.get("EG_OUTPUT_GUARD", "rules").lower().strip()
+            raise ValueError("SAGE_CLASSIFIER_MODE must be regex or hybrid")
+        output_guard = os.environ.get("SAGE_OUTPUT_GUARD", "rules").lower().strip()
         if output_guard not in {"basic", "rules", "layered"}:
-            raise ValueError("EG_OUTPUT_GUARD must be basic, rules or layered")
-        extra_raw = os.environ.get("EG_LLM_EXTRA_BODY", "").strip()
+            raise ValueError("SAGE_OUTPUT_GUARD must be basic, rules or layered")
+        extra_raw = os.environ.get("SAGE_LLM_EXTRA_BODY", "").strip()
         if extra_raw:
             try:
                 extra_body = json.loads(extra_raw)
             except json.JSONDecodeError as error:
                 raise ValueError(
-                    f"EG_LLM_EXTRA_BODY 必须是合法 JSON: {error}"
+                    f"SAGE_LLM_EXTRA_BODY 必须是合法 JSON: {error}"
                 ) from error
             if not isinstance(extra_body, dict):
-                raise ValueError("EG_LLM_EXTRA_BODY 必须是 JSON 对象")
+                raise ValueError("SAGE_LLM_EXTRA_BODY 必须是 JSON 对象")
         else:
             extra_body = {}
         return cls(
@@ -117,30 +124,30 @@ class Settings:
             token_parameter=token_parameter,
             classifier_mode=classifier_mode,
             output_guard=output_guard,
-            policy_file=runtime_path("EG_POLICY_FILE", ""),
+            policy_file=runtime_path("SAGE_POLICY_FILE", ""),
             extra_body=extra_body,
-            question_id=os.environ.get("EG_QUESTION_ID", "").strip(),
-            exam_id=os.environ.get("EG_EXAM_ID", "demo").strip(),
+            question_id=os.environ.get("SAGE_QUESTION_ID", "").strip(),
+            exam_id=os.environ.get("SAGE_EXAM_ID", "demo").strip(),
             state_path=runtime_path(
-                "EG_STATE_FILE", ".examguard/state.sqlite3"
+                "SAGE_STATE_FILE", ".algosage/state.sqlite3"
             ),
-            max_calls_per_turn=int(os.environ.get("EG_MAX_CALLS_PER_TURN", "9")),
-            turn_timeout=float(os.environ.get("EG_TURN_TIMEOUT_SECONDS", "180")),
+            max_calls_per_turn=int(os.environ.get("SAGE_MAX_CALLS_PER_TURN", "9")),
+            turn_timeout=float(os.environ.get("SAGE_TURN_TIMEOUT_SECONDS", "180")),
             classifier_max_output_tokens=int(
-                os.environ.get("EG_CLASSIFIER_MAX_OUTPUT_TOKENS", "256")
+                os.environ.get("SAGE_CLASSIFIER_MAX_OUTPUT_TOKENS", "256")
             ),
             judge_max_output_tokens=int(
-                os.environ.get("EG_JUDGE_MAX_OUTPUT_TOKENS", "768")
+                os.environ.get("SAGE_JUDGE_MAX_OUTPUT_TOKENS", "768")
             ),
             quality_max_output_tokens=int(
-                os.environ.get("EG_QUALITY_MAX_OUTPUT_TOKENS", "512")
+                os.environ.get("SAGE_QUALITY_MAX_OUTPUT_TOKENS", "512")
             ),
             concise_max_output_tokens=int(
-                os.environ.get("EG_CONCISE_MAX_OUTPUT_TOKENS", "768")
+                os.environ.get("SAGE_CONCISE_MAX_OUTPUT_TOKENS", "768")
             ),
-            parallel_reviews=os.environ.get("EG_PARALLEL_REVIEWS", "true").lower()
+            parallel_reviews=os.environ.get("SAGE_PARALLEL_REVIEWS", "true").lower()
             in {"true", "1", "yes"},
             min_classifier_confidence=float(
-                os.environ.get("EG_MIN_CLASSIFIER_CONFIDENCE", ".7")
+                os.environ.get("SAGE_MIN_CLASSIFIER_CONFIDENCE", ".7")
             ),
         )

@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from examguard.chat_store import ChatDataLayer
-from examguard.config import Settings
-from examguard.schemas import LLMResult
+from algosage.chat_store import ChatDataLayer
+from algosage.config import Settings
+from algosage.schemas import LLMResult
 
 
 class ChatTitleStoreTests(unittest.IsolatedAsyncioTestCase):
@@ -98,8 +98,8 @@ class ChatTitleStoreTests(unittest.IsolatedAsyncioTestCase):
 
 class TitleGenerationTests(unittest.TestCase):
     def generate(self, output, question="请解释 KMP 中的前缀函数", **kwargs):
-        from examguard.chat_titles import generate_title
-        from examguard.invocation import turn_ledger
+        from algosage.chat_titles import generate_title
+        from algosage.invocation import turn_ledger
 
         self.calls = 0
 
@@ -123,7 +123,7 @@ class TitleGenerationTests(unittest.TestCase):
         self.assertLessEqual(self.options["timeout"], 8)
 
     def test_answer_like_or_unrelated_output_is_not_a_title(self):
-        from examguard.chat_titles import valid_title
+        from algosage.chat_titles import valid_title
 
         for output in (
             "采用动态规划",
@@ -152,7 +152,7 @@ class TitleGenerationTests(unittest.TestCase):
         self.assertIn("标题", data["task"])
 
     def test_invalid_fallback_never_adds_model_words_or_code(self):
-        from examguard.chat_titles import title_source, valid_title
+        from algosage.chat_titles import title_source, valid_title
 
         question = "请介绍广度优先搜索的基本概念。\n```python\nSECRET_CODE = 42\n```"
         title = self.generate("采用动态规划求解", question)
@@ -209,7 +209,7 @@ class TitleSchedulingTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import AsyncMock
 
         import chainlit_app
-        from examguard.service import TutorService
+        from algosage.service import TutorService
 
         entered, release = threading.Event(), threading.Event()
 
@@ -248,7 +248,7 @@ class TitleSchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_policy_denial_has_no_title_job_or_extra_model_call(self):
         import chainlit_app
-        from examguard.service import TutorService
+        from algosage.service import TutorService
 
         class NeverCalled:
             def generate(self, messages):

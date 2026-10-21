@@ -32,7 +32,7 @@ from .content_analysis import (
 from .invocation import generate, remaining_call_budget
 from .solution_semantics import extract_solution_evidence, core_budget_reason, validate_judge_evidence, evidence_units
 
-logger = logging.getLogger("examguard.leakage_guard")
+logger = logging.getLogger("algosage.leakage_guard")
 
 _CODE_BLOCK = re.compile(r"```[^\n]*\n(.*?)```", re.S)
 # 状态转移式：dp/f/g/memo/d 带下标赋值（复杂度递推 T(n)/O(n) 不匹配）。

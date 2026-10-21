@@ -1,8 +1,8 @@
 """Cheap dataset sanity check (not the final security evaluation Harness)."""
 import json
 from pathlib import Path
-from examguard.intent_classifier import classify
-from examguard.schemas import TutorRequest
+from algosage.intent_classifier import classify
+from algosage.schemas import TutorRequest
 
 
 def main():

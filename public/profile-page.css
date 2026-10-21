@@ -41,6 +41,10 @@ body.eg-profile-page .brand-mark {
   color: hsl(var(--primary-foreground));
   font-size: 15px;
 }
+body.eg-profile-page .brand-logo {
+  width: 170px;
+  height: auto;
+}
 body.eg-profile-page .topbar-actions {
   display: flex;
   align-items: center;

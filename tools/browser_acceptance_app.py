@@ -1,7 +1,7 @@
 """Isolated, loopback-only browser acceptance target; never deploy this journal.
 
-Use run_app.py tools/browser_acceptance_app.py with EG_ACCEPTANCE_DIR and
-EG_ACCEPTANCE_VARIANT. Browser UI/callbacks are the ordinary student application.
+Use run_app.py tools/browser_acceptance_app.py with SAGE_ACCEPTANCE_DIR and
+SAGE_ACCEPTANCE_VARIANT. Browser UI/callbacks are the ordinary student application.
 Only the service assembly changes for the documented A/B/C/D controls. Evidence
 contains synthetic test prompts and unapproved drafts for local developer review.
 """
@@ -15,14 +15,14 @@ from pathlib import Path
 import threading
 import time
 
-from examguard.config import Settings
-from examguard.local_identity import ensure_local_secret
-from examguard.schemas import TutorRequest
-from examguard.service import TutorService
+from algosage.config import Settings
+from algosage.local_identity import ensure_local_secret
+from algosage.schemas import TutorRequest
+from algosage.service import TutorService
 from harness.variants import build_tutor, normalize_variant, VARIANTS
 
-root = Path(os.environ["EG_ACCEPTANCE_DIR"]).resolve()
-variant = normalize_variant(os.environ.get("EG_ACCEPTANCE_VARIANT", "D"))
+root = Path(os.environ["SAGE_ACCEPTANCE_DIR"]).resolve()
+variant = normalize_variant(os.environ.get("SAGE_ACCEPTANCE_VARIANT", "D"))
 root.mkdir(parents=True, exist_ok=True)
 ensure_local_secret()
 _journal_thread = ContextVar("acceptance_thread", default="")

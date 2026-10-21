@@ -1,9 +1,9 @@
 """Regressions discovered from the preserved real-browser pilot on 2026-10-19."""
 import unittest
-from examguard.config import Settings
-from examguard.leakage_guard import RuleLeakageScreener
-from examguard.pipeline import ExamGuardTutor
-from examguard.schemas import Intent, PolicyDecision, LLMResult, TutorRequest
+from algosage.config import Settings
+from algosage.leakage_guard import RuleLeakageScreener
+from algosage.pipeline import AlgoSageTutor
+from algosage.schemas import Intent, PolicyDecision, LLMResult, TutorRequest
 
 
 class PilotRepairTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class PilotRepairTests(unittest.TestCase):
         self.assertEqual(audit.reason, "stepwise_solution")
 
     def test_discussing_pseudocode_is_not_presenting_pseudocode(self):
-        from examguard.session_guard import detect_disclosures
+        from algosage.session_guard import detect_disclosures
         draft = "1. 提示词有概率性失效风险。\n2. 外部审核仍然可能误判。\n3. 不能只看是否包含伪代码一词。"
         audit = RuleLeakageScreener().review(draft, PolicyDecision(Intent.KNOWLEDGE, 1, ""), True)
         self.assertTrue(audit.approved, audit.reason)
@@ -46,7 +46,7 @@ class PilotRepairTests(unittest.TestCase):
                     raise ValueError('strict provider rejects trailing system message')
                 return LLMResult('以下是完整实现，可以直接提交。' if len(self.calls)==1 else '请先明确状态含义。', 'scripted', 1, 1)
         backend = StrictRoleBackend()
-        response = ExamGuardTutor(backend, Settings(mode='mock')).respond(TutorRequest('给一个方向提示'))
+        response = AlgoSageTutor(backend, Settings(mode='mock')).respond(TutorRequest('给一个方向提示'))
         self.assertEqual(len(backend.calls), 2)
         self.assertEqual(response.answer, '请先明确状态含义。')
         self.assertTrue(response.audit.approved)

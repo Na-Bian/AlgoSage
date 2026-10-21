@@ -12,7 +12,7 @@ const casesFile = path.join(__dirname, 'browser_acceptance_cases.json');
 const all = JSON.parse(fs.readFileSync(casesFile, 'utf8'));
 let cases = all[batch];
 if (batch !== 'pilot' && variant !== 'D') cases = cases.filter(c => c.compare);
-if (process.env.EG_CASE_IDS) cases = cases.filter(c => process.env.EG_CASE_IDS.split(',').includes(c.id));
+if (process.env.SAGE_CASE_IDS) cases = cases.filter(c => process.env.SAGE_CASE_IDS.split(',').includes(c.id));
 fs.mkdirSync(output, {recursive: true});
 const journal = path.join(output, `${variant}-journal.jsonl`);
 const records = path.join(output, `${variant}-browser.jsonl`);

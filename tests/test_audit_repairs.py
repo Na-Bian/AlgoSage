@@ -1,11 +1,11 @@
 import unittest
-from examguard.config import Settings
-from examguard.exam_policy import ExamPolicy, PolicyConfigError
-from examguard.schemas import *
-from examguard.leakage_guard import *
-from examguard.hybrid_classifier import HybridIntentClassifier
-from examguard.pipeline import ExamGuardTutor
-from examguard.session_guard import SessionGuard, RiskState
+from algosage.config import Settings
+from algosage.exam_policy import ExamPolicy, PolicyConfigError
+from algosage.schemas import *
+from algosage.leakage_guard import *
+from algosage.hybrid_classifier import HybridIntentClassifier
+from algosage.pipeline import AlgoSageTutor
+from algosage.session_guard import SessionGuard, RiskState
 
 
 class Backend:
@@ -72,7 +72,7 @@ class AuditRegressionTests(unittest.TestCase):
 
     def test_obvious_attack_zero_llm_calls_even_layered_hybrid(self):
         b = Backend("bad")
-        tutor = ExamGuardTutor(
+        tutor = AlgoSageTutor(
             b,
             Settings(mode="api", output_guard="layered", classifier_mode="hybrid"),
             classifier=HybridIntentClassifier(b, Settings()),
@@ -93,7 +93,7 @@ class AuditRegressionTests(unittest.TestCase):
             "调试转移", existing_code="dp[i] = dp[i-1]", question_id="q"
         )
         b = Backend("修改为 dp[i] = max(dp[i-1], dp[i-2]+a[i])")
-        tutor = ExamGuardTutor(
+        tutor = AlgoSageTutor(
             b,
             Settings(output_guard="rules"),
             policy_config=ExamPolicy.from_dict({"max_regenerations": 0}),
@@ -111,7 +111,7 @@ class AuditRegressionTests(unittest.TestCase):
 
     def test_code_injection_cannot_be_ignored_by_regex_fallback(self):
         b = Backend("not json")
-        r = ExamGuardTutor(
+        r = AlgoSageTutor(
             b, Settings(), classifier=HybridIntentClassifier(b, Settings())
         ).respond(
             TutorRequest(
@@ -140,7 +140,7 @@ class AuditRegressionTests(unittest.TestCase):
 
         b = Routed()
         g = SessionGuard()
-        tutor = ExamGuardTutor(b, Settings(mode="api", output_guard="layered"))
+        tutor = AlgoSageTutor(b, Settings(mode="api", output_guard="layered"))
         req = TutorRequest("给点提示", question_id="q")
         tutor.respond(req, session_guard=g)
         tutor.respond(req, session_guard=g)
@@ -179,7 +179,7 @@ class AuditRegressionTests(unittest.TestCase):
 
         b = Routed()
         s = Settings(mode="api", output_guard="layered")
-        r = ExamGuardTutor(b, s, classifier=HybridIntentClassifier(b, s)).respond(
+        r = AlgoSageTutor(b, s, classifier=HybridIntentClassifier(b, s)).respond(
             TutorRequest("解释复杂度")
         )
         self.assertEqual(
@@ -194,7 +194,7 @@ class AuditRegressionTests(unittest.TestCase):
         s = Settings(mode="api", output_guard="layered")
         object.__setattr__(s, "max_calls_per_turn", 1)
         b = Backend("复杂度表示资源需求随输入规模增长的趋势。")
-        r = ExamGuardTutor(b, s).respond(TutorRequest("解释复杂度"))
+        r = AlgoSageTutor(b, s).respond(TutorRequest("解释复杂度"))
         self.assertFalse(r.audit.approved)
         self.assertEqual(r.audit.status, "unknown")
         self.assertNotEqual(r.answer, b.text)
@@ -205,7 +205,7 @@ class AuditRegressionTests(unittest.TestCase):
             def generate(self, messages):
                 raise TimeoutError("controlled")
 
-        r = ExamGuardTutor(Failure(), Settings()).respond(TutorRequest("解释复杂度"))
+        r = AlgoSageTutor(Failure(), Settings()).respond(TutorRequest("解释复杂度"))
         self.assertIsNone(r.input_tokens)
         self.assertIsNone(r.output_tokens)
         self.assertEqual(r.call_trace[0]["error_type"], "TimeoutError")
@@ -242,7 +242,7 @@ class AuditRegressionTests(unittest.TestCase):
             def generate(self, messages):
                 return LLMResult(next(self.drafts), "controlled")
 
-        t = ExamGuardTutor(
+        t = AlgoSageTutor(
             Split(),
             Settings(),
             policy_config=ExamPolicy.from_dict({"max_regenerations": 0}),
@@ -279,7 +279,7 @@ class AuditRegressionTests(unittest.TestCase):
         )
 
     def test_extending_existing_expression_is_new_disclosure(self):
-        from examguard.content_analysis import novel_text
+        from algosage.content_analysis import novel_text
 
         text = novel_text("修改为 dp[i] = dp[i-1] + a[i]", "dp[i]=dp[i-1]")
         self.assertIn("dp[i]", text)
@@ -339,7 +339,7 @@ class AuditRegressionTests(unittest.TestCase):
         self.assertEqual(state.risk_score, 0)
 
     def test_debug_label_alone_is_not_a_delivered_local_fix(self):
-        from examguard.session_guard import detect_disclosures
+        from algosage.session_guard import detect_disclosures
 
         self.assertNotIn(
             "local_fix", detect_disclosures("请先描述自己的推导。", Intent.DEBUG, 3)

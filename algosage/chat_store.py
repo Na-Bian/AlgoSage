@@ -1,4 +1,4 @@
-"""Small durable Chainlit data layer for local ExamGuard conversations."""
+"""Small durable Chainlit data layer for local AlgoSage conversations."""
 
 from __future__ import annotations
 
@@ -119,7 +119,7 @@ class ChatDataLayer(BaseDataLayer):
         self._lock = threading.RLock()
         self._temporary_element_root = None
         if path == ":memory:":
-            self._temporary_element_root = tempfile.mkdtemp(prefix="examguard-elements-")
+            self._temporary_element_root = tempfile.mkdtemp(prefix="algosage-elements-")
             self._element_root = Path(self._temporary_element_root)
         else:
             self._element_root = Path(path).parent / "elements"

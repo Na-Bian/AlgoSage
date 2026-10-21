@@ -30,8 +30,8 @@ def _isolated_env():
         {
             "APP_MODE": "mock",
             "EXAM_MODE": "true",
-            "EG_ALLOW_POLICY_SWITCH": "false",
-            "EG_STATE_FILE": "",
+            "SAGE_ALLOW_POLICY_SWITCH": "false",
+            "SAGE_STATE_FILE": "",
         },
     )
 
@@ -42,7 +42,7 @@ class ChainlitAppModuleTests(unittest.TestCase):
         import chainlit_app
 
         self.module = chainlit_app
-        from examguard.chat_store import ChatDataLayer
+        from algosage.chat_store import ChatDataLayer
 
         store = ChatDataLayer(":memory:")
         self.module._chat_store = store
@@ -182,8 +182,8 @@ class ChainlitAppModuleTests(unittest.TestCase):
             )
 
     def test_bootstrap_welcome_uses_public_runtime_settings(self):
-        from examguard.config import Settings
-        from examguard.service import TutorService
+        from algosage.config import Settings
+        from algosage.service import TutorService
 
         service = TutorService(
             Settings(
@@ -305,7 +305,7 @@ class ChainlitAppModuleTests(unittest.TestCase):
             "input_tokens": 12,
             "output_tokens": 34,
         }
-        with mock.patch.dict("os.environ", {"EG_UI_DETAIL": "full"}):
+        with mock.patch.dict("os.environ", {"SAGE_UI_DETAIL": "full"}):
             rendered = self.module.render_audit_markdown(meta, latency_ms=87)
         self.assertIn("87 ms", rendered)
         self.assertIn("12 / 34", rendered)
@@ -313,7 +313,7 @@ class ChainlitAppModuleTests(unittest.TestCase):
         self.assertNotIn("系统提示词", rendered)
 
     def test_service_chat_via_page_service_mock_flow(self):
-        from examguard.service import TutorService
+        from algosage.service import TutorService
 
         service = self.module.get_service()
         self.assertIsInstance(service, TutorService)
@@ -384,8 +384,8 @@ class EvalPageModuleTests(unittest.TestCase):
             self.module.load_cases("no-such-dataset")
 
     def test_run_cases_mock_backend_full_accuracy(self):
-        from examguard.config import Settings
-        from examguard.llm import MockChatBackend
+        from algosage.config import Settings
+        from algosage.llm import MockChatBackend
 
         service = self.module.TutorService(
             Settings(mode="mock", exam_mode=True), backend=MockChatBackend()

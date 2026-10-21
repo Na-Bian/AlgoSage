@@ -9,7 +9,7 @@ from chainlit.types import Pagination, ThreadFilter
 from chainlit.types import Feedback
 from chainlit.user import User
 
-from examguard.chat_store import ChatDataLayer
+from algosage.chat_store import ChatDataLayer
 
 
 def run(coro):

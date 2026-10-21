@@ -2,10 +2,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from examguard.config import Settings
-from examguard.invocation import generate, streaming_transport, turn_ledger
-from examguard.llm import OpenAICompatibleBackend
-from examguard.schemas import LLMResult
+from algosage.config import Settings
+from algosage.invocation import generate, streaming_transport, turn_ledger
+from algosage.llm import OpenAICompatibleBackend
+from algosage.schemas import LLMResult
 
 
 def chunk(

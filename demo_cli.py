@@ -2,12 +2,12 @@
 
 import argparse
 from dataclasses import replace
-from examguard.config import Settings
-from examguard.service import TutorService
+from algosage.config import Settings
+from algosage.service import TutorService
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ExamGuard first-stage CLI")
+    parser = argparse.ArgumentParser(description="AlgoSage first-stage CLI")
     parser.add_argument(
         "question", nargs="?", default="KMP 算法为什么可以在线性时间匹配？"
     )

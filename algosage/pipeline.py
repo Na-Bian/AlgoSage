@@ -99,7 +99,7 @@ def make_output_guard(settings: Settings, backend: ChatBackend | None):
     return RuleLeakageScreener()
 
 
-class ExamGuardTutor:
+class AlgoSageTutor:
     def __init__(
         self,
         backend,

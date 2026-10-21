@@ -7,13 +7,13 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from examguard.config import Settings
-from examguard.service import TutorService
+from algosage.config import Settings
+from algosage.service import TutorService
 
 
 class ProviderSwitchingTests(unittest.TestCase):
     def registry(self, settings=None):
-        from examguard.providers import ProviderRegistry
+        from algosage.providers import ProviderRegistry
 
         settings = settings or Settings(mode="mock", question_id="bound")
         return ProviderRegistry(
@@ -71,7 +71,7 @@ class ProviderSwitchingTests(unittest.TestCase):
         self.assertEqual(ctx.provider_selection, before)
 
     def test_config_rejects_inline_secrets_or_policy_override(self):
-        from examguard.providers import ProviderRegistry
+        from algosage.providers import ProviderRegistry
 
         for extra in (
             {"api_key": "secret"},
@@ -84,7 +84,7 @@ class ProviderSwitchingTests(unittest.TestCase):
                 )
 
     def test_missing_key_disables_remote_option(self):
-        from examguard.providers import ProviderRegistry
+        from algosage.providers import ProviderRegistry
 
         with patch.dict("os.environ", {}, clear=True):
             registry = ProviderRegistry(
@@ -107,7 +107,7 @@ class ProviderSwitchingTests(unittest.TestCase):
         self.assertTrue(
             hasattr(TutorService, "select_provider"), "provider runtime switch missing"
         )
-        from examguard.schemas import LLMResult
+        from algosage.schemas import LLMResult
 
         class Backend:
             def __init__(self, name):
@@ -120,7 +120,7 @@ class ProviderSwitchingTests(unittest.TestCase):
 
         registry = self.registry()
         with patch(
-            "examguard.service.make_backend", side_effect=lambda s: Backend(s.model)
+            "algosage.service.make_backend", side_effect=lambda s: Backend(s.model)
         ):
             service = TutorService(registry.base, providers=registry)
             ctx = service.new_context("a")
@@ -132,7 +132,7 @@ class ProviderSwitchingTests(unittest.TestCase):
         self.assertNotEqual(first.model, second.model)
 
     def test_context_eviction_does_not_erase_turn_waiting_for_persistence(self):
-        with patch("examguard.service.MAX_LIVE_SESSIONS", 1):
+        with patch("algosage.service.MAX_LIVE_SESSIONS", 1):
             svc = TutorService(Settings())
             ctx = svc.new_context("active")
             svc.chat(ctx, "解释前缀")

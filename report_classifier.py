@@ -17,11 +17,11 @@ import csv
 import json
 from pathlib import Path
 
-from examguard.config import Settings
-from examguard.hybrid_classifier import HybridIntentClassifier
-from examguard.intent_classifier import classify
-from examguard.llm import make_backend
-from examguard.schemas import Intent, TutorRequest
+from algosage.config import Settings
+from algosage.hybrid_classifier import HybridIntentClassifier
+from algosage.intent_classifier import classify
+from algosage.llm import make_backend
+from algosage.schemas import Intent, TutorRequest
 
 INTENTS = [i.value for i in Intent]
 DATASET_DIR = Path(__file__).parent / "datasets"
@@ -137,7 +137,7 @@ def render_report(mode: str, dataset: str, rows: list[dict]) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="ExamGuard 意图分类评测报告")
+    parser = argparse.ArgumentParser(description="AlgoSage 意图分类评测报告")
     parser.add_argument("--dataset", default="intent_labeled_v0")
     parser.add_argument("--mode", choices=["regex", "hybrid"], default="regex")
     args = parser.parse_args()

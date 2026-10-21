@@ -67,40 +67,40 @@ class AuthConfig:
         return cls(
             mode="hust",
             email_domain=os.environ.get(
-                "EG_STUDENT_EMAIL_DOMAIN", "hust.edu.cn"
+                "SAGE_STUDENT_EMAIL_DOMAIN", "hust.edu.cn"
             ).strip().lower(),
             student_id_pattern=os.environ.get(
-                "EG_STUDENT_ID_PATTERN", cls.student_id_pattern
+                "SAGE_STUDENT_ID_PATTERN", cls.student_id_pattern
             ),
             password_min_length=int(
-                os.environ.get("EG_PASSWORD_MIN_LENGTH", cls.password_min_length)
+                os.environ.get("SAGE_PASSWORD_MIN_LENGTH", cls.password_min_length)
             ),
             code_ttl_seconds=int(
-                os.environ.get("EG_AUTH_CODE_TTL_SECONDS", cls.code_ttl_seconds)
+                os.environ.get("SAGE_AUTH_CODE_TTL_SECONDS", cls.code_ttl_seconds)
             ),
             code_max_attempts=int(
-                os.environ.get("EG_AUTH_CODE_MAX_ATTEMPTS", cls.code_max_attempts)
+                os.environ.get("SAGE_AUTH_CODE_MAX_ATTEMPTS", cls.code_max_attempts)
             ),
             resend_interval_seconds=int(
-                os.environ.get("EG_AUTH_CODE_RESEND_SECONDS", cls.resend_interval_seconds)
+                os.environ.get("SAGE_AUTH_CODE_RESEND_SECONDS", cls.resend_interval_seconds)
             ),
             account_hourly_limit=int(
-                os.environ.get("EG_AUTH_HOURLY_ACCOUNT_LIMIT", cls.account_hourly_limit)
+                os.environ.get("SAGE_AUTH_HOURLY_ACCOUNT_LIMIT", cls.account_hourly_limit)
             ),
             ip_hourly_limit=int(
-                os.environ.get("EG_AUTH_HOURLY_IP_LIMIT", cls.ip_hourly_limit)
+                os.environ.get("SAGE_AUTH_HOURLY_IP_LIMIT", cls.ip_hourly_limit)
             ),
             lockout_attempts=int(
-                os.environ.get("EG_AUTH_LOCKOUT_ATTEMPTS", cls.lockout_attempts)
+                os.environ.get("SAGE_AUTH_LOCKOUT_ATTEMPTS", cls.lockout_attempts)
             ),
             lockout_seconds=int(
-                os.environ.get("EG_AUTH_LOCKOUT_SECONDS", cls.lockout_seconds)
+                os.environ.get("SAGE_AUTH_LOCKOUT_SECONDS", cls.lockout_seconds)
             ),
         )
 
     def validate(self) -> None:
         if self.mode != "hust":
-            raise ValueError("ExamGuard authentication is HUST-only")
+            raise ValueError("AlgoSage authentication is HUST-only")
         re.compile(self.student_id_pattern)
         if self.password_min_length < 12:
             raise ValueError("password minimum length cannot be below 12")
@@ -170,9 +170,9 @@ def _student_from_request(request: Request) -> Any:
 
 def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=None) -> None:
     """Install HUST profile APIs, avatar delivery, and the standalone profile page."""
-    if getattr(app.state, "examguard_profile_routes_installed", False):
+    if getattr(app.state, "algosage_profile_routes_installed", False):
         return
-    app.state.examguard_profile_routes_installed = True
+    app.state.algosage_profile_routes_installed = True
 
     router = _chainlit_router(app)
 
@@ -689,7 +689,7 @@ class StudentAuthService:
             to_address=email,
             subject=f"{title}验证码：{code}",
             text_body=(
-                f"你的 ExamGuard {title}验证码是：{code}\n\n"
+                f"你的 AlgoSage {title}验证码是：{code}\n\n"
                 f"验证码 {self.config.code_ttl_seconds // 60} 分钟内有效。"
                 "如果不是你发起的操作，请忽略这封邮件。\n"
             ),
@@ -918,11 +918,11 @@ def auth_service_from_env() -> StudentAuthService:
 def runtime_auth_db() -> str:
     from .runtime_paths import runtime_path
 
-    return runtime_path("EG_AUTH_DB_FILE", ".examguard/auth.sqlite3")
+    return runtime_path("SAGE_AUTH_DB_FILE", ".algosage/auth.sqlite3")
 
 
 def _client_ip(request: Any) -> str:
-    if os.environ.get("EG_TRUST_PROXY_HEADERS", "").lower() in {"true", "1", "yes"}:
+    if os.environ.get("SAGE_TRUST_PROXY_HEADERS", "").lower() in {"true", "1", "yes"}:
         forwarded = request.headers.get("x-forwarded-for", "")
         if forwarded:
             return forwarded.split(",")[0].strip()
@@ -962,9 +962,9 @@ def _move_routes_before_catchall(router: Any, prefixes: tuple[str, ...]) -> None
 
 def install_student_auth(app: Any, service_factory) -> None:
     """Install JSON endpoints and simple same-origin registration/reset pages."""
-    if getattr(app.state, "examguard_student_auth_installed", False):
+    if getattr(app.state, "algosage_student_auth_installed", False):
         return
-    app.state.examguard_student_auth_installed = True
+    app.state.algosage_student_auth_installed = True
 
     router = _chainlit_router(app)
 

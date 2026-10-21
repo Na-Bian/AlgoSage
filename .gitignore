@@ -12,6 +12,7 @@ results/raw_private/
 .files/
 
 # Persistent exam safety budgets (never package or publish)
+.algosage/
 .examguard/
 
 # Local browser journals and new evaluation artifacts stay on the audit machine.

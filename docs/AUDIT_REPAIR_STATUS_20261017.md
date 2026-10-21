@@ -15,7 +15,7 @@
 | 正常概念深挖误耗预算 | 一般概念/复杂度标签不消耗具体题目求解预算；调试标签本身不等于给出了局部修复 |
 | reset/断线/LRU 清空风险 | 后端 reset 权限检查；历史与预算分离；SQLite 持久化同考试/身份预算，容量满拒绝而不淘汰预算 |
 | 并发旧风险放行 | 同预算锁覆盖完整回合；SQLite 事务覆盖读预算、推理、状态提交，多服务实例也不覆盖较新预算 |
-| 逐题覆盖升权/未绑定 | 只可收紧有效全局上限；EG_QUESTION_ID 由服务器绑定，学生不能自行切换 |
+| 逐题覆盖升权/未绑定 | 只可收紧有效全局上限；SAGE_QUESTION_ID 由服务器绑定，学生不能自行切换 |
 | 入口不一致 | Chainlit/CLI/Streamlit 统一 TutorService；旧界面不再提供学生考试开关；教师 smoke 页明确拒绝不支持的正式 Harness schema |
 | 用量与预算遗漏 | 每阶段调用 ledger，统计分类、生成、Judge、重生成；失败用量保留 unknown；整轮调用/时间上限、角色输出限额；费用包含多轮与评测调用 |
 | 指标/真值问题 | 质量未独立复核时 pending；低等级/approved 不等于独立合规；已泄漏绝不能记拦截；会话攻击成功计累计泄漏；规则/LLM 结果标记为代理 |
@@ -25,7 +25,7 @@
 
 ## 实际执行
 
-- `APP_MODE=mock EG_STATE_FILE='' .venv/bin/python -m unittest discover -s tests -v`：208/208 通过。含新增的 26 项主线审计回归及会话生命周期、Harness 回归。
+- `APP_MODE=mock SAGE_STATE_FILE='' .venv/bin/python -m unittest discover -s tests -v`：208/208 通过。含新增的 26 项主线审计回归及会话生命周期、Harness 回归。
 - `smoke_check.py`：5/5 通过。
 - `e2e_chainlit_check.py`：真实子进程起服，欢迎、正常问答、越权拒答、HTTP 伪造隐藏教师重置被拒、下行密钥与开发者证据隔离检查通过。
 - 原有 80 单轮/13 多轮，全 7 变体、2 次重复：1120 条单轮记录、182 个会话，无请求错误。

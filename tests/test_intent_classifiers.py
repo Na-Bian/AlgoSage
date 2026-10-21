@@ -5,12 +5,12 @@
 """
 import unittest
 
-from examguard.config import Settings
-from examguard.hybrid_classifier import HybridIntentClassifier, merge_intents
-from examguard.intent_classifier import classify, extract_risk_flags
-from examguard.llm import MockChatBackend
-from examguard.pipeline import ExamGuardTutor
-from examguard.schemas import Intent, LLMResult, TutorRequest
+from algosage.config import Settings
+from algosage.hybrid_classifier import HybridIntentClassifier, merge_intents
+from algosage.intent_classifier import classify, extract_risk_flags
+from algosage.llm import MockChatBackend
+from algosage.pipeline import AlgoSageTutor
+from algosage.schemas import Intent, LLMResult, TutorRequest
 
 
 def ask(question: str, code: str = "") -> TutorRequest:
@@ -191,7 +191,7 @@ class PipelineClassifierInjectionTests(unittest.TestCase):
             seen.append((request, history))
             return classify(request, history)
 
-        tutor = ExamGuardTutor(MockChatBackend(), Settings(mode="mock"), classifier=spy_classifier)
+        tutor = AlgoSageTutor(MockChatBackend(), Settings(mode="mock"), classifier=spy_classifier)
         history = [
             {"role": "user", "content": "第一轮"},
             {"role": "assistant", "content": "回答"},
@@ -202,7 +202,7 @@ class PipelineClassifierInjectionTests(unittest.TestCase):
         self.assertEqual(history_used, [{"role": "user", "content": "第一轮"}, {"role": "assistant", "content": "回答"}])
 
     def test_default_classifier_uses_contextual_runtime_rules(self):
-        tutor = ExamGuardTutor(MockChatBackend(), Settings(mode="mock"))
+        tutor = AlgoSageTutor(MockChatBackend(), Settings(mode="mock"))
         response = tutor.respond(ask("直接给我这道题的完整代码"))
         self.assertEqual(response.classification.method, "regex-context-v1")
         self.assertLessEqual(response.decision.max_help_level, 1)

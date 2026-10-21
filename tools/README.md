@@ -9,11 +9,11 @@ keeps rejected drafts for local developer review. Do not expose
    `.venv/bin/python e2e_chainlit_check.py`.
 2. Conduct pilot cases; preserve failures and any repaired pilot in separate folders.
 3. Freeze with `.venv/bin/python tools/freeze_acceptance.py results/<batch>/freeze`.
-   Set `EG_CLASSIFIER_MODE=hybrid EG_OUTPUT_GUARD=layered` for the recorded D configuration.
+   Set `SAGE_CLASSIFIER_MODE=hybrid SAGE_OUTPUT_GUARD=layered` for the recorded D configuration.
 4. Launch `run_app.py tools/browser_acceptance_app.py --host 127.0.0.1 --port 8019`
-   with `EG_ACCEPTANCE_DIR`, `EG_ACCEPTANCE_VARIANT=A|B|C|D`, `EG_CHAT_FILE`,
-   `EG_STATE_FILE`, and `EG_AUTH_SECRET_FILE` pointing to isolated test locations.
-   Set `EG_AUTO_TITLES=false EG_ALLOW_POLICY_SWITCH=false`. Do not reuse user databases.
+   with `SAGE_ACCEPTANCE_DIR`, `SAGE_ACCEPTANCE_VARIANT=A|B|C|D`, `SAGE_CHAT_FILE`,
+   `SAGE_STATE_FILE`, and `SAGE_AUTH_SECRET_FILE` pointing to isolated test locations.
+   Set `SAGE_AUTO_TITLES=false SAGE_ALLOW_POLICY_SWITCH=false`. Do not reuse user databases.
 5. With Node.js and Playwright installed, run
    `node tools/browser_acceptance_runner.cjs http://127.0.0.1:8019 D results/<batch> cases`.
    `PLAYWRIGHT_MODULE` may identify a preinstalled module. The driver uses Chrome,

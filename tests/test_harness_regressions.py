@@ -11,9 +11,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from examguard.config import Settings
-from examguard.llm import MockChatBackend
-from examguard.schemas import AuditResult, Classification, Intent, PolicyDecision
+from algosage.config import Settings
+from algosage.llm import MockChatBackend
+from algosage.schemas import AuditResult, Classification, Intent, PolicyDecision
 from harness import run_harness as runner
 from harness.evaluator import LLMLeakEvaluator, RuleLeakEvaluator
 from harness.metrics import (
@@ -379,7 +379,7 @@ class RunnerRegressions(unittest.TestCase):
             tempfile.TemporaryDirectory() as directory,
             patch.dict(
                 "os.environ",
-                {"EG_PRICE_PER_MTOK_IN": "1", "EG_PRICE_PER_MTOK_OUT": "1"},
+                {"SAGE_PRICE_PER_MTOK_IN": "1", "SAGE_PRICE_PER_MTOK_OUT": "1"},
             ),
         ):
             path = Path(directory)
@@ -507,7 +507,7 @@ class RunnerRegressions(unittest.TestCase):
 
 class VariantRegressions(unittest.TestCase):
     def test_d_never_silently_uses_basic(self):
-        from examguard.output_guard import BasicOutputGuard
+        from algosage.output_guard import BasicOutputGuard
 
         try:
             tutor = build_tutor(
@@ -518,7 +518,7 @@ class VariantRegressions(unittest.TestCase):
         self.assertNotIsInstance(tutor.output_guard, BasicOutputGuard)
 
     def test_d_component_controls_preserve_other_components(self):
-        from examguard.leakage_guard import LayeredOutputGuard, RuleLeakageScreener
+        from algosage.leakage_guard import LayeredOutputGuard, RuleLeakageScreener
 
         settings = Settings(mode="api", output_guard="layered")
         for key in ("D-no-session", "D-no-judge", "D-no-regen"):

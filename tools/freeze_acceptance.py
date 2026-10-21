@@ -12,11 +12,11 @@ from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from examguard.config import Settings
+from algosage.config import Settings
 
 
 def public_sources():
-    excluded = {'.git', '.venv', '.examguard', '.files', '.playwright-cli', '.pytest_cache',
+    excluded = {'.git', '.venv', '.algosage', '.files', '.playwright-cli', '.pytest_cache',
                 '.ruff_cache', '__pycache__', 'results', 'node_modules'}
     for folder, dirs, files in os.walk(ROOT):
         dirs[:] = sorted(d for d in dirs if d not in excluded)
@@ -53,7 +53,7 @@ def main():
     versions = sorted({f"{d.metadata['Name']}=={d.version}" for d in importlib.metadata.distributions() if d.metadata.get('Name')})
     (destination/'environment.lock.txt').write_text('\n'.join(versions)+'\n')
     with zipfile.ZipFile(destination/'source.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
-        for p in sources: archive.write(p, 'ExamGuard/'+str(p.relative_to(ROOT)))
+        for p in sources: archive.write(p, 'AlgoSage/'+str(p.relative_to(ROOT)))
     for p in (destination/'source.zip', destination/'runtime_config.json', destination/'source_manifest.json', destination/'environment.lock.txt'):
         print(hashlib.sha256(p.read_bytes()).hexdigest(), p.name)
 

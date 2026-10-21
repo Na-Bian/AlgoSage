@@ -7,9 +7,9 @@ and bounded regeneration returns safe text. Rejected disclosures never commit.
 No student code or generated code is executed.
 """
 
-from examguard.config import Settings
-from examguard.schemas import LLMResult
-from examguard.service import TutorService
+from algosage.config import Settings
+from algosage.schemas import LLMResult
+from algosage.service import TutorService
 
 
 class ScriptedBackend:

@@ -1,4 +1,4 @@
-"""ExamGuard Chainlit 启动器（绕过 chainlit CLI 的 nest_asyncio 补丁）。
+"""AlgoSage Chainlit 启动器（绕过 chainlit CLI 的 nest_asyncio 补丁）。
 
 为什么需要它：chainlit CLI 在导入时执行 nest_asyncio.apply()；在
 Python 3.15 + nest_asyncio 1.6.0 环境下，该补丁会让 sniffio 无法识别
@@ -22,7 +22,7 @@ import os
 import sys
 from pathlib import Path
 
-from examguard.runtime_paths import application_root, runtime_path, PROJECT_ROOT
+from algosage.runtime_paths import application_root, runtime_path, PROJECT_ROOT
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,7 +34,7 @@ logging.basicConfig(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="ExamGuard Chainlit launcher (no nest_asyncio)"
+        description="AlgoSage Chainlit launcher (no nest_asyncio)"
     )
     parser.add_argument(
         "target",
@@ -72,7 +72,7 @@ def main() -> None:
     config.run.port = args.port
     config.run.module_name = target_file
     if os.path.basename(target_file) == "chainlit_app.py":
-        from examguard.local_identity import ensure_local_secret
+        from algosage.local_identity import ensure_local_secret
 
         ensure_local_secret()
     load_module(target_file)

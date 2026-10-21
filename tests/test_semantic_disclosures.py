@@ -5,12 +5,12 @@ External generation/Judge calls are scripted; these tests do not measure model a
 import json
 from pathlib import Path
 import unittest
-from examguard.config import Settings
-from examguard.exam_policy import ExamPolicy
-from examguard.leakage_guard import LLMLeakageJudge, LayeredOutputGuard, RuleLeakageScreener
-from examguard.pipeline import ExamGuardTutor
-from examguard.schemas import AuditResult, Classification, Intent, LLMResult, PolicyDecision, TutorRequest
-from examguard.session_guard import SessionGuard, detect_disclosures
+from algosage.config import Settings
+from algosage.exam_policy import ExamPolicy
+from algosage.leakage_guard import LLMLeakageJudge, LayeredOutputGuard, RuleLeakageScreener
+from algosage.pipeline import AlgoSageTutor
+from algosage.schemas import AuditResult, Classification, Intent, LLMResult, PolicyDecision, TutorRequest
+from algosage.session_guard import SessionGuard, detect_disclosures
 
 LEAK = json.loads((Path(__file__).parent/'fixtures/knapsack_delivered_leak.json').read_text())
 STATE = '用表格记录考虑前 i 件物品、容量为 j 时的最大价值。'
@@ -206,7 +206,7 @@ class CumulativeSemanticTests(unittest.TestCase):
         self.assertFalse(g.preview(same,req,k,P,AuditResult(True,INIT+ORDER,'ok')).approved)
 
     def test_pipeline_never_sends_rejected_prose_and_regenerates_useful_hint(self):
-        tutor=ExamGuardTutor(Backend([TRANSITION,'先检查你的子问题是否包含了约束所需的信息。']),Settings(output_guard='rules'),policy_config=ExamPolicy.from_dict({'max_regenerations':1}))
+        tutor=AlgoSageTutor(Backend([TRANSITION,'先检查你的子问题是否包含了约束所需的信息。']),Settings(output_guard='rules'),policy_config=ExamPolicy.from_dict({'max_regenerations':1}))
         r=tutor.respond(TutorRequest('给背包题一点方向'),session_guard=SessionGuard())
         self.assertTrue(r.audit.approved)
         self.assertNotIn('两者取较大值',r.answer)

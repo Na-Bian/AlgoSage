@@ -1,13 +1,13 @@
-"""Frontend-agnostic service layer between any UI and the ExamGuard pipeline.
+"""Frontend-agnostic service layer between any UI and the AlgoSage pipeline.
 
 UI frameworks (Chainlit student page, teacher eval page, Streamlit fallback)
-must go through TutorService instead of touching ExamGuardTutor internals, so
+must go through TutorService instead of touching AlgoSageTutor internals, so
 that:
 - the API key stays inside this server process and is never serialized to a
   frontend (only whitelisted display metadata leaves this module);
 - the exam policy is decided by trusted server configuration; a student-facing
   UI cannot lower exam restrictions unless the teacher explicitly starts the
-  server with EG_ALLOW_POLICY_SWITCH=true (demo/teacher mode);
+  server with SAGE_ALLOW_POLICY_SWITCH=true (demo/teacher mode);
 - session history handling is consistent across frontends and unit-testable.
 
 Risk budgets are retained independently of disposable chat history; trusted
@@ -26,13 +26,13 @@ from .config import Settings
 from .exam_policy import ExamPolicy
 from .hybrid_classifier import HybridIntentClassifier
 from .llm import ChatBackend, make_backend
-from .pipeline import ExamGuardTutor, make_output_guard
+from .pipeline import AlgoSageTutor, make_output_guard
 from .providers import ProviderRegistry
 from .schemas import AttachmentPayload, TutorRequest, TutorResponse
 from .session_guard import SessionGuard
 from .state_store import RiskStateStore, SafetyBudget
 
-logger = logging.getLogger("examguard.service")
+logger = logging.getLogger("algosage.service")
 
 # The pipeline itself keeps the last 12 role-tagged messages; mirror that cap
 # here so sessions cannot grow without bound in long demos.
@@ -89,7 +89,7 @@ class TutorService:
             )
         # P2：按配置选择输出审核层（basic / rules / layered）。
         output_guard = make_output_guard(settings, self.backend)
-        self.tutor = ExamGuardTutor(
+        self.tutor = AlgoSageTutor(
             self.backend,
             settings,
             classifier=classifier,
@@ -97,7 +97,7 @@ class TutorService:
             policy_config=self.policy_config,
         )
         if allow_policy_override is None:
-            allow_policy_override = _env_flag("EG_ALLOW_POLICY_SWITCH")
+            allow_policy_override = _env_flag("SAGE_ALLOW_POLICY_SWITCH")
         self.allow_policy_override = allow_policy_override
         self._contexts: OrderedDict[str, ServiceContext] = OrderedDict()
         self._context_lock = threading.RLock()
@@ -189,7 +189,7 @@ class TutorService:
                 ctx.history.clear()
 
     def set_exam_mode(self, context: ServiceContext, exam_mode: bool) -> None:
-        """Teacher-only switch; refused unless EG_ALLOW_POLICY_SWITCH is enabled."""
+        """Teacher-only switch; refused unless SAGE_ALLOW_POLICY_SWITCH is enabled."""
         if exam_mode != self.settings.exam_mode:
             self._require_override(exam_mode)
         with self._context_budget(context).lock:
@@ -209,14 +209,14 @@ class TutorService:
     ) -> TutorResponse:
         """One tutoring turn; appends the exchanged text to the session history.
 
-        question_id is for internal/Harness callers. EG_QUESTION_ID, when set,
+        question_id is for internal/Harness callers. SAGE_QUESTION_ID, when set,
         binds all turns to the server's question. The history stores
         display text only (mirrors the Streamlit starter), not system prompts
         or internal audit structures.
         """
         if self.settings.question_id:
             if question_id and question_id != self.settings.question_id:
-                raise ValueError("题目由服务端 EG_QUESTION_ID 绑定，不允许切换")
+                raise ValueError("题目由服务端 SAGE_QUESTION_ID 绑定，不允许切换")
             question_id = self.settings.question_id
         with self.state_store.turn(self._context_budget(context)):
             # Trusted server policy also wins if an in-process caller mutated
@@ -252,7 +252,7 @@ class TutorService:
             raise ValueError("turn_index 非法")
         if self.settings.question_id:
             if question_id and question_id != self.settings.question_id:
-                raise ValueError("题目由服务端 EG_QUESTION_ID 绑定，不允许切换")
+                raise ValueError("题目由服务端 SAGE_QUESTION_ID 绑定，不允许切换")
             question_id = self.settings.question_id
         with self.state_store.turn(self._context_budget(context)):
             if not self.allow_policy_override:
@@ -390,7 +390,7 @@ class TutorService:
             )
         return generate_title(tutor.backend, settings, question, timeout)
 
-    def _selected_tutor(self, context: ServiceContext) -> ExamGuardTutor:
+    def _selected_tutor(self, context: ServiceContext) -> AlgoSageTutor:
         selection = context.provider_selection
         if selection == self.providers.default:
             return self.tutor
@@ -403,7 +403,7 @@ class TutorService:
                     if settings.classifier_mode == "hybrid"
                     else None
                 )
-                self._provider_tutors[selection] = ExamGuardTutor(
+                self._provider_tutors[selection] = AlgoSageTutor(
                     backend,
                     settings,
                     classifier=classifier,
@@ -416,7 +416,7 @@ class TutorService:
         if not self.allow_policy_override:
             raise PermissionError(
                 "考试模式由服务端配置（EXAM_MODE）决定，前端不可修改；"
-                "教师演示如需切换请以 EG_ALLOW_POLICY_SWITCH=true 启动。"
+                "教师演示如需切换请以 SAGE_ALLOW_POLICY_SWITCH=true 启动。"
             )
         logger.warning("考试策略被教师演示开关修改为 exam_mode=%s", requested_mode)
 

@@ -1,10 +1,10 @@
-"""ExamGuard 教师/开发者单轮冒烟调试页（正式评测使用 harness.run_harness）。
+"""AlgoSage 教师/开发者单轮冒烟调试页（正式评测使用 harness.run_harness）。
 
 独立于学生端运行：
     .venv/bin/chainlit run eval_page.py --port 8081
 
 用途：
-- 在与 Student UI 完全相同的 TutorService / ExamGuardTutor 链路上批量跑
+- 在与 Student UI 完全相同的 TutorService / AlgoSageTutor 链路上批量跑
   datasets/ 下的 JSONL 用例，快速查看分类结果与策略行为；
 - 这是开发调试入口，不是安全评测结论来源；正式评测（A/B/C/D 消融、
   多轮会话、指标报表）由后续 Harness 模块实现。
@@ -26,10 +26,10 @@ from uuid import uuid4
 
 import chainlit as cl
 
-from examguard.config import Settings
-from examguard.service import TutorService
+from algosage.config import Settings
+from algosage.service import TutorService
 
-logger = logging.getLogger("examguard.eval_page")
+logger = logging.getLogger("algosage.eval_page")
 
 DATASET_DIR = Path(__file__).parent / "datasets"
 
@@ -179,7 +179,7 @@ async def on_chat_start() -> None:
     service = get_service()
     await cl.Message(
         content=(
-            "### 🧪 ExamGuard 冒烟调试页（教师/开发者）\n"
+            "### 🧪 AlgoSage 冒烟调试页（教师/开发者）\n"
             "与 Student UI 共用同一 `TutorService` 后端链路。\n\n"
             "命令：`info` ｜ `run smoke` ｜ `run <datasets 下的文件名>`"
             "（API 模式需追加 `confirm-api`）\n\n"

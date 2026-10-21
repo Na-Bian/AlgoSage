@@ -2,11 +2,11 @@
 import json
 import unittest
 
-from examguard.config import Settings
-from examguard.hybrid_classifier import HybridIntentClassifier
-from examguard.leakage_guard import LLMAnswerQualityReviewer, LLMLeakageJudge
-from examguard.pipeline import ExamGuardTutor
-from examguard.schemas import AttachmentPayload, Intent, LLMResult, PolicyDecision, TutorRequest
+from algosage.config import Settings
+from algosage.hybrid_classifier import HybridIntentClassifier
+from algosage.leakage_guard import LLMAnswerQualityReviewer, LLMLeakageJudge
+from algosage.pipeline import AlgoSageTutor
+from algosage.schemas import AttachmentPayload, Intent, LLMResult, PolicyDecision, TutorRequest
 
 
 TREE = "data:image/png;base64,VFJFRQ=="
@@ -60,7 +60,7 @@ class VisualBackend:
 def tutor(backend, parallel=True):
     settings = Settings(mode="api", classifier_mode="hybrid", output_guard="layered",
                         parallel_reviews=parallel)
-    return ExamGuardTutor(backend, settings, classifier=HybridIntentClassifier(backend, settings))
+    return AlgoSageTutor(backend, settings, classifier=HybridIntentClassifier(backend, settings))
 
 
 class MultimodalReviewTests(unittest.TestCase):

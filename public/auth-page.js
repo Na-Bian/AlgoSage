@@ -7,7 +7,7 @@
     register: document.getElementById("register-form"),
     reset: document.getElementById("reset-form"),
   };
-  const titles = { login: "HUST 学生登录", register: "注册 HUST 账号", reset: "找回密码" };
+  const titles = { login: "AlgoSage 登录", register: "注册 HUST 账号", reset: "找回密码" };
   const timers = { register: null, reset: null };
 
   function applyTheme() {
@@ -18,8 +18,6 @@
     const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const dark = preference === "dark" || ((preference === null || preference === "system") && systemDark);
     document.documentElement.classList.toggle("dark", dark);
-    const logo = document.getElementById("auth-logo");
-    if (logo) logo.src = `/logo?theme=${dark ? "dark" : "light"}&v=${dark ? "1" : "0"}`;
   }
 
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);

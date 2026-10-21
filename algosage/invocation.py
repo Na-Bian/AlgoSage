@@ -34,10 +34,10 @@ class TurnLedger:
 
 
 _current: ContextVar[TurnLedger | None] = ContextVar(
-    "examguard_turn_ledger", default=None
+    "algosage_turn_ledger", default=None
 )
 _streaming: ContextVar[bool] = ContextVar(
-    "examguard_streaming_transport", default=False
+    "algosage_streaming_transport", default=False
 )
 
 

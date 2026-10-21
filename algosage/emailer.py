@@ -1,4 +1,4 @@
-"""Bounded email delivery adapters for ExamGuard authentication.
+"""Bounded email delivery adapters for AlgoSage authentication.
 
 The authentication service owns rate limits and verification state. These
 adapters only turn an already-validated message into SMTP MIME or a local
@@ -43,7 +43,7 @@ class OutboxEmailSender:
             raise ValueError("email outbox must not be group/world accessible")
 
     async def send(self, message: EmailMessage) -> None:
-        mail = _mime_message(message, from_address="ExamGuard development outbox")
+        mail = _mime_message(message, from_address="AlgoSage development outbox")
         target = self.root / f"{uuid4()}.eml"
         temporary = target.with_suffix(".tmp")
         temporary.write_bytes(mail.as_bytes())
@@ -103,31 +103,31 @@ def _mime_message(message: EmailMessage, *, from_address: str) -> EmailMessage:
 
 
 def email_sender_from_env() -> EmailSender:
-    mode = os.environ.get("EG_EMAIL_SENDER", "outbox").strip().lower()
+    mode = os.environ.get("SAGE_EMAIL_SENDER", "outbox").strip().lower()
     if mode == "outbox":
         root = Path(
-            runtime_path("EG_EMAIL_OUTBOX_DIR", ".examguard/dev-outbox")
+            runtime_path("SAGE_EMAIL_OUTBOX_DIR", ".algosage/dev-outbox")
         )
         return OutboxEmailSender(root)
     if mode == "smtp":
         required = {
-            "EG_SMTP_HOST": os.environ.get("EG_SMTP_HOST", ""),
-            "EG_SMTP_PORT": os.environ.get("EG_SMTP_PORT", ""),
-            "EG_SMTP_USERNAME": os.environ.get("EG_SMTP_USERNAME", ""),
-            "EG_SMTP_PASSWORD": os.environ.get("EG_SMTP_PASSWORD", ""),
-            "EG_EMAIL_FROM": os.environ.get("EG_EMAIL_FROM", ""),
+            "SAGE_SMTP_HOST": os.environ.get("SAGE_SMTP_HOST", ""),
+            "SAGE_SMTP_PORT": os.environ.get("SAGE_SMTP_PORT", ""),
+            "SAGE_SMTP_USERNAME": os.environ.get("SAGE_SMTP_USERNAME", ""),
+            "SAGE_SMTP_PASSWORD": os.environ.get("SAGE_SMTP_PASSWORD", ""),
+            "SAGE_EMAIL_FROM": os.environ.get("SAGE_EMAIL_FROM", ""),
         }
         missing = sorted(name for name, value in required.items() if not value)
         if missing:
             raise ValueError("missing SMTP settings: " + ", ".join(missing))
         return SMTPEmailSender(
-            host=required["EG_SMTP_HOST"],
-            port=int(required["EG_SMTP_PORT"]),
-            username=required["EG_SMTP_USERNAME"],
-            password=required["EG_SMTP_PASSWORD"],
-            from_address=required["EG_EMAIL_FROM"],
-            use_tls=os.environ.get("EG_SMTP_USE_TLS", "true").lower()
+            host=required["SAGE_SMTP_HOST"],
+            port=int(required["SAGE_SMTP_PORT"]),
+            username=required["SAGE_SMTP_USERNAME"],
+            password=required["SAGE_SMTP_PASSWORD"],
+            from_address=required["SAGE_EMAIL_FROM"],
+            use_tls=os.environ.get("SAGE_SMTP_USE_TLS", "true").lower()
             in {"true", "1", "yes"},
-            timeout=float(os.environ.get("EG_SMTP_TIMEOUT_SECONDS", "10")),
+            timeout=float(os.environ.get("SAGE_SMTP_TIMEOUT_SECONDS", "10")),
         )
-    raise ValueError("EG_EMAIL_SENDER must be 'outbox' or 'smtp'")
+    raise ValueError("SAGE_EMAIL_SENDER must be 'outbox' or 'smtp'")

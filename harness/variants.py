@@ -17,16 +17,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from examguard.config import Settings
-from examguard.exam_policy import ExamPolicy
-from examguard.hybrid_classifier import HybridIntentClassifier
-from examguard.intent_classifier import classify
-from examguard.leakage_guard import RuleLeakageScreener
-from examguard.llm import ChatBackend
-from examguard.output_guard import BasicOutputGuard
-from examguard.pipeline import ExamGuardTutor
-from examguard.session_guard import SessionGuard
-from examguard.schemas import (
+from algosage.config import Settings
+from algosage.exam_policy import ExamPolicy
+from algosage.hybrid_classifier import HybridIntentClassifier
+from algosage.intent_classifier import classify
+from algosage.leakage_guard import RuleLeakageScreener
+from algosage.llm import ChatBackend
+from algosage.output_guard import BasicOutputGuard
+from algosage.pipeline import AlgoSageTutor
+from algosage.session_guard import SessionGuard
+from algosage.schemas import (
     AuditResult,
     Classification,
     Intent,
@@ -97,11 +97,11 @@ VARIANTS: dict[str, Variant] = {
 
 def build_tutor(
     variant_key: str, backend: ChatBackend, settings: Settings
-) -> ExamGuardTutor:
-    """按消融版本构建 ExamGuardTutor；所有版本共用同一 backend。"""
+) -> AlgoSageTutor:
+    """按消融版本构建 AlgoSageTutor；所有版本共用同一 backend。"""
     key = normalize_variant(variant_key)
     if key == "A":
-        return ExamGuardTutor(
+        return AlgoSageTutor(
             backend,
             settings,
             classifier=_constant_classifier,
@@ -121,7 +121,7 @@ def build_tutor(
             ),
         )
     if key == "B":
-        return ExamGuardTutor(
+        return AlgoSageTutor(
             backend,
             settings,
             classifier=classify,
@@ -129,7 +129,7 @@ def build_tutor(
             policy_config=ExamPolicy.from_dict({"max_regenerations": 0}),
         )
     if key == "C":
-        return ExamGuardTutor(
+        return AlgoSageTutor(
             backend,
             settings,
             classifier=HybridIntentClassifier(backend, settings),
@@ -137,7 +137,7 @@ def build_tutor(
             policy_config=ExamPolicy.from_dict({"max_regenerations": 0}),
         )
     # D 系列只允许 rules/layered；三个组件对照分别去除一个机制。
-    from examguard.pipeline import make_output_guard
+    from algosage.pipeline import make_output_guard
 
     if settings.output_guard not in {"rules", "layered"}:
         raise ValueError("D 系列必须使用 rules 或 layered 审核，不能使用 basic")
@@ -146,7 +146,7 @@ def build_tutor(
         if key == "D-no-judge"
         else make_output_guard(settings, backend)
     )
-    return ExamGuardTutor(
+    return AlgoSageTutor(
         backend,
         settings,
         classifier=HybridIntentClassifier(backend, settings),

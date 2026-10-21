@@ -8,16 +8,16 @@
 
 import unittest
 
-from examguard.config import Settings
-from examguard.schemas import (
+from algosage.config import Settings
+from algosage.schemas import (
     AuditResult,
     Classification,
     Intent,
     PolicyDecision,
     TutorRequest,
 )
-from examguard.service import TutorService
-from examguard.session_guard import (
+from algosage.service import TutorService
+from algosage.session_guard import (
     ELEMENT_WEIGHTS,
     REPEAT_FACTOR,
     RiskState,
@@ -41,7 +41,7 @@ class ScriptedBackend:
             if self.drafts
             else "【模拟输出】请先描述你已尝试的思路。"
         )
-        from examguard.schemas import LLMResult
+        from algosage.schemas import LLMResult
 
         return LLMResult(text, "scripted", 1, 1)
 

@@ -16,10 +16,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from examguard.config import Settings
-from examguard.llm import MockChatBackend
-from examguard.schemas import LLMResult
-from examguard.service import TutorService
+from algosage.config import Settings
+from algosage.llm import MockChatBackend
+from algosage.schemas import LLMResult
+from algosage.service import TutorService
 
 
 class RecordingBackend:
@@ -221,12 +221,12 @@ class PolicyWiringTests(unittest.TestCase):
         policy_path = Path(__file__).parent.parent / "config" / "exam_policy.json"
         settings = Settings(mode="mock", policy_file=str(policy_path))
         service = TutorService(settings, backend=MockChatBackend())
-        from examguard.exam_policy import ExamPolicy
+        from algosage.exam_policy import ExamPolicy
 
         self.assertIsInstance(service.policy_config, ExamPolicy)
         self.assertEqual(
             service.policy_config.max_level(
-                __import__("examguard.schemas", fromlist=["Intent"]).Intent.HINT,
+                __import__("algosage.schemas", fromlist=["Intent"]).Intent.HINT,
                 "q-dp-easy",
             ),
             1,
@@ -241,14 +241,14 @@ class PolicyWiringTests(unittest.TestCase):
             path = handle.name
         self.addCleanup(Path(path).unlink)
         settings = Settings(mode="mock", policy_file=path)
-        from examguard.exam_policy import PolicyConfigError
+        from algosage.exam_policy import PolicyConfigError
 
         with self.assertRaises(PolicyConfigError):
             TutorService(settings, backend=MockChatBackend())
 
     def test_default_guard_is_rules_layer(self):
         service = make_service()
-        from examguard.leakage_guard import RuleLeakageScreener
+        from algosage.leakage_guard import RuleLeakageScreener
 
         self.assertIsInstance(service.tutor.output_guard, RuleLeakageScreener)
 
@@ -263,7 +263,7 @@ class EntrypointTests(unittest.TestCase):
                 "sys.argv", ["demo_cli.py", "解释 KMP 前缀函数", "--mode", "mock"]
             ),
             mock.patch.object(demo_cli.Settings, "from_env", return_value=svc.settings),
-            mock.patch("examguard.service.TutorService", return_value=svc),
+            mock.patch("algosage.service.TutorService", return_value=svc),
             mock.patch.object(svc, "chat", wraps=svc.chat) as chat,
             contextlib.redirect_stdout(io.StringIO()),
         ):
@@ -288,8 +288,8 @@ class EntrypointTests(unittest.TestCase):
         )
         with (
             mock.patch.dict("sys.modules", {"streamlit": fake_st}),
-            mock.patch("examguard.config.Settings.from_env", return_value=svc.settings),
-            mock.patch("examguard.service.TutorService", return_value=svc),
+            mock.patch("algosage.config.Settings.from_env", return_value=svc.settings),
+            mock.patch("algosage.service.TutorService", return_value=svc),
             mock.patch.object(svc, "chat", wraps=svc.chat) as chat,
         ):
             runpy.run_path(

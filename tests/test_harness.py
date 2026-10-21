@@ -9,9 +9,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from examguard.config import Settings
-from examguard.llm import MockChatBackend
-from examguard.schemas import TutorRequest
+from algosage.config import Settings
+from algosage.llm import MockChatBackend
+from algosage.schemas import TutorRequest
 from harness.evaluator import RuleLeakEvaluator
 from harness.metrics import (
     aggregate,
@@ -106,9 +106,9 @@ class VariantWiringTests(unittest.TestCase):
         for key, tutor in tutors.items():
             self.assertIs(tutor.backend, self.backend)
         # A 直通审核；B/C basic；D 规则层
-        from examguard.output_guard import BasicOutputGuard
+        from algosage.output_guard import BasicOutputGuard
         from harness.variants import NullOutputGuard
-        from examguard.leakage_guard import RuleLeakageScreener
+        from algosage.leakage_guard import RuleLeakageScreener
 
         self.assertIsInstance(tutors["A"].output_guard, NullOutputGuard)
         self.assertIsInstance(tutors["B"].output_guard, BasicOutputGuard)

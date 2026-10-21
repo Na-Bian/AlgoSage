@@ -3,8 +3,8 @@
 from uuid import uuid4
 
 import streamlit as st
-from examguard.config import Settings
-from examguard.service import TutorService
+from algosage.config import Settings
+from algosage.service import TutorService
 
 
 @st.cache_resource
@@ -12,15 +12,15 @@ def get_service() -> TutorService:
     return TutorService(Settings.from_env())
 
 
-st.set_page_config(page_title="ExamGuard", page_icon="🛡️", layout="centered")
+st.set_page_config(page_title="AlgoSage", page_icon="🧭", layout="centered")
 service = get_service()
 settings = service.settings
-if "examguard_session_id" not in st.session_state:
-    st.session_state["examguard_session_id"] = uuid4().hex
-session_id = st.session_state["examguard_session_id"]
+if "algosage_session_id" not in st.session_state:
+    st.session_state["algosage_session_id"] = uuid4().hex
+session_id = st.session_state["algosage_session_id"]
 context = service.new_context(session_id)
 
-st.title("🛡️ ExamGuard · 算法考试受限助教")
+st.title("🧭 AlgoSage · 知衡")
 st.caption("第一阶段原型：策略与规则为演示性质，不具备可靠的答案泄漏防护保证。")
 with st.sidebar:
     st.subheader("运行设置")

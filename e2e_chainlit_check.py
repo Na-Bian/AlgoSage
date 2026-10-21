@@ -56,13 +56,13 @@ def main() -> int:
         os.environ,
         APP_MODE="mock",
         EXAM_MODE="true",
-        EG_CLASSIFIER_MODE="regex",
-        EG_OUTPUT_GUARD="rules",
-        EG_ALLOW_POLICY_SWITCH="false",
-        EG_STATE_FILE="state.sqlite3",
-        EG_QUESTION_ID="persistence-q",
+        SAGE_CLASSIFIER_MODE="regex",
+        SAGE_OUTPUT_GUARD="rules",
+        SAGE_ALLOW_POLICY_SWITCH="false",
+        SAGE_STATE_FILE="state.sqlite3",
+        SAGE_QUESTION_ID="persistence-q",
     )
-    temp = tempfile.TemporaryDirectory(prefix="examguard-e2e-")
+    temp = tempfile.TemporaryDirectory(prefix="algosage-e2e-")
     # Chainlit removes APP_ROOT/.files on shutdown. Keep the test server's
     # runtime separate so running this check cannot erase live uploads.
     project_root = Path(__file__).resolve().parent
@@ -71,7 +71,7 @@ def main() -> int:
     shutil.copy2(project_root / ".chainlit/config.toml", runtime_root / ".chainlit/config.toml")
     shutil.copytree(project_root / "public", runtime_root / "public")
     shutil.copy2(project_root / "chainlit.md", runtime_root / "chainlit.md")
-    (runtime_root / "runtime.env").write_text("EG_EXAM_ID=e2e-from-app-root\n")
+    (runtime_root / "runtime.env").write_text("SAGE_EXAM_ID=e2e-from-app-root\n")
     provider_file = temp.name + "/providers.json"
     with open(provider_file, "w") as handle:
         json.dump(
@@ -90,12 +90,12 @@ def main() -> int:
     env.update(
         CHAINLIT_APP_ROOT=temp.name,
         CHAINLIT_ENV_FILE="runtime.env",
-        EG_CHAT_FILE="chats.sqlite3",
-        EG_AUTH_SECRET_FILE="auth.secret",
-        EG_PROVIDERS_FILE=provider_file,
+        SAGE_CHAT_FILE="chats.sqlite3",
+        SAGE_AUTH_SECRET_FILE="auth.secret",
+        SAGE_PROVIDERS_FILE=provider_file,
     )
     env.pop("CHAINLIT_AUTH_SECRET", None)
-    env.pop("EG_EXAM_ID", None)
+    env.pop("SAGE_EXAM_ID", None)
     server_log = (runtime_root / "server.log").open("ab")
 
     def launch(cwd):
@@ -120,7 +120,7 @@ def main() -> int:
         from email import policy
         from email.parser import BytesParser
 
-        outbox = runtime_root / ".examguard" / "dev-outbox"
+        outbox = runtime_root / ".algosage" / "dev-outbox"
 
         def read_code(student_id):
             matches = []
@@ -153,7 +153,7 @@ def main() -> int:
         bootstrap = http.get(base + "/project/settings", timeout=10)
         bootstrap.raise_for_status()
         profiles = bootstrap.json()["chatProfiles"]
-        if not profiles or "ExamGuard" not in profiles[0]["markdown_description"]:
+        if not profiles or "AlgoSage" not in profiles[0]["markdown_description"]:
             failures.append("HTTP 初始化配置缺少原生欢迎文案")
         sio = socketio.Client(logger=False, engineio_logger=False, http_session=http)
         received: list[dict] = []
@@ -341,7 +341,7 @@ def main() -> int:
                 failures.append("restart/login expiry changed workspace identity")
             if (runtime_root / "auth.secret").read_bytes() != secret_before:
                 failures.append("restart from another cwd changed signing secret")
-            if (other_cwd / ".examguard").exists() or (other_cwd / "chats.sqlite3").exists():
+            if (other_cwd / ".algosage").exists() or (other_cwd / "chats.sqlite3").exists():
                 failures.append("restart created a second runtime database in cwd")
             with sqlite3.connect(runtime_root / "state.sqlite3") as db:
                 if db.execute("SELECT DISTINCT exam_id FROM risk_states").fetchall() != [("e2e-from-app-root",)]:

@@ -27,15 +27,15 @@ class ProviderRegistry:
         self._add(default, default=True)
         if entries is None:
             path = runtime_path(
-                "EG_PROVIDERS_FILE", ".examguard/providers.json"
+                "SAGE_PROVIDERS_FILE", ".algosage/providers.json"
             )
             if path and Path(path).is_file():
                 parsed = json.loads(Path(path).read_text(encoding="utf-8"))
                 if not isinstance(parsed, dict) or set(parsed) != {"providers"}:
                     raise ValueError("Provider 文件必须仅包含 providers 列表")
                 entries = parsed["providers"]
-            elif os.environ.get("EG_PROVIDERS_FILE", "").strip():
-                raise ValueError("EG_PROVIDERS_FILE 不存在")
+            elif os.environ.get("SAGE_PROVIDERS_FILE", "").strip():
+                raise ValueError("SAGE_PROVIDERS_FILE 不存在")
         if entries is not None:
             if not isinstance(entries, list) or len(entries) > 32:
                 raise ValueError("providers 必须是至多 32 项的列表")

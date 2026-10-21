@@ -7,11 +7,11 @@ from contextvars import copy_context
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from examguard.config import Settings
-from examguard.invocation import generate, turn_ledger, TurnBudgetExceeded
-from examguard.leakage_guard import LayeredOutputGuard, LLMLeakageJudge, LLMAnswerQualityReviewer
-from examguard.pipeline import ExamGuardTutor
-from examguard.schemas import AuditResult, Intent, LLMResult, PolicyDecision, TutorRequest
+from algosage.config import Settings
+from algosage.invocation import generate, turn_ledger, TurnBudgetExceeded
+from algosage.leakage_guard import LayeredOutputGuard, LLMLeakageJudge, LLMAnswerQualityReviewer
+from algosage.pipeline import AlgoSageTutor
+from algosage.schemas import AuditResult, Intent, LLMResult, PolicyDecision, TutorRequest
 
 DRAFT = "稳定排序保留相同键值元素的原相对顺序。" * 6
 DECISION = PolicyDecision(Intent.KNOWLEDGE, 1, "concept")
@@ -137,7 +137,7 @@ class ResponseBudgetTests(unittest.TestCase):
                 self.options = options
                 return LLMResult("稳定排序保持相同键值的原相对顺序。", "controlled", 1, 1)
         backend = Backend()
-        ExamGuardTutor(backend, Settings(max_output_tokens=cap)).respond(TutorRequest(question))
+        AlgoSageTutor(backend, Settings(max_output_tokens=cap)).respond(TutorRequest(question))
         return backend.options["max_output_tokens"]
 
     def test_simple_concept_gets_smaller_generation_budget(self):
@@ -174,7 +174,7 @@ class DeliveryLatencyTests(unittest.IsolatedAsyncioTestCase):
 
 class TimingPrivacyTests(unittest.TestCase):
     def test_timing_summary_excludes_drafts_prompts_and_judge_output(self):
-        from examguard.invocation import timing_summary
+        from algosage.invocation import timing_summary
         calls = [{"stage": "judge", "status": "ok", "latency_ms": 8,
             "start_offset_ms": 3, "input_tokens": 10, "output_tokens": 2,
             "response_text": "PRIVATE_JUDGE_OUTPUT", "draft": "PRIVATE_DRAFT"}]

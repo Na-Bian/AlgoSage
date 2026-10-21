@@ -14,7 +14,7 @@
 - metrics_by_variant.png：A/B/C/D 对比图
 - mock 模式下所有输出带【MOCK】水印：仅验证流程，不代表模型实验结论。
 
-费用估算：需配置 EG_PRICE_PER_MTOK_IN / EG_PRICE_PER_MTOK_OUT（每百万
+费用估算：需配置 SAGE_PRICE_PER_MTOK_IN / SAGE_PRICE_PER_MTOK_OUT（每百万
 token 价格）；未配置则明确输出"未估算"，绝不伪造。
 """
 
@@ -36,9 +36,9 @@ from enum import Enum
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from examguard.config import Settings
-from examguard.llm import make_backend
-from examguard.schemas import TutorRequest
+from algosage.config import Settings
+from algosage.llm import make_backend
+from algosage.schemas import TutorRequest
 
 from .evaluator import LLMLeakEvaluator, RuleLeakEvaluator
 from .metrics import (
@@ -264,11 +264,11 @@ def render_summary(
         else ""
     )
     lines = [
-        "# ExamGuard Harness 消融汇总",
+        "# AlgoSage Harness 消融汇总",
         "",
         f"- 时间：{datetime.now().isoformat(timespec='seconds')}；模式：`{settings.mode}`；模型：`{settings.model}`",
         f"- 重复运行：{repeats}；输出目录：{out_dir}",
-        f"- 分类器/审核配置：EG_CLASSIFIER_MODE={settings.classifier_mode}，EG_OUTPUT_GUARD={settings.output_guard}",
+        f"- 分类器/审核配置：SAGE_CLASSIFIER_MODE={settings.classifier_mode}，SAGE_OUTPUT_GUARD={settings.output_guard}",
         "- 指标口径：合法辅助完成率=correctness 且 helpfulness 为 true 的合法回答/两项均已复核的合法回答；"
         "未复核记 unknown，单列 pending_review。拦截率/泄漏率/攻击成功率只在相应标签已知的样本上计算；"
         "误拒率=文本拒答代理/合法数，多轮按会话计。",
@@ -349,10 +349,10 @@ def fmt(value) -> str:
 
 
 def cost_note(settings: Settings, out_dir: Path) -> str:
-    price_in = os.environ.get("EG_PRICE_PER_MTOK_IN", "")
-    price_out = os.environ.get("EG_PRICE_PER_MTOK_OUT", "")
+    price_in = os.environ.get("SAGE_PRICE_PER_MTOK_IN", "")
+    price_out = os.environ.get("SAGE_PRICE_PER_MTOK_OUT", "")
     if not (price_in and price_out):
-        return "未配置 EG_PRICE_PER_MTOK_IN/OUT，跳过费用估算（不伪造数字）。"
+        return "未配置 SAGE_PRICE_PER_MTOK_IN/OUT，跳过费用估算（不伪造数字）。"
     calls = []
     for filename in ("records.jsonl", "sessions.jsonl"):
         path = out_dir / filename
@@ -416,7 +416,7 @@ def write_manifest(out_dir: Path, settings: Settings, args, components: dict) ->
     source_paths = sorted(
         {
             *ROOT.glob("*.py"),
-            *ROOT.joinpath("examguard").rglob("*.py"),
+            *ROOT.joinpath("algosage").rglob("*.py"),
             *ROOT.joinpath("harness").rglob("*.py"),
         }
     )
@@ -487,7 +487,7 @@ def plot_chart(variant_summaries: dict, out_path: Path) -> bool:
     axis.set_xticks([i + width * (len(keys) - 1) / 2 for i in range(len(metrics))])
     axis.set_xticklabels(labels)
     axis.set_ylabel("%")
-    axis.set_title("ExamGuard proxy metrics (unknown omitted)")
+    axis.set_title("AlgoSage proxy metrics (unknown omitted)")
     axis.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
@@ -497,9 +497,9 @@ def plot_chart(variant_summaries: dict, out_path: Path) -> bool:
 
 def main() -> int:
     # 批量运行时静默回退告警（回退仍写入 records.jsonl 的 method 字段）。
-    logging.getLogger("examguard").setLevel(logging.ERROR)
+    logging.getLogger("algosage").setLevel(logging.ERROR)
 
-    parser = argparse.ArgumentParser(description="ExamGuard P4 Harness")
+    parser = argparse.ArgumentParser(description="AlgoSage P4 Harness")
     parser.add_argument("--variants", default="A,B,C,D")
     parser.add_argument("--split", choices=["dev", "heldout", "all"], default="dev")
     parser.add_argument(

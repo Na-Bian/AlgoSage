@@ -6,19 +6,19 @@ Judge 的 LLM 环节用脚本化假后端模拟（离线可测）；Judge 在真
 
 import unittest
 
-from examguard.config import Settings
-from examguard.exam_policy import ExamPolicy
-from examguard.intent_classifier import classify
-from examguard.leakage_guard import (
+from algosage.config import Settings
+from algosage.exam_policy import ExamPolicy
+from algosage.intent_classifier import classify
+from algosage.leakage_guard import (
     LLMAnswerQualityReviewer,
     LayeredOutputGuard,
     LLMLeakageJudge,
     RuleLeakageScreener,
     fallback_message,
 )
-from examguard.llm import MockChatBackend
-from examguard.pipeline import ExamGuardTutor, make_output_guard
-from examguard.schemas import Intent, LLMResult, PolicyDecision, TutorRequest
+from algosage.llm import MockChatBackend
+from algosage.pipeline import AlgoSageTutor, make_output_guard
+from algosage.schemas import Intent, LLMResult, PolicyDecision, TutorRequest
 
 
 def decision_of(intent: Intent, level: int) -> PolicyDecision:
@@ -290,7 +290,7 @@ class LayeredGuardTests(unittest.TestCase):
             [bad, "大 O 是渐近上界；最坏情况只是可以应用它的一个具体成本函数。"]
         )
         settings = Settings(mode="mock", output_guard="layered")
-        tutor = ExamGuardTutor(
+        tutor = AlgoSageTutor(
             generator,
             settings,
             output_guard=LayeredOutputGuard(
@@ -508,7 +508,7 @@ class LayeredGuardTests(unittest.TestCase):
 
 class RegenerationTests(unittest.TestCase):
     def make_tutor(self, backend, policy=None):
-        return ExamGuardTutor(
+        return AlgoSageTutor(
             backend,
             Settings(mode="mock", output_guard="rules"),
             policy_config=policy or ExamPolicy.from_dict({"max_regenerations": 1}),
@@ -563,8 +563,8 @@ class RegenerationTests(unittest.TestCase):
 
 class GuardSelectionTests(unittest.TestCase):
     def test_make_output_guard_variants(self):
-        from examguard.leakage_guard import RuleLeakageScreener as Screener
-        from examguard.output_guard import BasicOutputGuard
+        from algosage.leakage_guard import RuleLeakageScreener as Screener
+        from algosage.output_guard import BasicOutputGuard
 
         basic = make_output_guard(Settings(output_guard="basic"), None)
         self.assertIsInstance(basic, BasicOutputGuard)
@@ -579,7 +579,7 @@ class GuardSelectionTests(unittest.TestCase):
 
     def test_basic_guard_path_unchanged_via_pipeline(self):
         leaky = "```python\n" + "\n".join(f"a{i}=1" for i in range(4)) + "\n```"
-        tutor = ExamGuardTutor(
+        tutor = AlgoSageTutor(
             ScriptedBackend([leaky]),
             Settings(mode="mock", output_guard="basic"),
             policy_config=ExamPolicy.from_dict({"max_regenerations": 0}),
