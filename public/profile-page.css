@@ -376,6 +376,7 @@ body.eg-profile-page .eye-button[aria-pressed="true"] .eye-hide { display: block
 body.eg-profile-page .field-help { margin: 0; color: #98a2b3; font-size: 12px; }
 
 body.eg-profile-page .profile-save-row { display: flex; justify-content: flex-end; margin-top: 18px; }
+body.eg-security-page .profile-save-row { margin-top: 8px; }
 body.eg-profile-page .profile-save-row.visible { display: flex; }
 body.eg-profile-page .profile-save-row[hidden] { display: none; }
 body.eg-profile-page .profile-status {
@@ -389,6 +390,7 @@ body.eg-profile-page .profile-status[data-kind="error"] { color: #c43f57; }
 :root.dark body.eg-profile-page .profile-status { color: #a0a8ba; }
 :root.dark body.eg-profile-page .profile-status[data-kind="success"] { color: #71dca4; }
 :root.dark body.eg-profile-page .profile-status[data-kind="error"] { color: #f08087; }
+body.eg-security-page .profile-status { min-height: 0; margin-top: 10px; }
 
 body.eg-profile-page .security-entry {
   display: flex;
