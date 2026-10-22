@@ -612,14 +612,14 @@ main { background: transparent !important; }
 .eg-new-chat-action {
   grid-column: 1 / -1;
   width: 100%;
-  min-height: 50px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   border: 0;
   border-radius: 999px;
-  padding: 12px 18px;
+  padding: 10px 18px;
   color: #fff;
   font: inherit;
   font-size: .88rem;
