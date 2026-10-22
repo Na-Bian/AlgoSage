@@ -34,6 +34,7 @@ body.eg-profile-page::before {
 }
 
 body.eg-profile-page .eg-profile-topbar {
+  box-sizing: border-box;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -41,8 +42,8 @@ body.eg-profile-page .eg-profile-topbar {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 64px;
-  padding: 12px clamp(16px, 5vw, 64px);
+  min-height: 50px;
+  padding: 7px clamp(16px, 5vw, 64px);
   border-bottom: 1px solid rgba(223, 228, 238, .9);
   background: rgba(248, 250, 253, .86);
   backdrop-filter: blur(14px);
@@ -53,13 +54,26 @@ body.eg-profile-page .eg-profile-topbar {
 }
 
 body.eg-profile-page .brand { display: inline-flex; align-items: center; }
-body.eg-profile-page .brand-logo { width: 158px; height: auto; }
+body.eg-profile-page .brand-logo { width: auto; height: 32px; }
 body.eg-profile-page .brand-logo { display: none; }
 body.eg-profile-page .brand-logo-dark { display: block; }
 :root:not(.dark) body.eg-profile-page .brand-logo-dark { display: none; }
 :root:not(.dark) body.eg-profile-page .brand-logo-light { display: block; }
 
-body.eg-profile-page .topbar-actions,
+body.eg-profile-page .topbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.eg-profile-page .topbar-actions .ghost-link {
+  box-sizing: border-box;
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
 body.eg-profile-page .avatar-actions,
 body.eg-profile-page .modal-actions {
   display: flex;
@@ -441,12 +455,13 @@ body.eg-profile-page .modal-actions { justify-content: flex-end; margin-top: 22p
 
 @media (max-width: 680px) {
   body.eg-profile-page .profile-save-row .gradient-button { width: 100%; }
-  body.eg-profile-page .topbar-actions .ghost-link { min-height: 38px; padding: 8px 12px; font-size: 13px; }
+  body.eg-profile-page .topbar-actions .ghost-link { min-height: 32px; padding: 5px 10px; font-size: 12px; }
   body.eg-profile-page .security-entry { padding: 16px; }
 }
 
 @media (max-width: 480px) {
-  body.eg-profile-page .eg-profile-topbar { padding-inline: 16px; }
+  body.eg-profile-page .eg-profile-topbar { min-height: 44px; padding: 5px 16px; }
+  body.eg-profile-page .brand-logo { width: auto; height: 28px; }
   body.eg-profile-page .profile-title { font-size: 30px; }
   body.eg-profile-page .profile-card { padding: 20px; border-radius: 18px; }
   body.eg-profile-page .avatar-zone { justify-items: stretch; }
