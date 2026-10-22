@@ -214,6 +214,7 @@
     window.addEventListener("storage", function (event) {
       if (event.key === "vite-ui-theme") scheduleScan();
     });
+    document.addEventListener("algosage-theme-change", scheduleScan);
     scanAll();
   }
 

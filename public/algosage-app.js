@@ -12,10 +12,10 @@
     });
   }
 
-  loadScript("/public/theme-transition.js?v=20261022-profile-menu-1")
-    .then(() => loadScript("/public/account-profile.js?v=20261022-profile-menu-1"))
+  loadScript("/public/theme-transition.js?v=20261022-theme-menu-sync-1")
+    .then(() => loadScript("/public/account-profile.js?v=20261022-theme-menu-sync-1"))
     .catch(() => {
       // Existing behavior remains usable even if optional enhancements fail.
-      loadScript("/public/account-profile.js?v=20261022-profile-menu-1");
+      loadScript("/public/account-profile.js?v=20261022-theme-menu-sync-1");
     });
 })();

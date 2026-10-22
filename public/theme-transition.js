@@ -5,6 +5,7 @@
   "use strict";
 
   const THEME_KEY = "vite-ui-theme";
+  const THEME_CHANGE_EVENT = "algosage-theme-change";
   const systemMedia = window.matchMedia("(prefers-color-scheme: dark)");
   const root = document.documentElement;
   let transitionBusy = false;
@@ -80,6 +81,10 @@
     const nextDark = shouldUseDark(preference);
     const currentDark = root.classList.contains("dark");
     savePreference(preference);
+    // Preference changes can leave the effective theme unchanged (for example
+    // light -> system while the OS is light). Chainlit menu state still needs
+    // to refresh, so do not rely only on an html.dark mutation.
+    document.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT));
 
     if (nextDark === currentDark) {
       applyPreference(preference);
