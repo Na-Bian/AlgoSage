@@ -231,7 +231,11 @@
 
   function addMenuItem(menu) {
     if (menu.querySelector("#eg-profile-menu-item")) return;
-    const logout = [...menu.querySelectorAll('[role="menuitem"]')].pop();
+    const items = [...menu.querySelectorAll('[role="menuitem"]')];
+    // Chainlit renders theme and account actions as sibling popovers. Only the
+    // account popover contains logout, so never inject profile into theme menus.
+    if (!items.some((item) => (item.textContent || "").trim() === "退出登录")) return;
+    const logout = items.pop();
     const link = document.createElement("a");
     link.id = "eg-profile-menu-item";
     link.href = "/profile";
