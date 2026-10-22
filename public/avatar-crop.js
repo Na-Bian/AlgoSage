@@ -48,10 +48,9 @@
           <h2 id="eg-crop-title">调整头像</h2>
         </header>
         <div class="eg-crop-stage" data-crop-stage>
-          <canvas class="eg-crop-canvas" data-crop-canvas aria-label="头像裁剪区域" aria-describedby="eg-crop-help"></canvas>
+          <canvas class="eg-crop-canvas" data-crop-canvas aria-label="头像裁剪区域"></canvas>
           <div class="eg-crop-mask" aria-hidden="true"></div>
         </div>
-        <p id="eg-crop-help" class="eg-crop-help">拖动图片调整位置，使用滑块或滚轮缩放。</p>
         <div class="eg-crop-controls">
           <button class="eg-crop-scale-button" type="button" data-crop-zoom-out aria-label="缩小头像">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>

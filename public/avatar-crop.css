@@ -69,7 +69,6 @@ body.eg-profile-page .eg-crop-mask {
   pointer-events: none;
 }
 
-body.eg-profile-page .eg-crop-help,
 body.eg-profile-page .eg-crop-status {
   margin: 12px 0 0;
   color: var(--crop-muted);
