@@ -522,3 +522,141 @@ body.eg-profile-page .modal-actions { justify-content: flex-end; margin-top: 22p
   body.eg-profile-page *,
   body.eg-profile-page *::before { animation: none !important; transition: none !important; }
 }
+
+/* Security page uses a calmer, security-focused variant of the account palette.
+   Layout stays shared with the profile page; only surfaces and accents change. */
+body.eg-profile-page.eg-security-page.eg-security-page {
+  --pg-bg: #f8fafd;
+  --pg-surface: #ffffff;
+  --pg-line: #e2e7f0;
+  --pg-divider: #e7ebf3;
+  --pg-title: #182136;
+  --pg-text: #344054;
+  --pg-muted: #667085;
+  --pg-placeholder: #8190aa;
+  --pg-wash-1: rgba(117, 72, 238, .075);
+  --pg-wash-2: rgba(255, 8, 122, .055);
+  --pg-arc: rgba(117, 72, 238, .055);
+  --pg-card-shadow: 0 12px 40px rgba(42, 52, 100, .055);
+  --pg-focus-ring: 0 0 0 3px rgba(91, 135, 247, .12);
+  --security-topbar-bg: rgba(255, 255, 255, .94);
+  --security-topbar-line: #e7ebf3;
+  --security-input-line: #dfe5f0;
+  --security-quiet-bg: #ffffff;
+  --security-quiet-line: #e2e7f0;
+  --security-quiet-text: #182136;
+  --security-quiet-hover: #f4f6fd;
+  --security-danger-bg: #fff1f3;
+  --security-danger-line: #fda4af;
+  --security-danger-text: #c92d46;
+  --security-danger-hover: #ffe4e8;
+}
+
+:root.dark body.eg-profile-page.eg-security-page.eg-security-page {
+  --pg-bg: #0f1220;
+  --pg-surface: #171d2d;
+  --pg-line: #34425e;
+  --pg-divider: #344057;
+  --pg-title: #f5f7fb;
+  --pg-text: #e7ecf8;
+  --pg-muted: #a8b3cc;
+  --pg-placeholder: #8995ad;
+  --pg-wash-1: rgba(97, 95, 255, .13);
+  --pg-wash-2: rgba(255, 8, 122, .08);
+  --pg-arc: rgba(114, 150, 255, .075);
+  --pg-card-shadow: 0 24px 68px rgba(0, 0, 0, .28);
+  --pg-focus: #7296ff;
+  --pg-focus-ring: 0 0 0 3px rgba(91, 135, 247, .16);
+  --security-topbar-bg: rgba(23, 27, 42, .94);
+  --security-topbar-line: #2b3348;
+  --security-input-line: #3a4763;
+  --security-quiet-bg: #1b2436;
+  --security-quiet-line: #3b4b68;
+  --security-quiet-text: #e7ecf8;
+  --security-quiet-hover: #223049;
+  --security-danger-bg: #34212d;
+  --security-danger-line: #93495b;
+  --security-danger-text: #ff8796;
+  --security-danger-hover: #422633;
+}
+
+body.eg-profile-page.eg-security-page.eg-security-page::before {
+  background:
+    radial-gradient(760px 500px at 90% -10%, var(--pg-wash-1), transparent 68%),
+    radial-gradient(700px 490px at 4% 102%, var(--pg-wash-2), transparent 66%),
+    radial-gradient(620px 520px at 106% 58%, rgba(83, 78, 220, .06), transparent 70%),
+    linear-gradient(180deg, rgba(238, 242, 255, .5), transparent 38%);
+}
+
+:root.dark body.eg-profile-page.eg-security-page.eg-security-page::before {
+  background:
+    radial-gradient(760px 500px at 90% -10%, var(--pg-wash-1), transparent 68%),
+    radial-gradient(720px 500px at 4% 102%, var(--pg-wash-2), transparent 66%),
+    radial-gradient(620px 520px at 106% 58%, rgba(83, 78, 220, .09), transparent 70%),
+    linear-gradient(180deg, rgba(43, 51, 72, .3), transparent 38%);
+}
+
+body.eg-profile-page.eg-security-page.eg-security-page::after {
+  background:
+    radial-gradient(circle at 90% 16%, transparent 272px, var(--pg-arc) 273px, transparent 277px),
+    radial-gradient(circle at 12% 88%, transparent 214px, var(--pg-arc) 215px, transparent 219px);
+}
+
+body.eg-profile-page.eg-security-page.eg-security-page .eg-profile-topbar {
+  border-bottom-color: var(--security-topbar-line);
+  background: var(--security-topbar-bg);
+}
+
+body.eg-profile-page.eg-security-page.eg-security-page .profile-title { color: var(--pg-title); font-weight: 700; }
+body.eg-profile-page.eg-security-page.eg-security-page .back-link { color: var(--pg-muted); }
+body.eg-profile-page.eg-security-page.eg-security-page .back-link:hover { color: var(--pg-blue); }
+
+body.eg-profile-page.eg-security-page.eg-security-page .profile-card {
+  border-color: var(--pg-line);
+  background: var(--pg-surface);
+  box-shadow: var(--pg-card-shadow);
+}
+:root.dark body.eg-profile-page.eg-security-page.eg-security-page .profile-card {
+  background: linear-gradient(160deg, #182032 0%, var(--pg-surface) 58%, #161c2b 100%);
+}
+
+body.eg-profile-page.eg-security-page.eg-security-page .section { border-top-color: var(--pg-divider); }
+body.eg-profile-page.eg-security-page.eg-security-page .section-title { color: var(--pg-title); }
+body.eg-profile-page.eg-security-page.eg-security-page .section-title.marked::before { background: var(--pg-pink); }
+
+body.eg-profile-page.eg-security-page.eg-security-page input {
+  border-color: var(--security-input-line);
+  background: var(--pg-input);
+  color: var(--pg-title);
+}
+body.eg-profile-page.eg-security-page.eg-security-page input::placeholder { color: var(--pg-placeholder); }
+body.eg-profile-page.eg-security-page.eg-security-page input:not([readonly]):hover { border-color: var(--pg-line-hover); }
+body.eg-profile-page.eg-security-page.eg-security-page input:not([readonly]):focus {
+  border-color: var(--pg-focus);
+  box-shadow: var(--pg-focus-ring);
+}
+body.eg-profile-page.eg-security-page.eg-security-page .eye-button { color: #8190aa; }
+:root.dark body.eg-profile-page.eg-security-page.eg-security-page .eye-button { color: #a9b7d0; }
+
+body.eg-profile-page.eg-security-page.eg-security-page .ghost-link,
+body.eg-profile-page.eg-security-page.eg-security-page .quiet-button {
+  border-color: var(--security-quiet-line);
+  background: var(--security-quiet-bg);
+  color: var(--security-quiet-text);
+}
+body.eg-profile-page.eg-security-page.eg-security-page .ghost-link:hover,
+body.eg-profile-page.eg-security-page.eg-security-page .quiet-button:hover {
+  border-color: var(--security-quiet-line);
+  background: var(--security-quiet-hover);
+}
+
+body.eg-profile-page.eg-security-page.eg-security-page .danger-section .section-description { color: var(--security-danger-text); }
+body.eg-profile-page.eg-security-page.eg-security-page .danger-button {
+  border-color: var(--security-danger-line);
+  background: var(--security-danger-bg);
+  color: var(--security-danger-text);
+}
+body.eg-profile-page.eg-security-page.eg-security-page .danger-button:hover:not(:disabled) {
+  border-color: var(--security-danger-line);
+  background: var(--security-danger-hover);
+}
