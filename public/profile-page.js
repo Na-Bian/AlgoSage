@@ -113,6 +113,7 @@
   }
 
   document.getElementById("profile-form").addEventListener("submit", saveProfile);
+  window.AlgoSageTheme?.mountFloatingButton();
   avatarInput.addEventListener("change", uploadAvatar);
   document.getElementById("change-avatar").addEventListener("click", () => avatarInput.click());
   document.getElementById("logout-profile").addEventListener("click", logout);

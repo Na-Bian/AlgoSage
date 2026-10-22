@@ -1,19 +1,7 @@
 (() => {
   "use strict";
 
-  const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
-  const applyAuthTheme = () => {
-    let preference = null;
-    try {
-      preference = localStorage.getItem("vite-ui-theme");
-    } catch (_) {}
-    const dark = preference !== "light" && (preference !== "system" || themeMedia.matches);
-    document.documentElement.classList.toggle("dark", dark);
-  };
-  themeMedia.addEventListener("change", applyAuthTheme);
-  window.addEventListener("storage", (event) => {
-    if (event.key === "vite-ui-theme") applyAuthTheme();
-  });
+  window.AlgoSageTheme?.mountFloatingButton();
 
   const body = document.body;
   const view = body.dataset.view || "login";

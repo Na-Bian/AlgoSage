@@ -84,19 +84,24 @@
     if (!menu || menu.getAttribute("data-state") !== "open") return;
     var items = menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"]');
     // Chainlit 2.11 原生菜单顺序；限定到主题触发器关联的菜单，不影响其他菜单。
-    if (items.length !== 3) return;
-    var values = ["light", "dark", "system"];
+    var labels = {
+      "浅色主题": "light",
+      "深色主题": "dark",
+      "跟随系统": "system"
+    };
     var preference;
     try {
       preference = localStorage.getItem("vite-ui-theme");
     } catch (_) {}
-    if (values.indexOf(preference) === -1) {
+    if (["light", "dark", "system"].indexOf(preference) === -1) {
       preference = document.documentElement.classList.contains("dark") ? "dark" : "light";
     }
     for (var i = 0; i < items.length; i++) {
+      var value = labels[(items[i].textContent || "").trim()];
+      if (!value) continue;
       items[i].setAttribute("role", "menuitemradio");
-      items[i].setAttribute("data-eg-theme-option", values[i]);
-      items[i].setAttribute("aria-checked", String(values[i] === preference));
+      items[i].setAttribute("data-eg-theme-option", value);
+      items[i].setAttribute("aria-checked", String(value === preference));
     }
   }
 

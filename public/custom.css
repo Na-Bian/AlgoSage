@@ -1,3 +1,5 @@
+@import url("/public/theme-transition.css?v=20261022-theme-reveal-2");
+
 /* AlgoSage Chainlit 自定义样式 —— 参考 DeepSeek 视觉风格的轻量定制。
    仅覆盖配色 / 圆角 / 字体 / 阅读宽度等展示层细节，不改变交互逻辑。
    Chainlit 前端以 hsl(var(--xxx)) 消费 shadcn 变量，因此这里提供原始 HSL 分量。 */

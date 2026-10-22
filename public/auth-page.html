@@ -1,23 +1,13 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme-default="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex">
   <title>登录 · AlgoSage</title>
   <link rel="icon" href="/favicon" type="image/svg+xml">
-  <script>
-    // Apply the persisted Chainlit preference before CSS paints to avoid a theme flash.
-    (function () {
-      var dark = true;
-      try {
-        var preference = localStorage.getItem("vite-ui-theme");
-        var systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        dark = preference !== "light" && (preference !== "system" || systemDark);
-      } catch (_) {}
-      document.documentElement.classList.toggle("dark", dark);
-    })();
-  </script>
+  <script src="/public/theme-transition.js?v=20261022-theme-reveal-2"></script>
+  <link rel="stylesheet" href="/public/theme-transition.css?v=20261022-theme-reveal-2">
   <link rel="stylesheet" href="/public/auth-page.css">
 </head>
 <body class="eg-auth-page" data-view="login">

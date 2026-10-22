@@ -484,7 +484,6 @@ body[data-view="register"] .auth-main {
 .brand-display .brand-logo {
   width: min(620px, 72%);
   height: auto;
-  display: block;
   filter: var(--auth-brand-shadow);
 }
 

@@ -1,0 +1,144 @@
+/* Circular reveal shared by auth pages, profile and Chainlit's theme menu. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 550ms;
+  animation-timing-function: cubic-bezier(0.25, 0.8, 0.25, 1);
+  animation-fill-mode: both;
+  mix-blend-mode: normal;
+}
+
+/* Keep the outgoing snapshot stable while the new theme is revealed over it. */
+::view-transition-old(root) {
+  animation-name: none !important;
+}
+
+::view-transition-new(root) {
+  animation-name: eg-theme-circle-reveal;
+}
+
+::view-transition-image-pair(root) {
+  isolation: auto;
+}
+
+@keyframes eg-theme-circle-reveal {
+  from {
+    clip-path: circle(0px at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
+  }
+  to {
+    clip-path: circle(var(--theme-reveal-radius, 150vmax) at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
+  }
+}
+
+body.eg-profile-page .brand-logo { display: none; }
+body.eg-profile-page .brand-logo-dark { display: block; }
+:root:not(.dark) body.eg-profile-page .brand-logo-dark { display: none; }
+:root:not(.dark) body.eg-profile-page .brand-logo-light { display: block; }
+
+.eg-theme-toggle {
+  position: fixed;
+  right: clamp(22px, 2vw, 32px);
+  bottom: clamp(22px, 3vh, 32px);
+  z-index: 1200;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, .28);
+  border-radius: 50%;
+  background: rgba(148, 163, 184, .12);
+  color: #f3f5fb;
+  box-shadow: 0 10px 24px rgba(2, 6, 23, .16);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.eg-theme-toggle:hover:not(:disabled) {
+  background: rgba(148, 163, 184, .2);
+  border-color: rgba(148, 163, 184, .42);
+  box-shadow: 0 12px 28px rgba(2, 6, 23, .2);
+  transform: translateY(-1px);
+}
+
+.eg-theme-toggle:active:not(:disabled) { transform: translateY(0); }
+.eg-theme-toggle:disabled { cursor: not-allowed; opacity: .72; }
+.eg-theme-toggle:focus-visible {
+  outline: 2px solid #77aaff;
+  outline-offset: 3px;
+}
+.eg-theme-toggle svg {
+  grid-area: 1 / 1;
+  width: 20px;
+  height: 20px;
+  opacity: 0;
+  transform: scale(.55) rotate(-45deg);
+  transition: opacity 220ms ease, transform 220ms cubic-bezier(.25, .8, .25, 1);
+}
+
+.eg-theme-toggle[data-icon="sun"] .icon-sun,
+.eg-theme-toggle[data-icon="moon"] .icon-moon {
+  opacity: 1;
+  transform: none;
+}
+
+.eg-theme-toggle[data-icon="sun"]:hover .icon-sun,
+.eg-theme-toggle[data-icon="moon"]:hover .icon-moon {
+  transform: rotate(15deg);
+}
+
+.eg-theme-tooltip {
+  position: absolute;
+  right: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(50%) translateY(3px);
+  padding: 6px 10px;
+  border: 1px solid rgba(148, 163, 184, .22);
+  border-radius: 9px;
+  background: #10131c;
+  color: #f5f6fa;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(2, 6, 23, .18);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease, visibility 150ms linear;
+}
+
+.eg-theme-toggle:hover .eg-theme-tooltip,
+.eg-theme-toggle:focus-visible .eg-theme-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(50%) translateY(0);
+}
+
+:root:not(.dark) .eg-theme-toggle {
+  border-color: rgba(102, 112, 133, .2);
+  background: rgba(255, 255, 255, .82);
+  color: #344054;
+  box-shadow: 0 8px 22px rgba(16, 24, 40, .1);
+}
+:root:not(.dark) .eg-theme-toggle:hover:not(:disabled) {
+  background: #fff;
+  border-color: rgba(102, 112, 133, .32);
+  box-shadow: 0 10px 26px rgba(16, 24, 40, .12);
+}
+:root:not(.dark) .eg-theme-tooltip {
+  border-color: rgba(102, 112, 133, .16);
+  background: #182033;
+  color: #f8fafc;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation-name: none !important; }
+  .eg-theme-toggle,
+  .eg-theme-toggle svg,
+  .eg-theme-tooltip { transition: none !important; }
+  .eg-theme-toggle[data-icon="sun"] .icon-sun,
+  .eg-theme-toggle[data-icon="moon"] .icon-moon { transform: none; }
+  .eg-theme-toggle:hover[data-icon="sun"] .icon-sun,
+  .eg-theme-toggle:hover[data-icon="moon"] .icon-moon { transform: none; }
+}
