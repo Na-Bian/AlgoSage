@@ -9,6 +9,11 @@
 
   let sidebarRefs = null;
   let collapsedBar = null;
+  const SIDEBAR_ICONS = {
+    panel: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 4v16"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>',
+    squarePen: '<path d="M12 3h5a2 2 0 0 1 2 2v5"/><path d="M18.4 3.6a2.1 2.1 0 0 1 3 3L11 17l-4 1 1-4Z"/>',
+  };
 
   function makeIconControl(label, svgPath, onClick) {
     const button = document.createElement("button");
@@ -46,7 +51,7 @@
     if (refsChanged) {
       const collapseControl = makeIconControl(
       group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏",
-      '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 4v16"/>',
+      SIDEBAR_ICONS.panel,
       () => sidebarRefs?.trigger.click()
     );
     sidebarRefs = {
@@ -72,8 +77,8 @@
 
       const actions = document.createElement("div");
       actions.className = "eg-sidebar-actions";
-      const searchIcon = '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>';
-      const collapseIcon = '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 4v16"/>';
+      const searchIcon = SIDEBAR_ICONS.search;
+      const collapseIcon = SIDEBAR_ICONS.panel;
       const searchControl = makeIconControl("搜索会话", searchIcon, () => sidebarRefs.search.click());
       actions.append(searchControl, collapseControl);
       presentation.append(brand, actions);
@@ -89,7 +94,7 @@
       plus.setAttribute("stroke-width", "2");
       plus.setAttribute("stroke-linecap", "round");
       plus.setAttribute("aria-hidden", "true");
-      plus.innerHTML = '<path d="M12 5v14M5 12h14"/>';
+      plus.innerHTML = SIDEBAR_ICONS.squarePen;
       const newLabel = document.createElement("span");
       newLabel.textContent = "新建对话";
       newChatAction.append(plus, newLabel);
@@ -109,7 +114,8 @@
     document.body.classList.toggle("eg-sidebar-collapsed", collapsed);
     if (collapsedBar) {
       collapsedBar.id = "eg-collapsed-bar";
-      collapsedBar.classList.toggle("eg-collapsed-bar", collapsed);
+      collapsedBar.className = "eg-collapsed-bar";
+      collapsedBar.classList.toggle("eg-sidebar-collapsed", collapsed);
       collapsedBar.setAttribute("aria-hidden", String(!collapsed));
     }
     return true;
@@ -128,9 +134,9 @@
 
     const pill = document.createElement("div");
     pill.className = "eg-collapsed-pill";
-    const expandButton = makeIconControl("展开侧栏", '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 4v16"/>', () => sidebarRefs?.trigger.click());
-    const searchButton = makeIconControl("搜索会话", '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>', () => sidebarRefs?.search.click());
-    const newButton = makeIconControl("新建对话", '<path d="M12 5v14M5 12h14"/>', () => sidebarRefs?.new.click());
+    const expandButton = makeIconControl("展开侧栏", SIDEBAR_ICONS.panel, () => sidebarRefs?.trigger.click());
+    const searchButton = makeIconControl("搜索会话", SIDEBAR_ICONS.search, () => sidebarRefs?.search.click());
+    const newButton = makeIconControl("新建对话", SIDEBAR_ICONS.squarePen, () => sidebarRefs?.new.click());
     pill.append(expandButton, searchButton, newButton);
     collapsedBar.append(logo, pill);
     document.body.append(collapsedBar);
