@@ -555,6 +555,104 @@ main { background: transparent !important; }
 }
 #thread-history > div svg { color: currentColor; opacity: .82; }
 
+/* ---------- Sidebar header: DeepSeek-style brand/actions/new-chat ---------- */
+.eg-sidebar-header.eg-sidebar-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  row-gap: 12px;
+  padding: 12px 14px 10px !important;
+}
+
+.eg-sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.eg-sidebar-brand {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--sidebar-border) / .7);
+  overflow: hidden;
+  transition: border-color var(--eg-motion-fast) var(--eg-motion-ease), transform var(--eg-motion-fast) var(--eg-motion-ease);
+}
+.eg-sidebar-brand:hover { border-color: hsl(var(--primary) / .38); transform: translateY(-1px); }
+.eg-sidebar-brand img { width: 22px; height: 22px; object-fit: contain; display: block; }
+
+.eg-sidebar-actions { display: flex; align-items: center; gap: 5px; }
+.eg-sidebar-actions button {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 11px !important;
+  color: hsl(var(--sidebar-foreground) / .78) !important;
+}
+.eg-sidebar-actions button:hover {
+  background: hsl(var(--sidebar-accent)) !important;
+  color: hsl(var(--sidebar-accent-foreground)) !important;
+}
+.eg-sidebar-actions button svg { width: 19px !important; height: 19px !important; }
+
+.eg-sidebar-new-chat {
+  grid-column: 1 / -1;
+  width: 100% !important;
+  min-height: 42px !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  padding: 10px 13px !important;
+  border: 1px solid hsl(var(--sidebar-border) / .72) !important;
+  border-radius: 13px !important;
+  background: hsl(var(--card) / .82) !important;
+  color: hsl(var(--sidebar-foreground)) !important;
+  font-size: .87rem !important;
+  font-weight: 650 !important;
+}
+.eg-sidebar-new-chat:hover:not(:disabled) {
+  border-color: hsl(var(--primary) / .34) !important;
+  background: hsl(var(--sidebar-accent) / .72) !important;
+  color: hsl(var(--primary)) !important;
+}
+.eg-sidebar-new-chat svg { width: 19px !important; height: 19px !important; }
+.eg-sidebar-new-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Hidden state becomes a compact icon rail instead of disappearing entirely. */
+:root [data-sidebar="sidebar"].eg-sidebar-collapsed {
+  width: 76px !important;
+  transform: translateX(304px) !important;
+}
+:root .group.peer[data-state="collapsed"][data-collapsible="offcanvas"] {
+  width: 76px !important;
+}
+[data-sidebar="header"].eg-sidebar-header.eg-sidebar-collapsed,
+.eg-sidebar-header.eg-sidebar-header.eg-sidebar-collapsed,
+:root [data-sidebar="sidebar"].eg-sidebar-collapsed .eg-sidebar-header.eg-sidebar-header {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding-inline: 11px !important;
+}
+:root [data-sidebar="sidebar"].eg-sidebar-collapsed .eg-sidebar-top {
+  flex-direction: column;
+  gap: 10px;
+}
+:root [data-sidebar="sidebar"].eg-sidebar-collapsed .eg-sidebar-actions {
+  flex-direction: column;
+  gap: 10px;
+}
+:root [data-sidebar="sidebar"].eg-sidebar-collapsed .eg-sidebar-new-chat {
+  width: 38px !important;
+  min-width: 38px !important;
+  padding: 9px !important;
+  justify-content: center !important;
+  border-radius: 12px !important;
+}
+:root [data-sidebar="sidebar"].eg-sidebar-collapsed .eg-sidebar-new-label { display: none; }
+
 /* Keep message and welcome content in one comfortable reading column. */
 #messages,
 #welcome-screen {

@@ -6,6 +6,74 @@
 
   let scheduled = false;
 
+  function enhanceSidebar() {
+    const sidebar = document.querySelector('[data-sidebar="sidebar"]');
+    const group = sidebar?.closest(".group.peer");
+    const header = sidebar?.querySelector('[data-sidebar="header"] > .flex.items-center.justify-between');
+    if (!sidebar || !group || !header) return false;
+
+    sidebar.classList.toggle("eg-sidebar-collapsed", group.dataset.state === "collapsed");
+
+    const trigger = header.querySelector("#sidebar-trigger-button");
+    const search = header.querySelector("#search-chats-button");
+    const newChat = header.querySelector("#new-chat-button");
+    if (!trigger || !search || !newChat) return false;
+
+    // React may replace its header children after navigation or state changes,
+    // so verify the presentation nodes instead of trusting a one-time marker.
+    if (header.dataset.egSidebar === "1" && header.contains(search) && header.contains(trigger)) {
+      return true;
+    }
+
+    header.dataset.egSidebar = "1";
+    header.classList.add("eg-sidebar-header");
+
+    const brand = document.createElement("a");
+    brand.className = "eg-sidebar-brand";
+    brand.href = "/";
+    brand.setAttribute("aria-label", "AlgoSage");
+    const brandImage = document.createElement("img");
+    brandImage.src = "/public/favicon.png";
+    brandImage.alt = "";
+    // Pin the mark because Chainlit's generated image reset can otherwise make
+    // an only-child grid item collapse before the raster has layout.
+    brand.style.setProperty("width", "32px", "important");
+    brand.style.setProperty("height", "32px", "important");
+    brand.style.setProperty("min-width", "32px", "important");
+    brandImage.style.setProperty("width", "22px", "important");
+    brandImage.style.setProperty("height", "22px", "important");
+    brand.append(brandImage);
+
+    const actions = document.createElement("div");
+    actions.className = "eg-sidebar-actions";
+    actions.append(search, trigger);
+
+    const top = document.createElement("div");
+    top.className = "eg-sidebar-top";
+    top.append(brand, actions);
+
+    // append/preload moves the original button nodes, so Chainlit's listeners
+    // for search, collapse, and new-chat continue to work.
+    header.classList.add("eg-sidebar-header-grid");
+    header.replaceChildren(top, newChat);
+    newChat.classList.add("eg-sidebar-new-chat");
+    newChat.setAttribute("aria-label", "开启新对话");
+    newChat.title = "开启新对话";
+    if (!newChat.querySelector(".eg-sidebar-new-label")) {
+      const label = document.createElement("span");
+      label.className = "eg-sidebar-new-label";
+      label.textContent = "开启新对话";
+      newChat.append(label);
+    }
+
+    search.setAttribute("aria-label", "搜索会话");
+    search.title = "搜索会话";
+    trigger.setAttribute("aria-label", group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏");
+    trigger.title = trigger.getAttribute("aria-label");
+
+    return true;
+  }
+
   function enhanceWelcome() {
     const welcome = document.getElementById("welcome-screen");
     if (!welcome || welcome.dataset.egChatUi === "1") return false;
@@ -59,6 +127,7 @@
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
+      enhanceSidebar();
       enhanceWelcome();
     });
   }
@@ -67,5 +136,7 @@
   new MutationObserver(scheduleEnhance).observe(document.body, {
     childList: true,
     subtree: true,
+    attributes: true,
+    attributeFilter: ["data-state", "class"],
   });
 })();

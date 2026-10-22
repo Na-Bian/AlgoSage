@@ -14,7 +14,7 @@
 
   loadScript("/public/theme-transition.js?v=20261022-dark-click-outline-1")
     .then(() => loadScript("/public/account-profile.js?v=20261022-dark-click-outline-1"))
-    .then(() => loadScript("/public/chat-ui.js?v=20261022-workspace-ui-1"))
+    .then(() => loadScript("/public/chat-ui.js?v=20261022-workspace-ui-2"))
     .catch(() => {
       // Existing behavior remains usable even if optional enhancements fail.
       loadScript("/public/account-profile.js?v=20261022-dark-click-outline-1");
