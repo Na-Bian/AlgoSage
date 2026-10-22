@@ -316,7 +316,7 @@ body.eg-profile-page .field-grid { display: grid; grid-template-columns: 1fr; ga
   body.eg-profile-page .field-span { grid-column: 1 / -1; }
 }
 
-body.eg-profile-page .field { display: grid; gap: 7px; min-width: 0; }
+body.eg-profile-page .field { display: grid; align-content: start; gap: 7px; min-width: 0; }
 body.eg-profile-page label { color: #344054; font-size: 13px; font-weight: 680; }
 :root.dark body.eg-profile-page label { color: #dbe5f4; }
 
