@@ -41,14 +41,14 @@ body.eg-profile-page {
 }
 
 :root.dark body.eg-profile-page {
-  --pg-bg: #10121c;
-  --pg-surface: #151a28;
+  --pg-bg: #0f1220;
+  --pg-surface: #171d2d;
   --pg-surface-muted: #182033;
-  --pg-input: #10131f;
+  --pg-input: #111726;
   --pg-input-readonly: #181e2d;
-  --pg-line: #30374b;
+  --pg-line: #34425e;
   --pg-line-hover: #46506a;
-  --pg-divider: #2b3346;
+  --pg-divider: #344057;
   --pg-title: #f5f6fa;
   --pg-text: #dbe5f4;
   --pg-muted: #a0a8ba;
@@ -107,8 +107,8 @@ body.eg-profile-page .eg-profile-topbar {
   backdrop-filter: blur(14px);
 }
 :root.dark body.eg-profile-page .eg-profile-topbar {
-  border-bottom-color: #272e40;
-  background: rgba(16, 18, 28, .86);
+  border-bottom-color: #2b3348;
+  background: rgba(23, 27, 42, .94);
 }
 
 body.eg-profile-page .brand { display: inline-flex; align-items: center; }
@@ -166,9 +166,9 @@ body.eg-profile-page .quiet-button:hover {
 }
 :root.dark body.eg-profile-page .ghost-link,
 :root.dark body.eg-profile-page .quiet-button {
-  border-color: #30374b;
-  background: #171c2b;
-  color: #dbe5f4;
+  border-color: #3b4b68;
+  background: #1b2436;
+  color: #e7ecf8;
 }
 :root.dark body.eg-profile-page .ghost-link:hover,
 :root.dark body.eg-profile-page .quiet-button:hover {
@@ -327,7 +327,7 @@ body.eg-profile-page .avatar-badge {
   color: #fff;
 }
 body.eg-profile-page .avatar-badge svg { width: 15px; height: 15px; }
-:root.dark body.eg-profile-page .avatar-badge { border-color: #151a28; }
+:root.dark body.eg-profile-page .avatar-badge { border-color: #171d2d; }
 
 body.eg-profile-page .avatar-copy h3,
 body.eg-profile-page .avatar-copy h2 { margin: 0; font-size: 20px; font-weight: 720; }
@@ -497,7 +497,7 @@ body.eg-profile-page .closure-modal {
 body.eg-profile-page .closure-modal h2 { margin: 0; font-size: 20px; }
 body.eg-profile-page .closure-modal > p { margin: 10px 0 20px; color: var(--pg-muted); font-size: 13px; }
 body.eg-profile-page .modal-actions { justify-content: flex-end; margin-top: 22px; }
-:root.dark body.eg-profile-page .closure-modal { border-color: #2b3346; background: #151a28; }
+:root.dark body.eg-profile-page .closure-modal { border-color: #34425e; background: #171d2d; }
 :root.dark body.eg-profile-page .closure-modal > p { color: #a0a8ba; }
 
 @media (max-width: 680px) {
