@@ -548,6 +548,14 @@ main { background: transparent !important; }
   background:
     linear-gradient(180deg, hsl(var(--sidebar) / .99), hsl(222 39% 11%) 100%);
 }
+/* Our sidebar header owns collapse now. Remove Chainlit's legacy drag rail,
+   including its hover line, so it cannot flash as a dark rule under Command. */
+body.eg-chat-shell button[data-sidebar="rail"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 [data-sidebar="header"] {
   min-height: 64px;
   padding: 10px 12px !important;
