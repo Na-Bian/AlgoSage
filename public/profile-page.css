@@ -107,7 +107,7 @@ body.eg-profile-page .eg-profile-topbar {
   backdrop-filter: blur(14px);
 }
 :root.dark body.eg-profile-page .eg-profile-topbar {
-  border-bottom-color: #2b3348;
+  border-bottom-color: transparent;
   background: rgba(23, 27, 42, .94);
 }
 
