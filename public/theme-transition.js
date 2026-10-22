@@ -181,6 +181,22 @@
     bindChainlitMenu,
   };
 
+  // Suppress browser-native focus outlines that were reached with a pointer.
+  // Keyboard focus is cleared from this marker and keeps a themed focus ring.
+  let pointerFocusControl = null;
+  document.addEventListener("pointerdown", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const control = event.target.closest("button, a, [tabindex]:not(input):not(textarea):not(select)");
+    if (pointerFocusControl) delete pointerFocusControl.dataset.egPointerFocus;
+    pointerFocusControl = control || null;
+    if (pointerFocusControl) pointerFocusControl.dataset.egPointerFocus = "1";
+  }, true);
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    if (pointerFocusControl) delete pointerFocusControl.dataset.egPointerFocus;
+    pointerFocusControl = null;
+  }, true);
+
   if (root.dataset.themeDefault) initializeStandalone();
   bindChainlitMenu();
 })();

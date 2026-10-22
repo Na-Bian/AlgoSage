@@ -518,6 +518,20 @@ body.eg-profile-page .modal-actions { justify-content: flex-end; margin-top: 22p
   body.eg-profile-page .modal-actions button { width: 100%; }
 }
 
+body.eg-profile-page [data-eg-pointer-focus]:focus {
+  outline: none !important;
+}
+
+body.eg-profile-page :focus-visible {
+  outline: 2px solid var(--pg-focus);
+  outline-offset: 2px;
+}
+body.eg-profile-page input:not([readonly]):focus-visible,
+body.eg-profile-page textarea:focus-visible,
+body.eg-profile-page select:focus-visible {
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   body.eg-profile-page *,
   body.eg-profile-page *::before { animation: none !important; transition: none !important; }
