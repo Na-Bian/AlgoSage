@@ -3,7 +3,10 @@
 
   const statusNode = document.getElementById("security-status");
   const closureStatus = document.getElementById("closure-status");
+  const saveRow = document.getElementById("password-save-row");
   const saveButton = document.getElementById("save-password");
+  const passwordFields = ["current-password", "new-password", "confirm-password"]
+    .map((id) => document.getElementById(id));
   const overlay = document.getElementById("closure-overlay");
   const closurePassword = document.getElementById("closure-password");
   const closureConfirm = document.getElementById("closure-confirm");
@@ -41,6 +44,14 @@
     status("");
   }
 
+  function passwordChanged() {
+    return passwordFields.some((field) => Boolean(field.value));
+  }
+
+  function refreshSaveRow() {
+    saveRow.hidden = !passwordChanged();
+  }
+
   async function changePassword(event) {
     event.preventDefault();
     const current = document.getElementById("current-password").value;
@@ -69,6 +80,7 @@
       document.getElementById("new-password").value = "";
       document.getElementById("confirm-password").value = "";
       setPressed(false);
+      refreshSaveRow();
       status("密码已更新。", "success");
     } catch (error) {
       status(error.message || "密码更新未完成。", "error");
@@ -141,6 +153,17 @@
     }
   }
 
+  passwordFields.forEach((field) => {
+    field.addEventListener("input", refreshSaveRow);
+  });
+  document.getElementById("password-form").addEventListener("keydown", (event) => {
+    const isEnter = event.key === "Enter" || event.keyCode === 13;
+    const fromInput = event.target instanceof HTMLInputElement;
+    if (!isEnter || !fromInput || event.shiftKey) return;
+    event.preventDefault();
+    if (!passwordChanged() || saveButton.disabled) return;
+    saveButton.click();
+  });
   document.getElementById("password-form").addEventListener("submit", changePassword);
   document.getElementById("logout-security").addEventListener("click", logout);
   document.getElementById("open-closure").addEventListener("click", openClosure);
