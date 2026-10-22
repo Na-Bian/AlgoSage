@@ -1,0 +1,177 @@
+/* Reusable circular avatar editor. It inherits AlgoSage dark/light palette. */
+body.eg-profile-page .eg-crop-overlay {
+  --crop-surface: #ffffff;
+  --crop-line: #e2e7f0;
+  --crop-title: #182136;
+  --crop-muted: #667085;
+  --crop-primary: #4478f5;
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(16, 24, 40, .52);
+  backdrop-filter: blur(5px);
+}
+body.eg-profile-page .eg-crop-overlay[hidden] { display: none; }
+
+:root.dark body.eg-profile-page .eg-crop-overlay {
+  --crop-surface: #151a28;
+  --crop-line: #30374b;
+  --crop-title: #f5f6fa;
+  --crop-muted: #a0a8ba;
+  --crop-primary: #90c2ff;
+}
+
+body.eg-profile-page .eg-crop-modal {
+  width: min(420px, 100%);
+  max-height: min(94dvh, 760px);
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--crop-line);
+  border-radius: 20px;
+  background: var(--crop-surface);
+  color: var(--crop-title);
+  box-shadow: 0 24px 70px rgba(16, 24, 40, .22);
+}
+
+body.eg-profile-page .eg-crop-header h2 { margin: 0 0 16px; font-size: 20px; font-weight: 740; }
+
+body.eg-profile-page .eg-crop-stage {
+  box-sizing: border-box;
+  position: relative;
+  width: min(320px, 100%);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--crop-line);
+  border-radius: 16px;
+  background: #0b1120;
+  touch-action: none;
+}
+
+body.eg-profile-page .eg-crop-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+body.eg-profile-page .eg-crop-canvas:active { cursor: grabbing; }
+
+body.eg-profile-page .eg-crop-mask {
+  position: absolute;
+  inset: 10px;
+  border: 2px solid rgba(255, 255, 255, .92);
+  border-radius: 50%;
+  box-shadow: 0 0 0 9999px rgba(8, 12, 24, .58);
+  pointer-events: none;
+}
+
+body.eg-profile-page .eg-crop-help,
+body.eg-profile-page .eg-crop-status {
+  margin: 12px 0 0;
+  color: var(--crop-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+body.eg-profile-page .eg-crop-status { min-height: 20px; }
+body.eg-profile-page .eg-crop-status[data-kind="error"] { color: #c43f57; }
+:root.dark body.eg-profile-page .eg-crop-status[data-kind="error"] { color: #f08087; }
+
+body.eg-profile-page .eg-crop-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+body.eg-profile-page .eg-crop-scale-button {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--crop-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--crop-muted);
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+body.eg-profile-page .eg-crop-scale-button:hover,
+body.eg-profile-page .eg-crop-scale-button:focus-visible { color: var(--crop-primary); border-color: var(--crop-line); background: rgba(91, 135, 247, .07); }
+body.eg-profile-page .eg-crop-scale-button svg { width: 17px; height: 17px; }
+
+body.eg-profile-page .eg-crop-range { flex: 1; accent-color: var(--pg-primary, #4478f5); }
+body.eg-profile-page .eg-crop-scale-value {
+  min-width: 42px;
+  text-align: right;
+  color: var(--crop-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+body.eg-profile-page .eg-crop-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+body.eg-profile-page .eg-crop-secondary {
+  min-height: 40px;
+  padding: 9px 15px;
+  border: 1px solid var(--crop-line);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--crop-title);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+body.eg-profile-page .eg-crop-secondary:hover:not(:disabled),
+body.eg-profile-page .eg-crop-secondary:focus-visible { border-color: #c8d2e2; background: rgba(148, 163, 184, .07); }
+:root.dark body.eg-profile-page .eg-crop-secondary:hover:not(:disabled) { border-color: #46506a; background: rgba(148, 163, 184, .1); }
+
+body.eg-profile-page .eg-crop-primary {
+  min-height: 40px;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 11px;
+  background: linear-gradient(105deg, #3786f8 0%, #5a65f3 55%, #7945ee 100%);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 720;
+  cursor: pointer;
+  transition: filter 180ms ease, box-shadow 180ms ease;
+}
+body.eg-profile-page .eg-crop-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+  box-shadow: 0 8px 22px rgba(90, 101, 243, .16);
+}
+body.eg-profile-page .eg-crop-primary:disabled { cursor: not-allowed; opacity: .68; }
+
+body.eg-profile-page .eg-crop-scale-button:focus-visible,
+body.eg-profile-page .eg-crop-range:focus-visible,
+body.eg-profile-page .eg-crop-secondary:focus-visible,
+body.eg-profile-page .eg-crop-primary:focus-visible {
+  outline: 2px solid var(--pg-focus, #5b87f7);
+  outline-offset: 2px;
+}
+
+@media (max-width: 420px) {
+  body.eg-profile-page .eg-crop-modal { padding: 18px; border-radius: 17px; }
+  body.eg-profile-page .eg-crop-actions { align-items: stretch; flex-direction: column; }
+  body.eg-profile-page .eg-crop-actions button { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.eg-profile-page .eg-crop-overlay,
+  body.eg-profile-page .eg-crop-scale-button,
+  body.eg-profile-page .eg-crop-primary { transition: none !important; }
+}

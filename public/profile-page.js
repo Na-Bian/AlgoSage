@@ -82,8 +82,23 @@
     }
   }
 
-  async function uploadAvatar(event) {
+  function selectedAvatarFile(event) {
     const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || uploading) return;
+    const validationError = window.AlgoSageAvatarCrop?.validate(file);
+    if (validationError) {
+      status(validationError, "error");
+      return;
+    }
+    try {
+      window.AlgoSageAvatarCrop.open(file, { onSave: uploadAvatar });
+    } catch (error) {
+      status(error.message || "头像编辑未完成。", "error");
+    }
+  }
+
+  async function uploadAvatar(file) {
     if (!file || uploading) return;
     uploading = true;
     status("正在上传头像…");
@@ -96,17 +111,19 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "头像上传未完成");
       fillProfile(data);
+      // Chat tabs listen for this version marker and refresh their native avatar.
+      localStorage.setItem("algosage-avatar-version", String(Date.now()));
       status("头像已更新。", "success");
     } catch (error) {
       status(error.message || "头像上传未完成。", "error");
+      throw error;
     } finally {
       uploading = false;
-      event.target.value = "";
     }
   }
 
   window.AlgoSageTheme?.mountFloatingButton();
-  avatarInput.addEventListener("change", uploadAvatar);
+  avatarInput.addEventListener("change", selectedAvatarFile);
   document.getElementById("change-avatar").addEventListener("click", () => avatarInput.click());
   nicknameInput.addEventListener("input", () => {
     if (statusNode.dataset.kind === "success") status("");

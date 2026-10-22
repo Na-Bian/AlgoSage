@@ -69,11 +69,51 @@
     }, 150);
   }
 
+  var avatarSyncing = false;
+  var lastAvatarSync = 0;
+  function applyUserAvatar(profile) {
+    var button = document.getElementById("user-nav-button");
+    var shell = button && button.querySelector(":scope > span.relative");
+    if (!shell) return;
+    var fallback = shell.firstElementChild;
+    var image = shell.querySelector("img.eg-user-avatar");
+    if (profile.has_avatar) {
+      if (!image) {
+        image = document.createElement("img");
+        image.className = "eg-user-avatar absolute inset-0 h-full w-full rounded-full object-cover";
+        image.alt = "";
+        shell.appendChild(image);
+      }
+      var version = encodeURIComponent(profile.avatar_updated_at || Date.now());
+      image.src = "/auth/avatar/me?v=" + version;
+      if (fallback) fallback.style.display = "none";
+    } else if (image) {
+      image.remove();
+      if (fallback) fallback.style.display = "";
+    }
+  }
+
+  function syncUserAvatar(force) {
+    if (avatarSyncing) return;
+    if (!force && Date.now() - lastAvatarSync < 5000) return;
+    avatarSyncing = true;
+    fetch("/auth/profile", { cache: "no-store" }).then(function (response) {
+      if (!response.ok) return null;
+      return response.json();
+    }).then(function (profile) {
+      lastAvatarSync = Date.now();
+      if (profile) applyUserAvatar(profile);
+    }).catch(function () {}).finally(function () {
+      avatarSyncing = false;
+    });
+  }
+
   function scanAll() {
     var blocks = document.querySelectorAll("main div[id^='step-']");
     for (var i = 0; i < blocks.length; i++) {
       if (isMessageBlock(blocks[i])) decorate(blocks[i]);
     }
+    syncUserAvatar(false);
     syncThemeMenu();
   }
 
@@ -213,6 +253,7 @@
     });
     window.addEventListener("storage", function (event) {
       if (event.key === "vite-ui-theme") scheduleScan();
+      if (event.key === "algosage-avatar-version") syncUserAvatar(true);
     });
     document.addEventListener("algosage-theme-change", scheduleScan);
     scanAll();
