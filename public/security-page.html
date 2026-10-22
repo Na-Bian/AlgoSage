@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN" data-theme-default="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>账号与安全 · AlgoSage</title>
+  <link rel="icon" href="/favicon" type="image/svg+xml">
+  <script src="/public/theme-transition.js?v=20261022-account-security"></script>
+  <link rel="stylesheet" href="/public/custom.css?v=20261022-account-security">
+  <link rel="stylesheet" href="/public/profile-page.css?v=20261022-account-security">
+</head>
+<body class="eg-profile-page eg-security-page">
+  <header class="eg-profile-topbar">
+    <a class="brand" href="/" aria-label="AlgoSage">
+      <img class="brand-logo brand-logo-dark" src="/public/brand-logo.png" alt="">
+      <img class="brand-logo brand-logo-light" src="/public/brand-logo-light.png" alt="">
+    </a>
+    <nav class="topbar-actions">
+      <a class="ghost-link" href="/profile">返回个人信息</a>
+      <a class="ghost-link" href="/">返回对话</a>
+    </nav>
+  </header>
+
+  <main class="profile-shell">
+    <div class="page-heading">
+      <a class="back-link" href="/profile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+        返回个人信息
+      </a>
+      <h1 class="profile-title">账号与安全</h1>
+    </div>
+
+    <section class="profile-card">
+      <form id="password-form" novalidate>
+        <section class="section first" aria-labelledby="password-title">
+          <h3 class="section-title marked" id="password-title">修改密码</h3>
+          <div class="field-grid">
+            <div class="field password-field field-span">
+              <label for="current-password">当前密码</label>
+              <div class="input-shell">
+                <input id="current-password" type="password" autocomplete="current-password" required>
+                <button class="eye-button" type="button" data-toggle-password="current-password" aria-label="显示密码" aria-pressed="false">
+                  <svg class="eye-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="eye-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="field password-field">
+              <label for="new-password">新密码</label>
+              <div class="input-shell">
+                <input id="new-password" type="password" autocomplete="new-password" minlength="12" required>
+                <button class="eye-button" type="button" data-toggle-password="new-password" aria-label="显示密码" aria-pressed="false">
+                  <svg class="eye-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="eye-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/></svg>
+                </button>
+              </div>
+              <p class="field-help">至少 12 位，建议包含字母、数字或特殊字符。</p>
+            </div>
+            <div class="field password-field">
+              <label for="confirm-password">确认新密码</label>
+              <div class="input-shell">
+                <input id="confirm-password" type="password" autocomplete="new-password" minlength="12" required>
+                <button class="eye-button" type="button" data-toggle-password="confirm-password" aria-label="显示密码" aria-pressed="false">
+                  <svg class="eye-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="eye-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <p class="profile-status" id="security-status" role="status" aria-live="polite"></p>
+          <div class="profile-save-row visible">
+            <button class="gradient-button" id="save-password" type="submit"><span class="button-label">更新密码</span></button>
+          </div>
+        </section>
+      </form>
+
+      <section class="section security-section" aria-labelledby="logout-title">
+        <h3 class="section-title marked" id="logout-title">退出登录</h3>
+        <p class="section-description">结束当前会话，不会删除你的账号资料。</p>
+        <button class="quiet-button" id="logout-security" type="button">退出登录</button>
+      </section>
+
+      <section class="section danger-section" aria-labelledby="closure-title">
+        <h3 class="section-title marked danger">注销账号</h3>
+        <p class="section-description">注销后账号将立即失效，当前登录状态会被终止。</p>
+        <button class="danger-button" id="open-closure" type="button">注销账号</button>
+      </section>
+    </section>
+  </main>
+
+  <div id="closure-overlay" class="closure-overlay" role="dialog" aria-modal="true" aria-labelledby="closure-modal-title" hidden>
+    <div class="closure-modal">
+      <h2 id="closure-modal-title">确认注销账号</h2>
+      <p>注销后账号将立即失效，当前登录状态会被终止。此操作不可撤销。</p>
+      <div class="field">
+        <label for="closure-password">当前密码</label>
+        <input id="closure-password" type="password" autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label for="closure-confirm">输入「注销账号」确认</label>
+        <input id="closure-confirm" type="text" autocomplete="off" spellcheck="false">
+      </div>
+      <p class="profile-status" id="closure-status" role="alert"></p>
+      <div class="modal-actions">
+        <button class="quiet-button" id="cancel-closure" type="button">取消</button>
+        <button class="danger-button" id="confirm-closure" type="button" disabled>确认注销</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/public/security-page.js?v=20261022-account-security"></script>
+</body>
+</html>

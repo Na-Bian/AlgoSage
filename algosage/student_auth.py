@@ -154,6 +154,11 @@ class ProfileUpdateRequest(BaseModel):
     new_password: str | None = None
 
 
+class AccountClosureRequest(BaseModel):
+    current_password: str
+    confirmation: str
+
+
 def _student_from_request(request: Request) -> Any:
     from chainlit.auth import decode_jwt, get_token_from_cookies
 
@@ -180,6 +185,7 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
     from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
     profile_html_path = Path(__file__).resolve().parent.parent / "public" / "profile-page.html"
+    security_html_path = Path(__file__).resolve().parent.parent / "public" / "security-page.html"
     auth_html_path = Path(__file__).resolve().parent.parent / "public" / "auth-page.html"
 
     def student_auth():
@@ -249,6 +255,18 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
             return response
         return HTMLResponse(profile_html_path.read_text(encoding="utf-8"))
 
+    @router.get("/profile/security", include_in_schema=False)
+    async def account_security_page(request: Request):
+        current_user = _student_from_request(request)
+        if not current_user:
+            return RedirectResponse(url="/login", status_code=303)
+        account = student_auth().store.get_account(_student_id(current_user))
+        if not account:
+            response = RedirectResponse(url="/login", status_code=303)
+            response.delete_cookie("access_token", path="/")
+            return response
+        return HTMLResponse(security_html_path.read_text(encoding="utf-8"))
+
     @router.get("/auth/avatar/me", include_in_schema=False)
     async def read_avatar(current_user: UserParam):
         if not current_user:
@@ -289,6 +307,32 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
         if not account:
             raise HTTPException(status_code=404, detail="Profile not found")
         return _profile_payload(account)
+
+    @router.post("/auth/profile/close", include_in_schema=False)
+    async def close_account(
+        payload: AccountClosureRequest, request: Request, current_user: UserParam
+    ):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        student_id = _student_id(current_user)
+        origin = request.headers.get("origin", "")
+        if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
+            raise HTTPException(status_code=403, detail="Cross-origin request rejected")
+        try:
+            result = student_auth().close_account(
+                student_id=student_id,
+                current_password=payload.current_password,
+                confirmation=payload.confirmation,
+            )
+        except AuthValidationError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except AuthCredentialsError as error:
+            raise HTTPException(status_code=423, detail=str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        response = JSONResponse(result)
+        response.delete_cookie("access_token", path="/")
+        return response
 
     @router.patch("/auth/profile")
     async def update_profile(
@@ -575,6 +619,19 @@ class StudentAuthStore:
             self._conn.commit()
         return True
 
+    def close_account(self, student_id: str) -> bool:
+        """Close an account and invalidate every issued session immediately."""
+        changed = _iso(_now())
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE student_accounts SET status='closed', failed_login_count=0, locked_until=NULL, "
+                "avatar_data=NULL, avatar_mime=NULL, avatar_updated_at='', "
+                "session_version=session_version+1, updated_at=? WHERE student_id=? AND status='active'",
+                (changed, student_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount > 0
+
     def update_password(self, student_id: str, password_hash: str) -> bool:
         changed = _iso(_now())
         with self._lock:
@@ -844,6 +901,26 @@ class StudentAuthService:
             nickname=account["nickname"],
             session_version=int(account["session_version"]),
         )
+
+    def close_account(
+        self,
+        *,
+        student_id: str,
+        current_password: str,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        account = self.store.get_account(student_id)
+        if not account:
+            raise PermissionError("student account was not found")
+        if confirmation != "注销账号":
+            raise AuthValidationError("请输入“注销账号”确认操作")
+        try:
+            self._hasher.verify(account["password_hash"], current_password)
+        except (VerifyMismatchError, InvalidHashError) as error:
+            raise AuthCredentialsError("当前密码不正确") from error
+        if not self.store.close_account(student_id):
+            raise PermissionError("student account was not found")
+        return {"status": "closed", "redirect_url": "/login"}
 
     def update_profile(
         self,
@@ -1178,5 +1255,5 @@ def install_student_auth(app: Any, service_factory) -> None:
 
     _move_routes_before_catchall(
         router,
-        ("/auth/hust/", "/auth/profile", "/login", "/register", "/forgot-password"),
+        ("/auth/hust/", "/auth/profile", "/auth/profile/close", "/profile/security", "/login", "/register", "/forgot-password"),
     )

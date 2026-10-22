@@ -388,7 +388,46 @@ class ProfileRouteTests(unittest.TestCase):
         page = self.client.get("/profile")
         self.assertEqual(page.status_code, 200)
         self.assertIn("个人信息", page.text)
+        self.assertIn('href="/profile/security"', page.text)
+        self.assertNotIn('id="current-password"', page.text)
         self.assertIn("profile-page.css", page.text)
+
+    def test_account_security_page_and_closure(self):
+        authenticated = self.client.patch("/auth/profile", json={"nickname": "验收同学"})
+        self.assertEqual(authenticated.status_code, 200)
+        security = self.client.get("/profile/security")
+        self.assertEqual(security.status_code, 200)
+        self.assertIn("修改密码", security.text)
+        self.assertIn("注销账号", security.text)
+        self.assertIn('id="closure-overlay"', security.text)
+
+        bad_confirmation = self.client.post(
+            "/auth/profile/close",
+            json={"current_password": "correct-horse-battery", "confirmation": "删除"},
+        )
+        self.assertEqual(bad_confirmation.status_code, 400)
+        self.assertEqual(
+            self.auth.store.get_account("U202113566")["status"], "active"
+        )
+
+        wrong_password = self.client.post(
+            "/auth/profile/close",
+            json={"current_password": "wrong-password", "confirmation": "注销账号"},
+        )
+        self.assertEqual(wrong_password.status_code, 423)
+        self.assertEqual(
+            self.auth.store.get_account("U202113566")["status"], "active"
+        )
+
+        closed = self.client.post(
+            "/auth/profile/close",
+            json={"current_password": "correct-horse-battery", "confirmation": "注销账号"},
+        )
+        self.assertEqual(closed.status_code, 200)
+        self.assertEqual(closed.json()["redirect_url"], "/login")
+        account = self.auth.store.get_account("U202113566")
+        self.assertEqual(account["status"], "closed")
+        self.assertIsNone(self.auth.authenticate("U202113566", "correct-horse-battery"))
 
     def test_profile_page_redirects_unauthenticated_user(self):
         self.app.dependency_overrides[self.current_user_dependency()] = lambda: None

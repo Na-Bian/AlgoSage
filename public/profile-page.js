@@ -1,10 +1,15 @@
 (() => {
   "use strict";
+
   const statusNode = document.getElementById("profile-status");
+  const nicknameInput = document.getElementById("nickname");
+  const saveRow = document.getElementById("profile-save-row");
   const saveButton = document.getElementById("save-profile");
   const avatarInput = document.getElementById("avatar-input");
   const avatarImage = document.getElementById("avatar-image");
   const avatarFallback = document.getElementById("avatar-initial");
+  let savedNickname = "";
+  let uploading = false;
 
   function status(message, kind = "") {
     statusNode.textContent = message || "";
@@ -20,16 +25,21 @@
     } else {
       avatarImage.removeAttribute("src");
       frame.classList.remove("has-image");
-      avatarFallback.textContent = (profile.nickname || profile.student_id || "学").slice(0, 1).toUpperCase();
     }
+    avatarFallback.textContent = (profile.nickname || profile.student_id || "学").slice(0, 1).toUpperCase();
   }
 
   function fillProfile(profile) {
-    document.getElementById("nickname").value = profile.nickname || "";
+    savedNickname = profile.nickname || "";
+    nicknameInput.value = savedNickname;
     document.getElementById("student-id").value = profile.student_id || "";
     document.getElementById("email").value = profile.email || "";
-    avatarFallback.textContent = (profile.nickname || profile.student_id || "学").slice(0, 1).toUpperCase();
     refreshAvatar(profile);
+    saveRow.hidden = true;
+  }
+
+  function nicknameChanged() {
+    return nicknameInput.value.trim() !== savedNickname;
   }
 
   async function loadProfile() {
@@ -41,54 +51,41 @@
     status("");
   }
 
-  function profileFromResponse(payload) {
-    return {
-      ...payload,
-      has_avatar: payload.has_avatar,
-      avatar_updated_at: payload.avatar_updated_at,
-    };
-  }
-
   async function saveProfile(event) {
     event.preventDefault();
+    if (!nicknameChanged()) return;
+    const nickname = nicknameInput.value.trim();
+    if (!nickname) {
+      status("昵称不能为空。", "error");
+      return;
+    }
+
     saveButton.disabled = true;
+    saveButton.querySelector(".button-label").textContent = "保存中…";
     status("正在保存…");
     try {
-      const current = document.getElementById("current-password").value;
-      const next = document.getElementById("new-password").value;
-      const confirm = document.getElementById("confirm-password").value;
-      const changingPassword = Boolean(current || next || confirm);
-      if (changingPassword && (!current || !next || !confirm)) {
-        throw new Error("修改密码需要填写当前密码、新密码和确认密码");
-      }
-      if (changingPassword && next !== confirm) throw new Error("两次输入的新密码不一致");
       const response = await fetch("/auth/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nickname: document.getElementById("nickname").value.trim(),
-          ...(changingPassword ? { current_password: current, new_password: next } : {}),
-        }),
+        body: JSON.stringify({ nickname }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "保存未完成");
-      fillProfile(profileFromResponse(data));
-      status("资料已保存", "success");
-      if (changingPassword) {
-        document.getElementById("current-password").value = "";
-        document.getElementById("new-password").value = "";
-        document.getElementById("confirm-password").value = "";
-      }
+      fillProfile(data);
+      status("资料已保存。", "success");
     } catch (error) {
-      status(error.message || "保存未完成", "error");
+      status(error.message || "保存未完成。", "error");
     } finally {
       saveButton.disabled = false;
+      saveButton.querySelector(".button-label").textContent = "保存修改";
+      saveRow.hidden = !nicknameChanged();
     }
   }
 
   async function uploadAvatar(event) {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file || uploading) return;
+    uploading = true;
     status("正在上传头像…");
     try {
       const response = await fetch("/auth/avatar", {
@@ -98,24 +95,27 @@
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "头像上传未完成");
-      fillProfile(profileFromResponse(data));
-      status("头像已更新", "success");
+      fillProfile(data);
+      status("头像已更新。", "success");
     } catch (error) {
-      status(error.message || "头像上传未完成", "error");
+      status(error.message || "头像上传未完成。", "error");
     } finally {
+      uploading = false;
       event.target.value = "";
     }
   }
 
-  async function logout() {
-    await fetch("/logout", { method: "POST" }).catch(() => {});
-    location.href = "/login";
-  }
-
-  document.getElementById("profile-form").addEventListener("submit", saveProfile);
   window.AlgoSageTheme?.mountFloatingButton();
   avatarInput.addEventListener("change", uploadAvatar);
   document.getElementById("change-avatar").addEventListener("click", () => avatarInput.click());
-  document.getElementById("logout-profile").addEventListener("click", logout);
-  loadProfile().catch((error) => status(error.message || "个人信息读取失败", "error"));
+  nicknameInput.addEventListener("input", () => {
+    if (statusNode.dataset.kind === "success") status("");
+    saveRow.hidden = !nicknameChanged();
+  });
+  document.getElementById("profile-form").addEventListener("submit", saveProfile);
+  window.addEventListener("beforeunload", (event) => {
+    if (nicknameChanged()) event.preventDefault();
+  });
+
+  loadProfile().catch((error) => status(error.message || "个人信息读取失败。", "error"));
 })();
