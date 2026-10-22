@@ -421,3 +421,12 @@ class ProfileRouteTests(unittest.TestCase):
                 self.assertIn('id="login-feedback" class="login-feedback" data-visible="false"', response.text)
                 self.assertIn('id="forgot-link" class="forgot-link" href="/forgot-password" hidden', response.text)
                 self.assertIn(">登录 AlgoSage</h1>", response.text)
+            if path == "/register":
+                self.assertIn(">注册 AlgoSage</h1>", response.text)
+                self.assertIn("请输入昵称", response.text)
+                self.assertIn("请输入学号", response.text)
+                self.assertIn("请输入密码", response.text)
+                self.assertIn("请再次输入密码", response.text)
+                self.assertIn("请输入验证码", response.text)
+                self.assertIn("验证码将发送至该学号绑定的教育邮箱", response.text)
+                self.assertNotIn('for="register-email"', response.text)

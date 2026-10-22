@@ -14,6 +14,7 @@
   let authFailed = false;
   let submitting = false;
   const countdowns = new Map();
+  const studentIdPattern = /^U202[0-9]1[0-9]{4}$/;
 
   const activeForm = () => document.getElementById(`${view}-form`);
   const setError = (message, { authFailure = false } = {}) => {
@@ -140,12 +141,17 @@
   }
 
   async function sendCode(kind) {
+    console.debug("[auth] sendCode", kind, document.getElementById(`${kind}-student-id`)?.value);
     const form = document.getElementById(`${kind}-form`);
     const studentId = document.getElementById(`${kind}-student-id`).value.trim().toUpperCase();
     const password = document.getElementById(`${kind}-password`)?.value || "";
     const confirm = document.getElementById(`${kind}-confirm`)?.value || "";
     const button = document.getElementById(`${kind}-send`);
     if (!studentId) return status("请输入学号。", "error");
+    if (kind === "register" && !studentIdPattern.test(studentId)) {
+      console.debug("[auth] invalid student id");
+      return status("学号格式不正确，请检查后重试。", "error");
+    }
     if (kind === "register") {
       if (!password || password.length < 12) return status("密码至少 12 位。", "error");
       if (password !== confirm) return status("两次输入的密码不一致。", "error");
