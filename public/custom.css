@@ -509,7 +509,7 @@ body:not(.eg-profile-page)::after {
 main { background: transparent !important; }
 
 /* Widen Chainlit's built-in sidebar while keeping its collapse behavior. */
-[class*="group/sidebar-wrapper"] { --sidebar-width: 19rem !important; }
+[class*="group/sidebar-wrapper"] { --sidebar-width: 18rem !important; }
 [data-sidebar="sidebar"] {
   border-right: 1px solid hsl(var(--sidebar-border));
   background:
@@ -610,6 +610,7 @@ main { background: transparent !important; }
 .eg-sidebar-icon-button svg { width: 19px; height: 19px; }
 
 .eg-new-chat-action {
+  grid-column: 1 / -1;
   width: 100%;
   min-height: 50px;
   display: inline-flex;
