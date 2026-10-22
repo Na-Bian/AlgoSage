@@ -320,7 +320,21 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
 
     def auth_page(mode: str):
         html = auth_html_path.read_text(encoding="utf-8")
-        return HTMLResponse(html.replace('data-view="login"', f'data-view="{mode}"'))
+        titles = {
+            "login": "登录 AlgoSage",
+            "register": "注册 AlgoSage",
+            "reset": "找回密码",
+        }
+        page_title = {
+            "login": "登录 · AlgoSage",
+            "register": "注册 · AlgoSage",
+            "reset": "找回密码 · AlgoSage",
+        }
+        return HTMLResponse(
+            html.replace('data-view="login"', f'data-view="{mode}"')
+                .replace('>登录 AlgoSage</h1>', f'>{titles[mode]}</h1>')
+                .replace('<title>登录 · AlgoSage</title>', f'<title>{page_title[mode]}</title>')
+        )
 
     @router.get("/login", include_in_schema=False)
     async def custom_login_page(request: Request):
@@ -340,7 +354,6 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
             return RedirectResponse(url="/", status_code=303)
         return auth_page("reset")
 
-    _move_routes_before_catchall(router, ("/auth/profile", "/auth/avatar", "/profile", "/login", "/register", "/forgot-password"))
     _move_routes_before_catchall(router, ("/auth/profile", "/auth/avatar", "/profile", "/login", "/register", "/forgot-password"))
 
 
