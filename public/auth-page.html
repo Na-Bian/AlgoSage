@@ -9,12 +9,14 @@
   <link rel="stylesheet" href="/public/auth-page.css">
 </head>
 <body class="eg-auth-page" data-view="login">
-  <main class="auth-left" aria-labelledby="auth-title">
-    <a class="auth-brand" href="/login" aria-label="AlgoSage">
+  <main class="auth-left">
+    <header class="auth-header">
+      <a class="auth-brand" href="/login" aria-label="AlgoSage">
       <img src="/public/brand-logo.png" alt="AlgoSage">
-    </a>
+      </a>
+    </header>
 
-    <div class="auth-center">
+    <section class="auth-main" aria-labelledby="auth-title">
       <div class="auth-panel">
         <h1 class="auth-title" id="auth-title">登录 AlgoSage</h1>
 
@@ -146,7 +148,7 @@
 
         <p id="auth-status" class="auth-status" role="status"></p>
       </div>
-    </div>
+    </section>
   </main>
 
   <aside class="auth-brand-panel" aria-hidden="true">
