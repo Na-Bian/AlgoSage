@@ -241,7 +241,28 @@
     }
   }
 
+  var event_target_for_pointer_outline = null;
+  function markDropzonePointerFocus(event) {
+    var zone = event.target && event.target.closest
+      ? event.target.closest('[role="presentation"][tabindex="0"]')
+      : null;
+    if (!zone) return;
+    if (event_target_for_pointer_outline) delete event_target_for_pointer_outline.dataset.egPointerFocus;
+    event_target_for_pointer_outline = zone;
+    zone.dataset.egPointerFocus = "1";
+  }
+
+  function clearDropzonePointerFocus(event) {
+    if (!event_target_for_pointer_outline) return;
+    if (event.type === "keydown" || !event.target || !event.target.closest || !event.target.closest('[role="presentation"][tabindex="0"]')) {
+      delete event_target_for_pointer_outline.dataset.egPointerFocus;
+      event_target_for_pointer_outline = null;
+    }
+  }
+
   function start() {
+    document.addEventListener("pointerdown", markDropzonePointerFocus, true);
+    document.addEventListener("keydown", clearDropzonePointerFocus, true);
     document.addEventListener("click", interceptSettingsClose, true);
     document.addEventListener("keydown", interceptSettingsClose, true);
     document.addEventListener("pointerdown", interceptSettingsClose, true);

@@ -267,6 +267,14 @@ pre code,
   font-size: 0.85rem;
 }
 
+/* Chainlit 的上传/输入容器有 tabindex。鼠标点进输入区空白处时，浏览器会给
+   这个大容器画一个默认白色 outline，看起来像输入框闪现白框。这里只抑制指针
+   触发的焦点描边；键盘 Tab 仍保留原生可见焦点。 */
+:root [role="presentation"][tabindex="0"][data-eg-pointer-focus] :focus,
+:root [role="presentation"][tabindex="0"][data-eg-pointer-focus]:focus {
+  outline: none !important;
+}
+
 /* ---------- 输入区 ----------
    Chainlit 默认把输入编辑器（#chat-input）嵌在圆角容器（message_composer）
    内；给内部编辑器再加边框会出现"框中框"错位，保持默认融合外观即可。 */
