@@ -6,13 +6,26 @@
   <meta name="robots" content="noindex">
   <title>登录 · AlgoSage</title>
   <link rel="icon" href="/favicon" type="image/svg+xml">
+  <script>
+    // Apply the persisted Chainlit preference before CSS paints to avoid a theme flash.
+    (function () {
+      var dark = true;
+      try {
+        var preference = localStorage.getItem("vite-ui-theme");
+        var systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        dark = preference !== "light" && (preference !== "system" || systemDark);
+      } catch (_) {}
+      document.documentElement.classList.toggle("dark", dark);
+    })();
+  </script>
   <link rel="stylesheet" href="/public/auth-page.css">
 </head>
 <body class="eg-auth-page" data-view="login">
   <main class="auth-left">
     <header class="auth-header">
       <a class="auth-brand" href="/login" aria-label="AlgoSage">
-      <img src="/public/brand-logo.png" alt="AlgoSage">
+      <img class="auth-logo auth-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">
+      <img class="auth-logo auth-logo-light" src="/public/brand-logo-light.png" alt="">
       </a>
     </header>
 
@@ -160,10 +173,11 @@
     <div class="brand-glow" data-glow="1"></div>
     <div class="brand-glow" data-glow="2"></div>
     <div class="brand-display">
-      <img src="/public/brand-logo.png" alt="">
+      <img class="brand-logo brand-logo-dark" src="/public/brand-logo.png" alt="">
+        <img class="brand-logo brand-logo-light" src="/public/brand-logo-light.png" alt="">
     </div>
   </aside>
 
-  <script src="/public/auth-page.js?v=20261022-login-form"></script>
+  <script src="/public/auth-page.js?v=20261022-auth-theme"></script>
 </body>
 </html>
