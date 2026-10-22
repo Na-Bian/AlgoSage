@@ -11,12 +11,12 @@
   --ring: 228 99% 65%;
 
   /* 浅色干净背景 */
-  --background: 0 0% 100%;
-  --foreground: 226 24% 12%;
+  --background: 210 45% 98%;
+  --foreground: 222 31% 12%;
   --card: 0 0% 100%;
-  --card-foreground: 226 24% 12%;
+  --card-foreground: 222 31% 12%;
   --popover: 0 0% 100%;
-  --popover-foreground: 226 24% 12%;
+  --popover-foreground: 222 31% 12%;
 
   /* 次级与边框 */
   --secondary: 220 16% 96%;
@@ -25,9 +25,9 @@
   --muted-foreground: 222 10% 45%;
   --accent: 224 60% 96%;
   --accent-foreground: 226 24% 16%;
-  --border: 220 14% 91%;
-  --input: 220 14% 91%;
-  --destructive: 0 72% 51%;
+  --border: 220 18% 91%;
+  --input: 220 18% 91%;
+  --destructive: 351 67% 46%;
   --scrollbar-thumb: 220 10% 65%;
   --scrollbar-thumb-hover: 220 10% 50%;
 
@@ -41,6 +41,16 @@
   --eg-motion-distance: 6px;
   --eg-motion-drawer-distance: 12px;
 
+  /* Sidebar panel variables used by Chainlit's shadcn sidebar. */
+  --sidebar: 220 33% 99%;
+  --sidebar-foreground: 222 22% 18%;
+  --sidebar-primary: 222 90% 56%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 38% 96%;
+  --sidebar-accent-foreground: 222 31% 14%;
+  --sidebar-border: 220 18% 91%;
+  --sidebar-ring: 222 90% 58%;
+
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -52,23 +62,32 @@
   --primary: 228 99% 68%;
   --primary-foreground: 0 0% 100%;
   --ring: 228 99% 68%;
-  --background: 224 20% 10%;
-  --foreground: 220 20% 93%;
-  --card: 224 18% 13%;
-  --card-foreground: 220 20% 93%;
-  --popover: 224 18% 13%;
-  --popover-foreground: 220 20% 93%;
+  --background: 228 36% 9%;
+  --foreground: 220 25% 95%;
+  --card: 221 28% 13%;
+  --card-foreground: 220 25% 95%;
+  --popover: 221 28% 14%;
+  --popover-foreground: 220 25% 95%;
   --secondary: 224 16% 18%;
   --secondary-foreground: 220 20% 93%;
   --muted: 224 16% 18%;
   --muted-foreground: 220 12% 68%;
   --accent: 226 30% 22%;
   --accent-foreground: 220 20% 93%;
-  --border: 224 14% 26%;
-  --input: 224 14% 26%;
-  --destructive: 0 70% 62%;
+  --border: 219 28% 28%;
+  --input: 219 28% 30%;
+  --destructive: 351 76% 68%;
   --scrollbar-thumb: 224 12% 36%;
   --scrollbar-thumb-hover: 224 12% 48%;
+  /* Sidebar variables mirror the deep navy account-page surfaces. */
+  --sidebar: 222 39% 12%;
+  --sidebar-foreground: 220 22% 93%;
+  --sidebar-primary: 221 90% 66%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 221 34% 18%;
+  --sidebar-accent-foreground: 220 25% 95%;
+  --sidebar-border: 220 28% 23%;
+  --sidebar-ring: 218 100% 69%;
   color-scheme: dark;
 }
 
@@ -428,4 +447,360 @@ main div[id^='step-']:hover .eg-copy-btn {
     button, input, textarea, [role="menuitem"], [role="menuitemradio"], .eg-copy-btn, #theme-toggle svg) {
     transition-duration: 0s !important;
   }
+}
+
+/* ---------- AlgoSage workspace shell ----------
+   These rules intentionally style Chainlit's existing sidebar/welcome/composer
+   DOM. They do not alter message transport, uploads, settings, or auth flows. */
+:root {
+  --chat-canvas: #f8fafd;
+  --chat-card-line: #e2e7f0;
+  --chat-card-shadow: 0 12px 38px rgba(42, 52, 100, .055);
+  --chat-primary-gradient: linear-gradient(105deg, #3786f8 0%, #5a65f3 55%, #7945ee 100%);
+  --chat-focus-ring: 0 0 0 3px rgba(91, 135, 247, .14);
+}
+
+:root.dark {
+  --chat-canvas: #0f1220;
+  --chat-card-line: #31405d;
+  --chat-card-shadow: 0 24px 68px rgba(0, 0, 0, .28);
+  --chat-primary-gradient: linear-gradient(105deg, #3388ff 0%, #5264f5 50%, #7b3ef2 100%);
+  --chat-focus-ring: 0 0 0 3px rgba(91, 135, 247, .16);
+}
+
+/* Ambient canvas: the opaque sidebar and cards sit above this atmosphere. */
+body:not(.eg-profile-page) {
+  background: var(--chat-canvas);
+}
+body:not(.eg-profile-page)::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(920px 620px at 88% -12%, rgba(117, 72, 238, .09), transparent 68%),
+    radial-gradient(780px 540px at 4% 104%, rgba(255, 8, 122, .055), transparent 66%),
+    linear-gradient(180deg, rgba(238, 242, 255, .54), transparent 38%);
+}
+:root.dark body:not(.eg-profile-page)::before {
+  background:
+    radial-gradient(920px 640px at 90% -10%, rgba(97, 95, 255, .13), transparent 68%),
+    radial-gradient(760px 540px at 3% 104%, rgba(255, 8, 122, .08), transparent 66%),
+    radial-gradient(660px 520px at 104% 58%, rgba(83, 78, 220, .08), transparent 70%),
+    linear-gradient(180deg, rgba(43, 51, 72, .28), transparent 38%);
+}
+body:not(.eg-profile-page)::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 92% 12%, transparent 280px, rgba(117, 72, 238, .05) 281px, transparent 285px),
+    radial-gradient(circle at 6% 92%, transparent 220px, rgba(255, 8, 122, .045) 221px, transparent 225px);
+}
+:root.dark body:not(.eg-profile-page)::after {
+  background:
+    radial-gradient(circle at 92% 12%, transparent 280px, rgba(114, 150, 255, .075) 281px, transparent 285px),
+    radial-gradient(circle at 6% 92%, transparent 220px, rgba(255, 8, 122, .06) 221px, transparent 225px);
+}
+
+main { background: transparent !important; }
+
+/* Widen Chainlit's built-in sidebar while keeping its collapse behavior. */
+[class*="group/sidebar-wrapper"] { --sidebar-width: 19rem !important; }
+[data-sidebar="sidebar"] {
+  border-right: 1px solid hsl(var(--sidebar-border));
+  background:
+    linear-gradient(180deg, hsl(var(--sidebar) / .98), hsl(var(--sidebar) / .96));
+}
+:root.dark [data-sidebar="sidebar"] {
+  background:
+    linear-gradient(180deg, hsl(var(--sidebar) / .99), hsl(222 39% 11%) 100%);
+}
+[data-sidebar="header"] {
+  min-height: 64px;
+  padding: 10px 12px !important;
+  border-bottom: 1px solid hsl(var(--sidebar-border) / .72);
+}
+[data-sidebar="content"] { padding-top: 12px !important; }
+
+/* Sidebar icon buttons and empty state. */
+#sidebar-trigger-button,
+#search-chats-button,
+#new-chat-button {
+  border-radius: 12px !important;
+  color: hsl(var(--sidebar-foreground));
+}
+#sidebar-trigger-button:hover,
+#search-chats-button:hover,
+#new-chat-button:hover {
+  background: hsl(var(--sidebar-accent));
+  color: hsl(var(--sidebar-accent-foreground));
+}
+
+#thread-history > div {
+  border: 1px solid #cfe0ff !important;
+  border-radius: 16px !important;
+  background: #f2f6ff !important;
+  color: #2755c9 !important;
+  box-shadow: 0 6px 20px rgba(42, 52, 100, .05);
+}
+:root.dark #thread-history > div {
+  border-color: #3958b7 !important;
+  background: #1a2756 !important;
+  color: #c8d8ff !important;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .24);
+}
+#thread-history > div svg { color: currentColor; opacity: .82; }
+
+/* Keep message and welcome content in one comfortable reading column. */
+#messages,
+#welcome-screen {
+  max-width: min(58rem, 100%);
+}
+main div:has(> #welcome-screen) > div {
+  width: min(58rem, 100%) !important;
+  max-width: min(58rem, 100%) !important;
+}
+
+/* Welcome header and lede. */
+#welcome-screen {
+  gap: 18px;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding-top: clamp(6px, 1.5vh, 20px);
+}
+#welcome-screen > div:first-child {
+  padding: 4px clamp(8px, 2vw, 20px) 0;
+}
+#welcome-screen .eg-welcome-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 8px !important;
+  font-size: clamp(27px, 2.35vw, 33px) !important;
+  line-height: 1.16 !important;
+  font-weight: 750 !important;
+  letter-spacing: -.035em;
+}
+#welcome-screen .eg-welcome-lede {
+  margin: 0 !important;
+  color: hsl(var(--muted-foreground));
+  font-size: .94rem;
+  line-height: 1.7;
+}
+#welcome-screen .eg-welcome-lede strong { color: hsl(var(--foreground)); }
+
+/* Configuration table card. */
+#welcome-screen .eg-config-card {
+  margin: 18px 0 0 !important;
+  border: 1px solid var(--chat-card-line) !important;
+  border-radius: 20px !important;
+  background: hsl(var(--card)) !important;
+  box-shadow: var(--chat-card-shadow) !important;
+  overflow: hidden;
+}
+#welcome-screen .eg-config-card table { width: 100%; }
+#welcome-screen .eg-config-card th,
+#welcome-screen .eg-config-card td {
+  border: 0 !important;
+  border-bottom: 1px solid hsl(var(--border) / .68) !important;
+  padding: 13px 18px !important;
+  vertical-align: middle;
+}
+#welcome-screen .eg-config-card tr:last-child td { border-bottom: 0 !important; }
+#welcome-screen .eg-config-card th {
+  width: 142px;
+  background: hsl(var(--muted) / .48);
+  color: hsl(var(--muted-foreground));
+  font-size: .8rem;
+  font-weight: 700;
+}
+#welcome-screen .eg-config-card td { color: hsl(var(--foreground)); }
+#welcome-screen .eg-config-card code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 3px 9px !important;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--muted) / .56);
+  color: hsl(var(--foreground));
+  font-size: .76rem !important;
+  font-weight: 650;
+  line-height: 1.2 !important;
+}
+
+/* Usage explanation card, assembled from markdown siblings by chat-ui.js. */
+#welcome-screen .eg-usage-card {
+  margin: 18px 0 0 !important;
+  padding: 20px 22px 18px;
+  border: 1px solid var(--chat-card-line);
+  border-radius: 20px;
+  background: hsl(var(--card));
+  box-shadow: var(--chat-card-shadow);
+}
+#welcome-screen .eg-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 !important;
+  color: hsl(var(--foreground));
+  font-size: 1rem !important;
+  line-height: 1.3 !important;
+}
+#welcome-screen .eg-card-heading .eg-card-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--pg-blue, #4478f5);
+  flex: 0 0 auto;
+}
+#welcome-screen .eg-usage-card ul {
+  margin: 14px 0 0 !important;
+  padding-left: 0 !important;
+  list-style: none !important;
+}
+#welcome-screen .eg-usage-card li {
+  position: relative;
+  margin-top: 0 !important;
+  padding: 7px 0 7px 22px;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.65;
+}
+#welcome-screen .eg-usage-card li::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 17px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3786f8, #7945ee);
+}
+#welcome-screen .eg-usage-card li strong { color: hsl(var(--foreground)); }
+#welcome-screen .eg-usage-card code {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px !important;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--muted) / .56);
+  color: hsl(var(--foreground));
+  font-size: .76rem !important;
+  line-height: 1.25 !important;
+}
+
+/* Composer: primary interaction surface. */
+#welcome-screen #message-composer,
+#message-composer {
+  min-height: 118px !important;
+  border: 1px solid var(--chat-card-line) !important;
+  border-radius: 24px !important;
+  background: hsl(var(--card)) !important;
+  box-shadow: var(--chat-card-shadow) !important;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background-color var(--eg-motion-enter) var(--eg-motion-ease);
+}
+#welcome-screen #message-composer:focus-within,
+#message-composer:focus-within {
+  border-color: var(--pg-focus, #5b87f7) !important;
+  box-shadow: var(--chat-card-shadow), var(--chat-focus-ring) !important;
+}
+#chat-input { min-height: 44px !important; font-size: .95rem !important; }
+#chat-input::placeholder { color: hsl(var(--muted-foreground) / .78); }
+
+#upload-button {
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 12px !important;
+  color: hsl(var(--muted-foreground)) !important;
+}
+#upload-button:hover {
+  background: hsl(var(--accent)) !important;
+  color: hsl(var(--accent-foreground)) !important;
+}
+#upload-button svg { width: 21px !important; height: 21px !important; }
+
+#chat-submit {
+  width: 40px !important;
+  height: 40px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--chat-primary-gradient) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 22px rgba(90, 101, 243, .18) !important;
+  transition: filter 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+}
+#chat-submit:hover:not(:disabled) {
+  filter: brightness(1.07) !important;
+  box-shadow: 0 10px 26px rgba(90, 101, 243, .24) !important;
+}
+#chat-submit:disabled {
+  cursor: not-allowed !important;
+  opacity: .48 !important;
+  box-shadow: none !important;
+}
+#chat-submit svg { width: 19px !important; height: 19px !important; }
+
+/* Lightweight top toolbar. */
+#header {
+  min-height: 64px !important;
+  padding: 12px 18px !important;
+  background: transparent;
+}
+#readme-button {
+  min-height: 36px !important;
+  border-radius: 999px !important;
+  padding: 8px 14px !important;
+  font-size: .82rem !important;
+  font-weight: 650 !important;
+  color: hsl(var(--muted-foreground)) !important;
+}
+#chat-settings-header-button,
+#theme-toggle {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 12px !important;
+  color: hsl(var(--muted-foreground)) !important;
+}
+#readme-button:hover,
+#chat-settings-header-button:hover,
+#theme-toggle:hover {
+  background: hsl(var(--accent)) !important;
+  color: hsl(var(--accent-foreground)) !important;
+}
+#user-nav-button {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 999px !important;
+  background: hsl(var(--accent));
+}
+
+/* Footer remains quiet below the primary composer. */
+#welcome-screen::after {
+  margin-top: 10px !important;
+  color: hsl(var(--muted-foreground) / .78) !important;
+  font-size: .74rem !important;
+}
+
+/* Natural flow, no clipped scroll or sideways movement. */
+main div:has(> #welcome-screen),
+main div:has(> #messages) { overflow: visible; }
+
+@media (max-width: 900px) {
+  [class*="group/sidebar-wrapper"] { --sidebar-width: 18rem !important; }
+  #welcome-screen .eg-config-card,
+  #welcome-screen .eg-usage-card { border-radius: 18px; }
+  #welcome-screen .eg-config-card th { width: 116px; }
+  #welcome-screen .eg-config-card th,
+  #welcome-screen .eg-config-card td { padding-inline: 14px !important; }
+  #welcome-screen .eg-usage-card { padding: 17px; }
+}
+
+@media (max-width: 640px) {
+  #header { padding: 10px 12px !important; }
+  #readme-button { padding: 7px 10px !important; }
+  #welcome-screen .eg-welcome-title { font-size: 25px !important; }
+  #message-composer { min-height: 106px !important; }
 }
