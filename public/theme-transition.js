@@ -86,12 +86,15 @@
       return Promise.resolve(true);
     }
 
+    const transitionKind = nextDark ? "to-dark" : "to-light";
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reducedMotion || typeof document.startViewTransition !== "function") {
       transitionBusy = true;
+      root.dataset.themeTransition = transitionKind;
       applyPreference(preference);
       // Keep the brief lock even in fallback so a noisy pointer cannot double-fire.
       return new Promise((resolve) => setTimeout(() => {
+        delete root.dataset.themeTransition;
         transitionBusy = false;
         resolve(true);
       }, 60));
@@ -99,9 +102,11 @@
 
     transitionBusy = true;
     setOrigin(origin);
+    root.dataset.themeTransition = transitionKind;
     const transition = document.startViewTransition(() => applyPreference(preference));
     const finish = () => {
       transitionBusy = false;
+      delete root.dataset.themeTransition;
       root.style.removeProperty("--theme-origin-x");
       root.style.removeProperty("--theme-origin-y");
       root.style.removeProperty("--theme-reveal-radius");

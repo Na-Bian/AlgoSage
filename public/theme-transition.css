@@ -1,31 +1,58 @@
-/* Circular reveal shared by auth pages, profile and Chainlit's theme menu. */
+/* Directional circular transitions shared by auth pages, profile and Chainlit.
+   Light: the incoming light snapshot expands from the switch.
+   Dark: the outgoing light snapshot collapses into the switch. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 550ms;
   animation-timing-function: cubic-bezier(0.25, 0.8, 0.25, 1);
   animation-fill-mode: both;
   mix-blend-mode: normal;
 }
 
-/* Keep the outgoing snapshot stable while the new theme is revealed over it. */
-::view-transition-old(root) {
+/* Disable the browser's default cross-fade before choosing one directional actor. */
+::view-transition-old(root),
+::view-transition-new(root) {
   animation-name: none !important;
 }
 
-::view-transition-new(root) {
-  animation-name: eg-theme-circle-reveal;
+html[data-theme-transition="to-light"]::view-transition-old(root) {
+  z-index: 1;
+}
+
+html[data-theme-transition="to-light"]::view-transition-new(root) {
+  z-index: 2;
+  animation-name: eg-theme-light-reveal !important;
+  animation-duration: 600ms;
+}
+
+html[data-theme-transition="to-dark"]::view-transition-old(root) {
+  z-index: 2;
+  animation-name: eg-theme-light-retreat !important;
+  animation-duration: 500ms;
+}
+
+html[data-theme-transition="to-dark"]::view-transition-new(root) {
+  z-index: 1;
 }
 
 ::view-transition-image-pair(root) {
   isolation: auto;
 }
 
-@keyframes eg-theme-circle-reveal {
+@keyframes eg-theme-light-reveal {
   from {
     clip-path: circle(0px at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
   }
   to {
     clip-path: circle(var(--theme-reveal-radius, 150vmax) at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
+  }
+}
+
+@keyframes eg-theme-light-retreat {
+  from {
+    clip-path: circle(var(--theme-reveal-radius, 150vmax) at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
+  }
+  to {
+    clip-path: circle(0px at var(--theme-origin-x, 50%) var(--theme-origin-y, 50%));
   }
 }
 
@@ -133,7 +160,7 @@ body.eg-profile-page .brand-logo-dark { display: block; }
 
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root),
-  ::view-transition-new(root) { animation-name: none !important; }
+  ::view-transition-new(root) { animation: none !important; }
   .eg-theme-toggle,
   .eg-theme-toggle svg,
   .eg-theme-tooltip { transition: none !important; }
