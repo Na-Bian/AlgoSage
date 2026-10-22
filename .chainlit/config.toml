@@ -136,7 +136,7 @@ cot = "full"
 
 # Specify a CSS file that can be used to customize the user interface.
 # The CSS file can be served from the public directory or via an external link.
-custom_css = "/public/custom.css?v=20261022-newchat-height"
+custom_css = "/public/custom.css?v=20261022-remove-legacy-rail-2"
 
 # Specify additional attributes for a custom CSS file
 # custom_css_attributes = "media=\"print\""
