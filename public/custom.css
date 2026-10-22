@@ -550,7 +550,15 @@ main { background: transparent !important; }
 }
 /* Our sidebar header owns collapse now. Remove Chainlit's legacy drag rail,
    including its hover line, so it cannot flash as a dark rule under Command. */
+button[data-sidebar="rail"],
 body.eg-chat-shell button[data-sidebar="rail"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+button[data-sidebar="rail"] *,
+button[data-sidebar="rail"]::before,
+button[data-sidebar="rail"]::after {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
