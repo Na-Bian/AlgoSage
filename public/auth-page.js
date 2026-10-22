@@ -267,6 +267,16 @@
   if (form) {
     form.addEventListener("submit", view === "login" ? login : view === "register" ? register : reset);
     if (view === "login") {
+      // Some password managers and focus states do not trigger implicit form
+      // submission, so handle Enter directly from the credential inputs.
+      form.addEventListener("keydown", (event) => {
+        const isEnter = event.key === "Enter" || event.keyCode === 13;
+        const fromInput = event.target instanceof HTMLInputElement;
+        if (!isEnter || !fromInput || event.shiftKey) return;
+        event.preventDefault();
+        if (submitting) return;
+        document.getElementById("login-submit")?.click();
+      });
       ["login-student-id", "login-password"].forEach((id) => {
         document.getElementById(id).addEventListener("input", () => {
           if (authFailed) document.getElementById("login-error").textContent = "";
