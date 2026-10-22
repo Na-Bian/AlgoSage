@@ -279,7 +279,7 @@ body[data-view="register"] .auth-main {
   display: grid;
   grid-template-columns: minmax(0, 72fr) minmax(128px, 28fr);
   gap: 10px;
-  align-items: center;
+  align-items: stretch;
 }
 
 .code-button {

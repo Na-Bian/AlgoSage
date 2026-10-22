@@ -88,7 +88,8 @@
               </span>
               <input id="register-password" type="password" autocomplete="new-password" minlength="12" placeholder="请输入密码" required aria-describedby="register-password-help">
               <button type="button" class="eye-button" data-toggle-password="register-password" aria-label="显示密码" aria-pressed="false">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/></svg>
               </button>
             </div>
             <p id="register-password-help" class="field-help">至少 12 位，建议包含字母、数字或特殊字符</p>
@@ -101,12 +102,13 @@
               </span>
               <input id="register-confirm" type="password" autocomplete="new-password" minlength="12" placeholder="请再次输入密码" required>
               <button type="button" class="eye-button" data-toggle-password="register-confirm" aria-label="显示密码" aria-pressed="false">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/></svg>
               </button>
             </div>
           </div>
           <div class="input-field">
-            <label for="register-code">邮箱验证码</label>
+            <label for="register-code">验证码</label>
             <div class="code-row">
               <div class="input-shell compact"><input id="register-code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="请输入验证码" required></div>
               <button id="register-send" class="code-button" type="button" data-send="register">发送验证码</button>
@@ -114,7 +116,7 @@
             <p class="field-help">验证码将发送至该学号绑定的教育邮箱</p>
           </div>
           <button class="primary-button" type="submit"><span class="button-label">创建账号</span></button>
-          <p class="auth-switch"><span>已有账号？</span><a href="/login">直接登录</a></p>
+          <p class="auth-switch"><span>已有账号？</span><a href="/login">登录</a></p>
         </form>
 
         <form id="reset-form" class="auth-view" data-view="reset" novalidate>
@@ -123,7 +125,7 @@
             <div class="input-shell"><input id="reset-student-id" type="text" autocomplete="username" spellcheck="false" required></div>
           </div>
           <div class="input-field">
-            <label for="reset-code">邮箱验证码</label>
+            <label for="reset-code">验证码</label>
             <div class="code-row">
               <div class="input-shell compact"><input id="reset-code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></div>
               <button id="reset-send" class="code-button" type="button" data-send="reset">发送验证码</button>
@@ -134,7 +136,8 @@
             <div class="input-shell">
               <input id="reset-password" type="password" autocomplete="new-password" minlength="12" required>
               <button type="button" class="eye-button" data-toggle-password="reset-password" aria-label="显示密码" aria-pressed="false">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/></svg>
               </button>
             </div>
           </div>
