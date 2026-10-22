@@ -43,7 +43,7 @@
     overlay.className = "eg-crop-overlay";
     overlay.hidden = true;
     overlay.innerHTML = `
-      <section class="eg-crop-modal" role="dialog" aria-modal="true" aria-labelledby="eg-crop-title">
+      <section class="eg-crop-modal" role="dialog" aria-modal="true" aria-labelledby="eg-crop-title" tabindex="-1">
         <header class="eg-crop-header">
           <h2 id="eg-crop-title">调整头像</h2>
         </header>
@@ -193,7 +193,7 @@
         this.range.value = "100";
         this.updateScaleValue();
         this.render();
-        this.range.focus({ preventScroll: true });
+        this.modal.focus({ preventScroll: true });
       });
     }
 

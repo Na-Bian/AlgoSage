@@ -24,6 +24,10 @@ body.eg-profile-page .eg-crop-overlay[hidden] { display: none; }
   --crop-primary: #90c2ff;
 }
 
+body.eg-profile-page .eg-crop-modal:focus {
+  outline: none;
+}
+
 body.eg-profile-page .eg-crop-modal {
   width: min(420px, 100%);
   max-height: min(94dvh, 760px);
