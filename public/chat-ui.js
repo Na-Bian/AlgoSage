@@ -4,6 +4,7 @@
 (() => {
   "use strict";
 
+  document.body.classList.add("eg-chat-shell");
   let scheduled = false;
 
   let sidebarRefs = null;
@@ -107,6 +108,7 @@
     const collapsed = group.dataset.state === "collapsed";
     document.body.classList.toggle("eg-sidebar-collapsed", collapsed);
     if (collapsedBar) {
+      collapsedBar.id = "eg-collapsed-bar";
       collapsedBar.classList.toggle("eg-collapsed-bar", collapsed);
       collapsedBar.setAttribute("aria-hidden", String(!collapsed));
     }
@@ -115,6 +117,7 @@
 
   function buildCollapsedBar() {
     collapsedBar = document.createElement("div");
+    collapsedBar.id = "eg-collapsed-bar";
     collapsedBar.className = "eg-collapsed-bar";
     collapsedBar.setAttribute("aria-hidden", "true");
 

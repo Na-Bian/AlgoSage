@@ -450,6 +450,35 @@ main div[id^='step-']:hover .eg-copy-btn {
 }
 
 /* ---------- AlgoSage workspace shell ----------
+   Use the dynamic viewport like the auth pages, while chat content scrolls
+   inside the shell instead of expanding the document. */
+html:has(body.eg-chat-shell) { height: 100%; }
+body.eg-chat-shell {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+body.eg-chat-shell #root,
+body.eg-chat-shell [class*="group/sidebar-wrapper"],
+body.eg-chat-shell main {
+  height: 100%;
+  min-height: 0;
+}
+body.eg-chat-shell main {
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+}
+body.eg-chat-shell [data-sidebar="sidebar"] { height: 100dvh; }
+body.eg-chat-shell #welcome-screen,
+body.eg-chat-shell #welcome-screen > div:first-child,
+body.eg-chat-shell #messages {
+  min-height: 0;
+}
+body.eg-chat-shell #message-composer,
+body.eg-chat-shell #welcome-screen::after { flex-shrink: 0; }
+
    These rules intentionally style Chainlit's existing sidebar/welcome/composer
    DOM. They do not alter message transport, uploads, settings, or auth flows. */
 :root {
@@ -646,6 +675,7 @@ main { background: transparent !important; }
 
 /* Collapsed state removes the panel and leaves a floating compact control. */
 :root .group.peer[data-state="collapsed"][data-collapsible="offcanvas"] { width: 0 !important; }
+#eg-collapsed-bar,
 .eg-collapsed-bar {
   position: fixed;
   top: 13px;
