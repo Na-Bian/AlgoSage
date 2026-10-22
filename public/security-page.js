@@ -49,7 +49,20 @@
   }
 
   function refreshSaveRow() {
-    saveRow.hidden = !passwordChanged();
+    const shouldShow = passwordChanged();
+    const wasHidden = saveRow.hidden;
+    saveRow.hidden = !shouldShow;
+    if (!shouldShow || !wasHidden) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Explicit Web Animations keeps the reveal reliable even when display
+    // toggling is batched by the browser.
+    saveRow.animate(
+      [
+        { opacity: 0, transform: "translateY(12px) scale(.98)" },
+        { opacity: 1, transform: "translateY(0) scale(1)" },
+      ],
+      { duration: 280, easing: "cubic-bezier(.22, 1, .36, 1)", fill: "both" }
+    );
   }
 
   async function changePassword(event) {

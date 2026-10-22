@@ -421,15 +421,7 @@ body.eg-profile-page .eye-button[aria-pressed="true"] .eye-show { display: none;
 body.eg-profile-page .eye-button[aria-pressed="true"] .eye-hide { display: block; }
 body.eg-profile-page .field-help { margin: 0; color: var(--pg-placeholder); font-size: 12px; }
 
-body.eg-profile-page #profile-save-row:not([hidden]) {
-  animation: profile-save-rise 220ms cubic-bezier(.22, 1, .36, 1) both;
-}
-
 body.eg-profile-page .profile-save-row { display: flex; justify-content: flex-end; margin-top: 10px; }
-@keyframes profile-save-rise {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
 body.eg-security-page .profile-save-row { margin-top: 8px; }
 body.eg-profile-page .profile-save-row.visible { display: flex; }
 body.eg-profile-page .profile-save-row[hidden] { display: none; }
