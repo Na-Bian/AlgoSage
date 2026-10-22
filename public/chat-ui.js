@@ -6,72 +6,131 @@
 
   let scheduled = false;
 
+  let sidebarRefs = null;
+  let collapsedBar = null;
+
+  function makeIconControl(label, svgPath, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "eg-sidebar-icon-button";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("fill", "none");
+    icon.setAttribute("stroke", "currentColor");
+    icon.setAttribute("stroke-width", "1.8");
+    icon.setAttribute("stroke-linecap", "round");
+    icon.setAttribute("stroke-linejoin", "round");
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = svgPath;
+    button.append(icon);
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
   function enhanceSidebar() {
     const sidebar = document.querySelector('[data-sidebar="sidebar"]');
     const group = sidebar?.closest(".group.peer");
     const header = sidebar?.querySelector('[data-sidebar="header"] > .flex.items-center.justify-between');
     if (!sidebar || !group || !header) return false;
 
-    sidebar.classList.toggle("eg-sidebar-collapsed", group.dataset.state === "collapsed");
+    const sourceTrigger = header.querySelector("#sidebar-trigger-button");
+    const sourceSearch = header.querySelector("#search-chats-button");
+    const sourceNew = header.querySelector("#new-chat-button");
+    if (!sourceTrigger || !sourceSearch || !sourceNew) return false;
 
-    const trigger = header.querySelector("#sidebar-trigger-button");
-    const search = header.querySelector("#search-chats-button");
-    const newChat = header.querySelector("#new-chat-button");
-    if (!trigger || !search || !newChat) return false;
+    const refsChanged = !sidebarRefs || !sidebarRefs.trigger.isConnected
+      || !sidebarRefs.search.isConnected || !sidebarRefs.new.isConnected;
+    if (refsChanged) {
+      const collapseControl = makeIconControl(
+      group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏",
+      '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 4v16"/>',
+      () => sidebarRefs?.trigger.click()
+    );
+    sidebarRefs = {
+      trigger: sourceTrigger,
+      search: sourceSearch,
+      new: sourceNew,
+      collapseControl,
+    };
+      // Native header controls stay in React's tree, but are represented by
+      // themed controls. Clicks are delegated back to the source buttons.
+      header.classList.add("eg-original-sidebar-header");
+      header.querySelector(".eg-sidebar-presentation")?.remove();
 
-    // React may replace its header children after navigation or state changes,
-    // so verify the presentation nodes instead of trusting a one-time marker.
-    if (header.dataset.egSidebar === "1" && header.contains(search) && header.contains(trigger)) {
-      return true;
+      const presentation = document.createElement("div");
+      presentation.className = "eg-sidebar-presentation";
+
+      const brand = document.createElement("div");
+      brand.className = "eg-sidebar-brand";
+      brand.innerHTML = `
+        <img class="eg-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">
+        <img class="eg-logo-light" src="/public/brand-logo-light.png" alt="">
+      `;
+
+      const actions = document.createElement("div");
+      actions.className = "eg-sidebar-actions";
+      const searchIcon = '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>';
+      const collapseIcon = '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 4v16"/>';
+      const searchControl = makeIconControl("搜索会话", searchIcon, () => sidebarRefs.search.click());
+      actions.append(searchControl, collapseControl);
+      presentation.append(brand, actions);
+
+      const newChatAction = document.createElement("button");
+      newChatAction.type = "button";
+      newChatAction.className = "eg-new-chat-action";
+      newChatAction.setAttribute("aria-label", "新建对话");
+      const plus = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      plus.setAttribute("viewBox", "0 0 24 24");
+      plus.setAttribute("fill", "none");
+      plus.setAttribute("stroke", "currentColor");
+      plus.setAttribute("stroke-width", "2");
+      plus.setAttribute("stroke-linecap", "round");
+      plus.setAttribute("aria-hidden", "true");
+      plus.innerHTML = '<path d="M12 5v14M5 12h14"/>';
+      const newLabel = document.createElement("span");
+      newLabel.textContent = "新建对话";
+      newChatAction.append(plus, newLabel);
+      newChatAction.addEventListener("click", () => sidebarRefs.new.click());
+
+      presentation.append(newChatAction);
+      header.append(presentation);
     }
 
-    header.dataset.egSidebar = "1";
-    header.classList.add("eg-sidebar-header");
+    sidebarRefs.collapseControl.setAttribute(
+      "aria-label",
+      group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏"
+    );
+    sidebarRefs.collapseControl.title = sidebarRefs.collapseControl.getAttribute("aria-label");
 
-    const brand = document.createElement("a");
-    brand.className = "eg-sidebar-brand";
-    brand.href = "/";
-    brand.setAttribute("aria-label", "AlgoSage");
-    const brandImage = document.createElement("img");
-    brandImage.src = "/public/favicon.png";
-    brandImage.alt = "";
-    // Pin the mark because Chainlit's generated image reset can otherwise make
-    // an only-child grid item collapse before the raster has layout.
-    brand.style.setProperty("width", "32px", "important");
-    brand.style.setProperty("height", "32px", "important");
-    brand.style.setProperty("min-width", "32px", "important");
-    brandImage.style.setProperty("width", "22px", "important");
-    brandImage.style.setProperty("height", "22px", "important");
-    brand.append(brandImage);
-
-    const actions = document.createElement("div");
-    actions.className = "eg-sidebar-actions";
-    actions.append(search, trigger);
-
-    const top = document.createElement("div");
-    top.className = "eg-sidebar-top";
-    top.append(brand, actions);
-
-    // append/preload moves the original button nodes, so Chainlit's listeners
-    // for search, collapse, and new-chat continue to work.
-    header.classList.add("eg-sidebar-header-grid");
-    header.replaceChildren(top, newChat);
-    newChat.classList.add("eg-sidebar-new-chat");
-    newChat.setAttribute("aria-label", "开启新对话");
-    newChat.title = "开启新对话";
-    if (!newChat.querySelector(".eg-sidebar-new-label")) {
-      const label = document.createElement("span");
-      label.className = "eg-sidebar-new-label";
-      label.textContent = "开启新对话";
-      newChat.append(label);
+    const collapsed = group.dataset.state === "collapsed";
+    document.body.classList.toggle("eg-sidebar-collapsed", collapsed);
+    if (collapsedBar) {
+      collapsedBar.classList.toggle("eg-collapsed-bar", collapsed);
+      collapsedBar.setAttribute("aria-hidden", String(!collapsed));
     }
-
-    search.setAttribute("aria-label", "搜索会话");
-    search.title = "搜索会话";
-    trigger.setAttribute("aria-label", group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏");
-    trigger.title = trigger.getAttribute("aria-label");
-
     return true;
+  }
+
+  function buildCollapsedBar() {
+    collapsedBar = document.createElement("div");
+    collapsedBar.className = "eg-collapsed-bar";
+    collapsedBar.setAttribute("aria-hidden", "true");
+
+    const logo = document.createElement("img");
+    logo.src = "/public/favicon.png";
+    logo.alt = "AlgoSage";
+    logo.className = "eg-collapsed-logo";
+
+    const pill = document.createElement("div");
+    pill.className = "eg-collapsed-pill";
+    const expandButton = makeIconControl("展开侧栏", '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 4v16"/>', () => sidebarRefs?.trigger.click());
+    const searchButton = makeIconControl("搜索会话", '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>', () => sidebarRefs?.search.click());
+    const newButton = makeIconControl("新建对话", '<path d="M12 5v14M5 12h14"/>', () => sidebarRefs?.new.click());
+    pill.append(expandButton, searchButton, newButton);
+    collapsedBar.append(logo, pill);
+    document.body.append(collapsedBar);
   }
 
   function enhanceWelcome() {
@@ -121,6 +180,8 @@
 
     return true;
   }
+
+  buildCollapsedBar();
 
   function scheduleEnhance() {
     if (scheduled) return;

@@ -555,103 +555,169 @@ main { background: transparent !important; }
 }
 #thread-history > div svg { color: currentColor; opacity: .82; }
 
-/* ---------- Sidebar header: DeepSeek-style brand/actions/new-chat ---------- */
-.eg-sidebar-header.eg-sidebar-header {
+/* ---------- Sidebar: expanded header, new action, collapsed floating bar ---------- */
+.eg-original-sidebar-header > :not(.eg-sidebar-presentation) { display: none !important; }
+
+.eg-sidebar-presentation {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  row-gap: 12px;
-  padding: 12px 14px 10px !important;
-}
-
-.eg-sidebar-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
+  gap: 8px 10px;
+  padding: 10px 14px 12px;
 }
 
 .eg-sidebar-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 42px;
+}
+.eg-sidebar-brand img {
+  width: min(148px, 100%);
+  height: auto;
+  display: block;
+}
+.eg-sidebar-brand .eg-logo-dark,
+:root.dark .eg-sidebar-brand .eg-logo-light { display: none; }
+:root.dark .eg-sidebar-brand .eg-logo-dark,
+:root:not(.dark) .eg-sidebar-brand .eg-logo-light { display: block; }
+
+.eg-sidebar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.eg-sidebar-icon-button {
+  width: 34px;
+  height: 34px;
   display: inline-grid;
   place-items: center;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: hsl(var(--sidebar-foreground) / .76);
+  cursor: pointer;
+  transition: background var(--eg-motion-fast) var(--eg-motion-ease),
+    color var(--eg-motion-fast) var(--eg-motion-ease),
+    border-color var(--eg-motion-fast) var(--eg-motion-ease);
+}
+.eg-sidebar-icon-button:hover {
+  border-color: hsl(var(--sidebar-border) / .7);
+  background: hsl(var(--sidebar-accent));
+  color: hsl(var(--sidebar-accent-foreground));
+}
+.eg-sidebar-icon-button svg { width: 19px; height: 19px; }
+
+.eg-new-chat-action {
+  width: 100%;
+  min-height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  color: #fff;
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(105deg, #3786f8 0%, #5a65f3 55%, #7945ee 100%);
+  transition: filter var(--eg-motion-fast) var(--eg-motion-ease),
+    box-shadow var(--eg-motion-fast) var(--eg-motion-ease);
+}
+.eg-new-chat-action:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 8px 22px rgba(90, 101, 243, .16);
+}
+.eg-new-chat-action svg { width: 19px; height: 19px; }
+:root:not(.dark) .eg-new-chat-action {
+  background: linear-gradient(105deg, rgba(55, 134, 248, .12) 0%, rgba(121, 69, 238, .1) 100%);
+  color: #2f62d8;
+  box-shadow: inset 0 0 0 1px rgba(84, 116, 244, .22);
+}
+:root:not(.dark) .eg-new-chat-action:hover {
+  background: linear-gradient(105deg, rgba(55, 134, 248, .17) 0%, rgba(121, 69, 238, .15) 100%);
+  box-shadow: inset 0 0 0 1px rgba(84, 116, 244, .3);
+}
+
+/* Collapsed state removes the panel and leaves a floating compact control. */
+:root .group.peer[data-state="collapsed"][data-collapsible="offcanvas"] { width: 0 !important; }
+.eg-collapsed-bar {
+  position: fixed;
+  top: 13px;
+  left: 14px;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-8px);
+  pointer-events: none;
+  transition: opacity 240ms var(--eg-motion-ease),
+    transform 240ms var(--eg-motion-ease),
+    visibility 240ms linear;
+}
+body.eg-sidebar-collapsed .eg-collapsed-bar {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+.eg-collapsed-logo {
   width: 32px;
   height: 32px;
-  border-radius: 10px;
+  object-fit: contain;
+  display: block;
+}
+.eg-collapsed-pill {
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid hsl(var(--sidebar-border) / .8);
+  border-radius: 999px;
   background: hsl(var(--card));
-  border: 1px solid hsl(var(--sidebar-border) / .7);
+  box-shadow: 0 10px 28px hsl(var(--foreground) / .1);
+}
+:root.dark .eg-collapsed-pill {
+  border-color: #293650;
+  background: #12182a;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .28);
+}
+.eg-collapsed-pill .eg-sidebar-icon-button { width: 34px; height: 34px; border-radius: 999px; }
+
+/* History rows keep real titles and native operations while gaining the palette. */
+#thread-history [data-sidebar="menu-button"] {
+  min-height: 42px;
+  border-radius: 12px;
+  color: hsl(var(--sidebar-foreground) / .86);
+  transition: background var(--eg-motion-fast) var(--eg-motion-ease),
+    color var(--eg-motion-fast) var(--eg-motion-ease);
+}
+#thread-history [data-sidebar="menu-button"]:hover {
+  background: hsl(var(--sidebar-accent) / .72);
+  color: hsl(var(--sidebar-accent-foreground));
+}
+#thread-history [data-sidebar="menu-button"][data-active="true"] {
+  background: #edf3ff;
+  color: #2f62d8;
+}
+:root.dark #thread-history [data-sidebar="menu-button"][data-active="true"] {
+  background: #1c2b55;
+  color: #8ba8ff;
+}
+#thread-history [data-sidebar="menu-button"] > span,
+#thread-history [data-sidebar="menu-button"] span:first-child {
+  min-width: 0;
   overflow: hidden;
-  transition: border-color var(--eg-motion-fast) var(--eg-motion-ease), transform var(--eg-motion-fast) var(--eg-motion-ease);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.eg-sidebar-brand:hover { border-color: hsl(var(--primary) / .38); transform: translateY(-1px); }
-.eg-sidebar-brand img { width: 22px; height: 22px; object-fit: contain; display: block; }
-
-.eg-sidebar-actions { display: flex; align-items: center; gap: 5px; }
-.eg-sidebar-actions button {
-  width: 34px !important;
-  height: 34px !important;
-  border-radius: 11px !important;
-  color: hsl(var(--sidebar-foreground) / .78) !important;
-}
-.eg-sidebar-actions button:hover {
-  background: hsl(var(--sidebar-accent)) !important;
-  color: hsl(var(--sidebar-accent-foreground)) !important;
-}
-.eg-sidebar-actions button svg { width: 19px !important; height: 19px !important; }
-
-.eg-sidebar-new-chat {
-  grid-column: 1 / -1;
-  width: 100% !important;
-  min-height: 42px !important;
-  justify-content: flex-start !important;
-  gap: 10px !important;
-  padding: 10px 13px !important;
-  border: 1px solid hsl(var(--sidebar-border) / .72) !important;
-  border-radius: 13px !important;
-  background: hsl(var(--card) / .82) !important;
-  color: hsl(var(--sidebar-foreground)) !important;
-  font-size: .87rem !important;
-  font-weight: 650 !important;
-}
-.eg-sidebar-new-chat:hover:not(:disabled) {
-  border-color: hsl(var(--primary) / .34) !important;
-  background: hsl(var(--sidebar-accent) / .72) !important;
-  color: hsl(var(--primary)) !important;
-}
-.eg-sidebar-new-chat svg { width: 19px !important; height: 19px !important; }
-.eg-sidebar-new-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Hidden state becomes a compact icon rail instead of disappearing entirely. */
-:root [data-sidebar="sidebar"].eg-sidebar-collapsed {
-  width: 76px !important;
-  transform: translateX(304px) !important;
-}
-:root .group.peer[data-state="collapsed"][data-collapsible="offcanvas"] {
-  width: 76px !important;
-}
-[data-sidebar="header"].eg-sidebar-header.eg-sidebar-collapsed,
-.eg-sidebar-header.eg-sidebar-header.eg-sidebar-collapsed,
-:root [data-sidebar="sidebar"].eg-sidebar-collapsed .eg-sidebar-header.eg-sidebar-header {
-  grid-template-columns: 1fr;
-  justify-items: center;
-  padding-inline: 11px !important;
-}
-:root [data-sidebar="sidebar"].eg-sidebar-collapsed .eg-sidebar-top {
-  flex-direction: column;
-  gap: 10px;
-}
-:root [data-sidebar="sidebar"].eg-sidebar-collapsed .eg-sidebar-actions {
-  flex-direction: column;
-  gap: 10px;
-}
-:root [data-sidebar="sidebar"].eg-sidebar-collapsed .eg-sidebar-new-chat {
-  width: 38px !important;
-  min-width: 38px !important;
-  padding: 9px !important;
-  justify-content: center !important;
-  border-radius: 12px !important;
-}
-:root [data-sidebar="sidebar"].eg-sidebar-collapsed .eg-sidebar-new-label { display: none; }
 
 /* Keep message and welcome content in one comfortable reading column. */
 #messages,
