@@ -14,17 +14,23 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import errno
 import os
-import fcntl
 import hashlib
 import json
 import math
 from pathlib import Path
 import sqlite3
+import sys
 import threading
 import time
 
 from .session_guard import RiskState, SessionGuard
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 
 class StateCapacityError(RuntimeError):
@@ -218,12 +224,27 @@ class RiskStateStore:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+b") as handle:
             os.chmod(lock_path, 0o600)
+            if sys.platform == "win32":
+                if handle.seek(0, os.SEEK_END) == 0:
+                    handle.write(b"\0")
+                    handle.flush()
+                handle.seek(0)
             deadline = time.monotonic() + self.lock_timeout
             while True:
                 try:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    if sys.platform == "win32":
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                     break
-                except BlockingIOError:
+                except OSError as error:
+                    retriable = sys.platform == "win32" and error.errno in {
+                        errno.EACCES,
+                        errno.EAGAIN,
+                        errno.EDEADLK,
+                    }
+                    if not retriable:
+                        raise
                     if time.monotonic() >= deadline:
                         raise StateLockTimeout(
                             "同一身份的上一轮安全状态仍在处理，请稍后重试。"
@@ -232,7 +253,11 @@ class RiskStateStore:
             try:
                 yield
             finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                if sys.platform == "win32":
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def get(self, exam_id: str, principal_key: str) -> SafetyBudget:
         key = (exam_id, principal_key)

@@ -12,7 +12,7 @@ from algosage.pipeline import AlgoSageTutor
 from algosage.schemas import AuditResult, Classification, Intent, LLMResult, PolicyDecision, TutorRequest
 from algosage.session_guard import SessionGuard, detect_disclosures
 
-LEAK = json.loads((Path(__file__).parent/'fixtures/knapsack_delivered_leak.json').read_text())
+LEAK = json.loads((Path(__file__).parent/'fixtures/knapsack_delivered_leak.json').read_text(encoding='utf-8'))
 STATE = '用表格记录考虑前 i 件物品、容量为 j 时的最大价值。'
 TRANSITION = '装入时取该物品的价值加上前一件物品在剩余容量下的最大价值；不装入则保留前一件的值，两者取较大值。'
 INIT = '没有物品或容量为零时，将表格中的值初始化为 0。'
@@ -31,20 +31,20 @@ def payload(disclosures=None, **overrides):
 
 class NaturalLanguageGateTests(unittest.TestCase):
     def test_ledger_alias_still_binds_subproblem_values_and_both_branches(self):
-        text=json.loads((Path(__file__).parent/'fixtures/knapsack_ledger_alias.json').read_text())['answer']
+        text=json.loads((Path(__file__).parent/'fixtures/knapsack_ledger_alias.json').read_text(encoding='utf-8'))['answer']
         for level in [1,2]:
             with self.subTest(level=level):
                 a=RuleLeakageScreener().review(text,PolicyDecision(Intent.KNOWLEDGE,level,'test'),True)
                 self.assertFalse(a.approved)
 
     def test_hint_cannot_deliver_both_branch_values_and_their_optimization(self):
-        text=json.loads((Path(__file__).parent/'fixtures/knapsack_hint_branches.json').read_text())['answer']
+        text=json.loads((Path(__file__).parent/'fixtures/knapsack_hint_branches.json').read_text(encoding='utf-8'))['answer']
         a=RuleLeakageScreener().review(text,P,True)
         self.assertFalse(a.approved)
         self.assertIn('transition',a.disclosures)
 
     def test_specific_problem_state_binding_at_concept_level_is_not_general_concept(self):
-        text=json.loads((Path(__file__).parent/'fixtures/knapsack_state_prose.json').read_text())['answer']
+        text=json.loads((Path(__file__).parent/'fixtures/knapsack_state_prose.json').read_text(encoding='utf-8'))['answer']
         a=RuleLeakageScreener().review(text,PolicyDecision(Intent.KNOWLEDGE,1,'test'),True)
         self.assertFalse(a.approved)
         self.assertIn('state_definition',a.disclosures)

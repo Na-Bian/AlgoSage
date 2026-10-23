@@ -45,3 +45,27 @@ Compose 只把宿主机回环地址 `127.0.0.1:8000` 暴露到本机；公网访
 - Chainlit 持久化用户记录。
 
 认证库中的关闭状态记录会保留，用于防止旧登录 Cookie 继续使用账号；后续如需缩短保留期或清理安全事件计数，应先通过法律与安全评审确定保留清单。
+
+## Windows Server 原生部署（当前 ECS）
+
+当前阿里云 ECS 是 Windows Server 2022，采用原生 Python 部署而不是 Docker：
+
+- Python：`C:\AlgoSage\Python313`
+- 应用：`C:\AlgoSage\app`
+- 虚拟环境：`C:\AlgoSage\app\.venv`
+- 运行数据：`C:\AlgoSage\app\.algosage`
+- 日志：`C:\AlgoSage\app\logs`
+- Windows 服务：`AlgoSage`，使用 NSSM 自启动
+- 监听：`0.0.0.0:80`
+- Windows 入站防火墙规则：`AlgoSage HTTP`
+
+常用服务命令：
+
+```powershell
+nssm status AlgoSage
+nssm restart AlgoSage
+nssm stop AlgoSage
+Get-Content C:\AlgoSage\app\logs\algosage-service.err.log -Tail 100
+```
+
+更新代码后至少同步修改过的源码文件并重启服务。`state_store.py` 已兼容 Windows；文件锁在 Windows 使用 `msvcrt`，在 Linux/macOS 继续使用 `fcntl`。Windows 环境读取 JSON/源码文件必须显式使用 UTF-8，不要依赖系统默认 ANSI 代码页。
