@@ -345,15 +345,17 @@
 
   buildCollapsedBar();
 
-  // Chainlit remounts the empty-state and chat-state composers. The retiring
-  // real node becomes the FLIP actor for this short state-driven hand-off; the
-  // incoming real node stays hidden until the actor reaches its measured
-  // destination. AI completion never controls the transition.
+  // Chainlit remounts the empty-state and chat-state composers. Submission
+  // events only arm the transition and measure the retiring node. The node is
+  // promoted to a FLIP actor when Chainlit actually removes it, so Enter and
+  // click handlers never compete with the real submit flow.
   const composerMotion = {
     phase: "idle",
     actor: null,
     stage: null,
     portal: null,
+    candidate: null,
+    firstRect: null,
     sourceParent: null,
     sourceNext: null,
     sourceStyle: null,
@@ -420,11 +422,11 @@
     composerMotion.ghost = null;
   }
 
-  function captureComposerActor(composer) {
-    const rect = composer.getBoundingClientRect();
-    composerMotion.sourceParent = composer.parentNode;
-    composerMotion.sourceNext = composer.nextSibling;
-    composerMotion.sourceStyle = composer.getAttribute("style");
+  function captureComposerActor(candidate, firstRect) {
+    const rect = firstRect || candidate.getBoundingClientRect();
+    composerMotion.sourceParent = candidate.parentNode;
+    composerMotion.sourceNext = candidate.nextSibling;
+    composerMotion.sourceStyle = candidate.getAttribute("style");
 
     const stage = document.createElement("div");
     stage.className = "eg-composer-motion-stage";
@@ -433,28 +435,24 @@
     stage.style.width = `${rect.width}px`;
     stage.style.height = `${rect.height}px`;
 
-    composer.classList.add("eg-composer-motion-actor");
-    composer.dataset.egOriginalId = composer.id;
-    composer.removeAttribute("id");
-    composer.style.width = "100%";
-    stage.append(composer);
+    candidate.classList.add("eg-composer-motion-actor");
+    candidate.dataset.egOriginalId = candidate.id || "message-composer";
+    candidate.removeAttribute("id");
+    candidate.style.width = "100%";
+    stage.append(candidate);
     ensureMotionPortal().append(stage);
-    composerMotion.actor = composer;
+    composerMotion.actor = candidate;
     composerMotion.stage = stage;
     return rect;
   }
 
   function releaseComposerActor(target) {
-    if (target) {
-      target.classList.remove("eg-motion-hidden");
-    }
+    if (target) target.classList.remove("eg-motion-hidden");
     composerMotion.stage?.remove();
     composerMotion.portal?.remove();
     if (composerMotion.actor) {
       composerMotion.actor.classList.remove("eg-composer-motion-actor");
-      if (!document.getElementById(composerMotion.actor.dataset.egOriginalId || "")) {
-        composerMotion.actor.id = composerMotion.actor.dataset.egOriginalId || "";
-      }
+      delete composerMotion.actor.dataset.egMotionCandidate;
       delete composerMotion.actor.dataset.egOriginalId;
       composerMotion.actor.style.removeProperty("width");
       composerMotion.actor.style.removeProperty("height");
@@ -462,6 +460,8 @@
     composerMotion.actor = null;
     composerMotion.stage = null;
     composerMotion.portal = null;
+    composerMotion.candidate = null;
+    composerMotion.firstRect = null;
     composerMotion.sourceParent = null;
     composerMotion.sourceNext = null;
     composerMotion.sourceStyle = null;
@@ -472,43 +472,38 @@
     composerMotion.direction = "none";
   }
 
-  function restoreComposerActor() {
-    const actor = composerMotion.actor;
-    if (actor && composerMotion.sourceParent?.isConnected) {
-      composerMotion.sourceParent.insertBefore(actor, composerMotion.sourceNext);
-      if (composerMotion.sourceStyle === null) {
-        actor.removeAttribute("style");
-      } else {
-        actor.setAttribute("style", composerMotion.sourceStyle);
+  function disarmComposerCandidate() {
+    const candidate = composerMotion.candidate;
+    if (candidate?.isConnected) {
+      delete candidate.dataset.egMotionCandidate;
+      if (candidate.dataset.egOriginalId) {
+        candidate.id = candidate.dataset.egOriginalId;
+        delete candidate.dataset.egOriginalId;
       }
-      actor.classList.remove("eg-composer-motion-actor");
-      if (composerMotion.sourceParent?.isConnected && !document.getElementById(actor.dataset.egOriginalId || "")) {
-        actor.id = actor.dataset.egOriginalId || "";
-      }
-      delete actor.dataset.egOriginalId;
     }
-    composerMotion.stage?.remove();
-    composerMotion.portal?.remove();
+    const welcome = activeWelcome();
+    welcome?.querySelector(".eg-welcome-brand")?.classList.remove("eg-motion-hidden");
     removeMotionGhost();
-    composerMotion.reverseEligible = false;
-    composerMotion.direction = "none";
-    composerMotion.actor = null;
-    composerMotion.stage = null;
-    composerMotion.portal = null;
+    composerMotion.candidate = null;
+    composerMotion.firstRect = null;
     composerMotion.sourceParent = null;
     composerMotion.sourceNext = null;
     composerMotion.sourceStyle = null;
     composerMotion.phase = "idle";
+    composerMotion.direction = "none";
     composerMotion.timer = 0;
   }
 
   function settleMotionImmediately() {
-    if (composerMotion.phase === "idle") return;
-    const target = activeComposer();
-    if (target && target !== composerMotion.actor) {
-      releaseComposerActor(target);
-    } else {
-      restoreComposerActor();
+    if (composerMotion.phase === "waiting-chat" || composerMotion.phase === "waiting-welcome") {
+      const target = activeComposer();
+      if (target && target !== composerMotion.actor) releaseComposerActor(target);
+      else if (composerMotion.actor) releaseComposerActor(null);
+      else disarmComposerCandidate();
+      return;
+    }
+    if (composerMotion.phase === "armed-chat" || composerMotion.phase === "armed-welcome") {
+      disarmComposerCandidate();
     }
   }
 
@@ -528,37 +523,29 @@
     ).finished;
   }
 
-  function beginForwardTransition() {
-    if (reduceMotionQuery.matches) return false;
-    const welcome = activeWelcome();
-    const composer = activeComposer();
-    if (!welcome || !composer || !composerHasPayload(composer)) return false;
-
+  function activateForwardActor(candidate) {
+    if (composerMotion.phase !== "armed-chat") return;
+    window.clearTimeout(composerMotion.timer);
+    const firstRect = captureComposerActor(candidate, composerMotion.firstRect);
     composerMotion.phase = "waiting-chat";
-    composerMotion.direction = "to-chat";
-    const firstRect = captureComposerActor(composer);
-    const brand = welcome.querySelector(".eg-welcome-brand");
-    const brandGhost = captureGhost(brand, "eg-brand-exit-ghost");
-    if (brand) brand.classList.add("eg-motion-hidden");
 
     const started = performance.now();
     const duration = isCoarsePointer() ? 320 : 520;
     composerMotion.timer = window.setInterval(() => {
       const target = activeComposer();
       if (!target || target === composerMotion.actor) {
-        if (performance.now() - started > 2400) restoreComposerActor();
+        if (performance.now() - started > 2400) {
+          window.clearInterval(composerMotion.timer);
+          releaseComposerActor(null);
+        }
         return;
       }
       window.clearInterval(composerMotion.timer);
-
       target.classList.add("eg-motion-hidden");
       const targetRect = target.getBoundingClientRect();
-      const userMessage = document.querySelector(
-        '[data-step-type="user_message"]'
-      );
+      const userMessage = document.querySelector('[data-step-type="user_message"]');
       if (userMessage) userMessage.classList.add("eg-first-message-reveal");
 
-      const delay = reduceMotionQuery.matches ? 0 : Math.max(0, 520 - duration);
       window.setTimeout(async () => {
         if (composerMotion.phase !== "waiting-chat") return;
         try {
@@ -570,31 +557,15 @@
         } catch (_) {
           settleMotionImmediately();
         }
-      }, delay);
+      }, 0);
     }, 24);
-    return true;
   }
 
-  function beginReverseTransition() {
-    if (reduceMotionQuery.matches) return false;
-    const composer = activeComposer();
-    if (!composer || activeWelcome() || !composerMotion.reverseEligible) {
-      composerMotion.reverseEligible = false;
-      return false;
-    }
-    composerMotion.reverseEligible = false;
-
+  function activateReverseActor(candidate) {
+    if (composerMotion.phase !== "armed-welcome") return;
+    window.clearTimeout(composerMotion.timer);
+    const firstRect = captureComposerActor(candidate, composerMotion.firstRect);
     composerMotion.phase = "waiting-welcome";
-    composerMotion.direction = "to-welcome";
-    const firstRect = captureComposerActor(composer);
-
-    const messageSurface = document.querySelector(
-      'main div.relative.flex.flex-col.flex-grow.overflow-y-auto'
-    );
-    if (messageSurface) {
-      captureGhost(messageSurface, "eg-chat-exit-ghost");
-      composerMotion.ghost?.classList.add("eg-chat-exit-ghost");
-    }
 
     const started = performance.now();
     const duration = isCoarsePointer() ? 220 : 350;
@@ -602,16 +573,16 @@
       const welcome = activeWelcome();
       const target = activeComposer();
       if (!welcome || !target || target === composerMotion.actor) {
-        if (performance.now() - started > 2000) restoreComposerActor();
+        if (performance.now() - started > 2000) {
+          window.clearInterval(composerMotion.timer);
+          releaseComposerActor(null);
+        }
         return;
       }
       window.clearInterval(composerMotion.timer);
-
       target.classList.add("eg-motion-hidden");
       const brand = welcome.querySelector(".eg-welcome-brand");
-      if (brand && !reduceMotionQuery.matches) {
-        brand.classList.add("eg-brand-reveal");
-      }
+      if (brand && !reduceMotionQuery.matches) brand.classList.add("eg-brand-reveal");
       const targetRect = target.getBoundingClientRect();
 
       window.setTimeout(async () => {
@@ -627,14 +598,85 @@
         }
       }, 0);
     }, 24);
+  }
+
+  const composerRemovalObserver = new MutationObserver((mutations) => {
+    if (composerMotion.phase !== "armed-chat" && composerMotion.phase !== "armed-welcome") return;
+    for (const mutation of mutations) {
+      for (const removedRoot of mutation.removedNodes) {
+        if (removedRoot.nodeType !== 1) continue;
+        const candidate = removedRoot.dataset?.egMotionCandidate === "1"
+          ? removedRoot
+          : removedRoot.querySelector?.('[data-eg-motion-candidate="1"]');
+        if (!candidate) continue;
+        if (composerMotion.phase === "armed-chat") activateForwardActor(candidate);
+        else if (composerMotion.phase === "armed-welcome") activateReverseActor(candidate);
+        return;
+      }
+    }
+  });
+  composerRemovalObserver.observe(document.body, { childList: true, subtree: true });
+
+  function armForwardTransition() {
+    const welcome = activeWelcome();
+    const composer = activeComposer();
+    if (!welcome || !composer || !composerHasPayload(composer)) return false;
+    composerMotion.phase = "armed-chat";
+    composerMotion.direction = "to-chat";
+    composerMotion.candidate = composer;
+    composerMotion.firstRect = composer.getBoundingClientRect();
+    composer.dataset.egMotionCandidate = "1";
+    const brand = welcome.querySelector(".eg-welcome-brand");
+    captureGhost(brand, "eg-brand-exit-ghost");
+    if (brand) brand.classList.add("eg-motion-hidden");
+    composerMotion.timer = window.setTimeout(() => {
+      if (composerMotion.phase === "armed-chat") disarmComposerCandidate();
+    }, 2000);
     return true;
+  }
+
+  function beginForwardTransition() {
+    if (reduceMotionQuery.matches) return false;
+    const result = armForwardTransition();
+    if (!result) composerMotion.direction = "none";
+    return result;
+  }
+
+  function armReverseTransition() {
+    const composer = activeComposer();
+    if (!composer || activeWelcome()) return false;
+    composerMotion.phase = "armed-welcome";
+    composerMotion.direction = "to-welcome";
+    composerMotion.candidate = composer;
+    composerMotion.firstRect = composer.getBoundingClientRect();
+    composer.dataset.egMotionCandidate = "1";
+    composerMotion.timer = window.setTimeout(() => {
+      if (composerMotion.phase === "armed-welcome") disarmComposerCandidate();
+    }, 2000);
+
+    const messageSurface = document.querySelector(
+      "main div.relative.flex.flex-col.flex-grow.overflow-y-auto"
+    );
+    if (messageSurface) {
+      captureGhost(messageSurface, "eg-chat-exit-ghost");
+      composerMotion.ghost?.classList.add("eg-chat-exit-ghost");
+    }
+    return true;
+  }
+
+  function beginReverseTransition() {
+    if (reduceMotionQuery.matches) {
+      composerMotion.reverseEligible = false;
+      return false;
+    }
+    const result = armReverseTransition();
+    if (!result) composerMotion.direction = "none";
+    return result;
   }
 
   function visibleNewChatButton(eventTarget) {
     const button = eventTarget?.closest?.('[aria-label="新建对话"]');
-    return button && Boolean(button.offsetWidth || button.offsetHeight)
-      ? button
-      : null;
+    return button && Boolean(button.offsetWidth || button.offsetHeight) ? button : null;
   }
 
   document.addEventListener(
@@ -647,15 +689,15 @@
       if (submit && composerMotion.phase === "idle" && activeWelcome()) {
         const composer = activeComposer();
         if (composer?.contains(submit) && composerHasPayload(composer)) {
-          composerMotion.guardUntil = now + 700;
+          composerMotion.guardUntil = now + 900;
           beginForwardTransition();
         }
         return;
       }
 
       if (visibleNewChatButton(event.target)) {
-        if (composerMotion.phase === "idle" && !activeWelcome()) {
-          composerMotion.guardUntil = now + 700;
+        if (composerMotion.phase === "idle" && !activeWelcome() && composerMotion.reverseEligible) {
+          composerMotion.guardUntil = now + 900;
           beginReverseTransition();
         }
       }
@@ -666,19 +708,11 @@
   document.addEventListener(
     "keydown",
     (event) => {
-      if (
-        event.key !== "Enter" ||
-        event.shiftKey ||
-        composerMotion.phase !== "idle"
-      ) {
-        return;
-      }
+      if (event.key !== "Enter" || event.shiftKey || composerMotion.phase !== "idle") return;
       const composer = activeComposer();
-      if (!composer || !activeWelcome() || !composer.contains(event.target)) {
-        return;
-      }
+      if (!composer || !activeWelcome() || !composer.contains(event.target)) return;
       if (!composerHasPayload(composer)) return;
-      composerMotion.guardUntil = performance.now() + 700;
+      composerMotion.guardUntil = performance.now() + 900;
       beginForwardTransition();
     },
     true
