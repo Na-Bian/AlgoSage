@@ -395,8 +395,12 @@ class ChainlitAttachmentInputTests(unittest.TestCase):
             r"#welcome-screen\s+(?:img|svg)\s*\{",
             "welcome icon hiding must stay scoped to welcome content",
         )
-        self.assertIn("#welcome-screen > div:first-child img", css)
-        self.assertIn("#welcome-screen > div:first-child svg", css)
+        # The empty-state redesign hides the whole server-provided intro block,
+        # not every image/svg below #welcome-screen (which would break upload
+        # and send controls).
+        self.assertIn("#welcome-screen > div:first-child {", css)
+        self.assertIn("display: none !important;", css)
+        self.assertIn("eg-welcome-brand .eg-logo-dark", css)
 
 
 if __name__ == "__main__":

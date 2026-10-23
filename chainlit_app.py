@@ -47,7 +47,7 @@ _LEVEL_BADGES = {
     3: "L3 · 局部代码诊断",
 }
 
-WELCOME_TMPL = """### 🧭 AlgoSage · 知衡
+WELCOME_TMPL = """### AlgoSage · 知衡
 
 正式版开发中：面向算法学习的个人问答场景，提供分级辅导、代码调试与输出审核；**不构成代写完整作业的保障**。
 

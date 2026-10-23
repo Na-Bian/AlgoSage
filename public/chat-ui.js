@@ -253,14 +253,34 @@
     if (!heading || !lede || !configCard || !usageHeading || !usageList) return false;
 
     welcome.dataset.egChatUi = "1";
-    welcome.classList.add("eg-welcome");
+    welcome.classList.add("eg-welcome", "eg-empty-welcome");
+    welcome.setAttribute("aria-label", "AlgoSage 新会话");
 
-    // Chainlit puts a 48rem max-width inline on this container. Use the wider
-    // workspace column without fighting the inline declaration from CSS.
+    // #message-composer is already mounted inside #welcome-screen. Keep it in
+    // React's original tree so drafts, uploads, disabled state and submit all
+    // share exactly one component; this is a layout transform, not a clone.
+    const details = heading.closest(".prose")?.parentElement;
+    if (details) details.hidden = true;
+
+    const brand = document.createElement("div");
+    brand.className = "eg-welcome-brand";
+    brand.innerHTML = `
+      <img class="eg-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">
+      <img class="eg-logo-light" src="/public/brand-logo-light.png" alt="">
+    `;
+    const nativeComposer = welcome.querySelector("#message-composer");
+    if (nativeComposer) {
+      welcome.insertBefore(brand, nativeComposer);
+    } else {
+      welcome.append(brand);
+    }
+
+    // Chainlit puts a 48rem max-width inline on this container. Use the compact
+    // welcome column without fighting the inline declaration from CSS.
     const container = welcome.parentElement;
     if (container) {
-      container.style.width = "min(58rem, 100%)";
-      container.style.maxWidth = "min(58rem, 100%)";
+      container.style.width = "min(54rem, 100%)";
+      container.style.maxWidth = "min(54rem, 100%)";
     }
     heading.classList.add("eg-welcome-title");
     lede.classList.add("eg-welcome-lede");
@@ -289,6 +309,30 @@
     return true;
   }
 
+  function enhanceReadmeDetails() {
+    const dialog = Array.from(document.querySelectorAll('[role="dialog"]')).find(
+      (node) => node.querySelector(':scope > div > div > h2')?.textContent.trim() === "说明"
+    );
+    if (!dialog || dialog.dataset.egRuntimeDetails === "1") return false;
+
+    const source = document.querySelector(
+      '#welcome-screen.eg-empty-welcome > div:first-child'
+    );
+    const prose = dialog.querySelector(':scope > div > .prose');
+    if (!source || !prose) return false;
+
+    const section = document.createElement("section");
+    section.className = "eg-readme-runtime";
+    const title = document.createElement("h2");
+    title.textContent = "当前运行配置";
+    const configCard = source.querySelector(".eg-config-card");
+    if (!configCard) return false;
+    section.append(title, configCard.cloneNode(true));
+    prose.append(section);
+    dialog.dataset.egRuntimeDetails = "1";
+    return true;
+  }
+
   buildCollapsedBar();
 
   function scheduleEnhance() {
@@ -300,6 +344,7 @@
       enhanceStepStatusIcons();
       translateStepLabels();
       enhanceWelcome();
+      enhanceReadmeDetails();
     });
   }
 

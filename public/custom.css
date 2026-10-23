@@ -197,51 +197,70 @@ body.eg-chat-shell main :is(
   margin-inline: auto;
 }
 
-/* 欢迎文案由原生 ChatProfile 的初始化配置渲染，不等待 WebSocket 消息。
-   与消息视图使用同一阅读宽度、顶部对齐和底部输入区，避免新建时整屏跳动。 */
+/* Empty-chat welcome is one CSS group around the official brand and the
+   React-owned composer. No second composer is created or reparented. */
 main div:has(> #welcome-screen) {
   min-height: 0;
   height: 100%;
   flex: 1 1 0%;
-  padding-bottom: 0; /* 外层 ChatFooter 容器已预留底部 1rem，避免重复留白。 */
+  padding-bottom: 0;
 }
 
 #welcome-screen {
-  max-width: min(928px, 100%);
+  max-width: min(860px, 100%);
   min-height: 0;
   margin-top: 0;
-  align-items: stretch;
-  justify-content: flex-start;
-  gap: 0;
   opacity: 1;
   transition: none;
 }
 
-#welcome-screen > div:first-child img,
-#welcome-screen > div:first-child svg {
-  display: none;
-}
-
+/* Keep server-provided runtime details out of the first paint, then expose the
+   same nodes through the existing Readme dialog. */
 #welcome-screen > div:first-child {
-  align-items: stretch;
-  min-height: 0;
-  overflow-y: auto;
-  flex: 1 1 auto;
-  margin-bottom: 1.5rem;
+  display: none !important;
 }
 
-#welcome-screen #message-composer {
-  margin-top: auto;
+#welcome-screen.eg-empty-welcome {
+  display: grid;
+  grid-template-columns: min(840px, 100%);
+  grid-template-rows: auto auto auto;
+  align-content: center;
+  justify-items: center;
+  row-gap: 30px;
+  padding-block: clamp(16px, 2dvh, 28px) clamp(28px, 7dvh, 88px);
+}
+
+.eg-welcome-brand {
+  grid-row: 1;
+  width: clamp(214px, 22vw, 262px);
+}
+
+.eg-welcome-brand img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.eg-welcome-brand .eg-logo-dark,
+:root.dark .eg-welcome-brand .eg-logo-light { display: none; }
+:root.dark .eg-welcome-brand .eg-logo-dark,
+:root:not(.dark) .eg-welcome-brand .eg-logo-light { display: block; }
+
+#welcome-screen.eg-empty-welcome #message-composer {
+  grid-row: 2;
+  margin: 0;
+  width: 100%;
 }
 
 /* 空会话尚无 ChatFooter，保留与正文视图相同的输入区提示和间距。 */
 #welcome-screen::after {
+  grid-row: 3;
   content: "大语言模型可能会犯错。请核实重要信息。";
+  width: 100%;
   color: hsl(var(--muted-foreground));
   font-size: 0.75rem;
   line-height: 1rem;
   text-align: center;
-  margin-top: 0.5rem;
 }
 
 /* ---------- 消息气泡 ---------- */
@@ -940,25 +959,13 @@ body.eg-sidebar-collapsed .eg-collapsed-bar {
 }
 .eg-collapsed-pill .eg-sidebar-icon-button { border-radius: 999px; }
 
-/* Keep message and welcome content in one comfortable reading column. */
-#messages,
-#welcome-screen {
+/* Keep message content in one comfortable reading column. */
+#messages {
   max-width: min(928px, 100%);
 }
 main div:has(> #welcome-screen) > div {
-  width: min(58rem, 100%) !important;
-  max-width: min(58rem, 100%) !important;
-}
-
-/* Welcome header and lede. */
-#welcome-screen {
-  gap: 18px;
-  align-items: stretch;
-  justify-content: flex-start;
-  padding-top: clamp(6px, 1.5vh, 20px);
-}
-#welcome-screen > div:first-child {
-  padding: 4px 0 0 var(--eg-message-text-inset);
+  width: min(54rem, 100%) !important;
+  max-width: min(54rem, 100%) !important;
 }
 #welcome-screen .eg-welcome-title {
   display: flex;
@@ -1180,9 +1187,20 @@ body.eg-chat-shell :is(
 }
 #user-nav-button > span { width: 100% !important; height: 100% !important; }
 
-/* Footer remains quiet below the primary composer. */
+/* Runtime details were removed from the empty state but stay available in the
+   existing Readme dialog. */
+.eg-readme-runtime {
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid hsl(var(--border));
+}
+.eg-readme-runtime > h2 {
+  margin: 0 0 12px !important;
+  font-size: 1.25rem !important;
+}
+/* Footer stays visually attached to the welcome composer. */
 #welcome-screen::after {
-  margin-top: 10px !important;
+  margin-top: -18px !important;
   color: hsl(var(--muted-foreground) / .78) !important;
   font-size: .74rem !important;
 }
@@ -1204,7 +1222,7 @@ main div:has(> #messages) { overflow: visible; }
 @media (max-width: 640px) {
   #header { padding: 10px 12px !important; }
   #readme-button { padding: 7px 10px !important; }
-  #welcome-screen .eg-welcome-title { font-size: 25px !important; }
+  .eg-welcome-brand { width: min(196px, 58vw); }
   body.eg-chat-shell main :is(
     div.flex.flex-col.mx-auto.w-full.flex-grow.p-4,
     div.flex.flex-col.mx-auto.w-full.p-4.pt-0
