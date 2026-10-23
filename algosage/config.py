@@ -52,6 +52,9 @@ class Settings:
     # 9 covers classification + generation + one Judge repair + quality review,
     # plus one audited regeneration cycle with Judge and quality review.
     max_calls_per_turn: int = 9
+    max_input_chars: int = 20_000
+    daily_requests_per_student: int = 100
+    global_daily_requests: int = 1_000
     turn_timeout: float = 180.0
     classifier_max_output_tokens: int = 256
     judge_max_output_tokens: int = 768
@@ -71,6 +74,10 @@ class Settings:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
+        for name in ("max_input_chars", "daily_requests_per_student", "global_daily_requests"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
         if not math.isfinite(self.turn_timeout) or self.turn_timeout <= 0:
             raise ValueError("turn_timeout must be finite and positive")
         if (
@@ -132,6 +139,13 @@ class Settings:
                 "SAGE_STATE_FILE", ".algosage/state.sqlite3"
             ),
             max_calls_per_turn=int(os.environ.get("SAGE_MAX_CALLS_PER_TURN", "9")),
+            max_input_chars=int(os.environ.get("SAGE_MAX_INPUT_CHARS", "20000")),
+            daily_requests_per_student=int(
+                os.environ.get("SAGE_DAILY_REQUESTS_PER_STUDENT", "100")
+            ),
+            global_daily_requests=int(
+                os.environ.get("SAGE_GLOBAL_DAILY_REQUESTS", "1000")
+            ),
             turn_timeout=float(os.environ.get("SAGE_TURN_TIMEOUT_SECONDS", "180")),
             classifier_max_output_tokens=int(
                 os.environ.get("SAGE_CLASSIFIER_MAX_OUTPUT_TOKENS", "256")

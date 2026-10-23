@@ -1,0 +1,27 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.lock
+      - name: Offline tests
+        env:
+          APP_MODE: mock
+          SAGE_STATE_FILE: ""
+        run: python -m pytest -q
+      - name: Chainlit E2E
+        env:
+          APP_MODE: mock
+          SAGE_STATE_FILE: ""
+        run: python e2e_chainlit_check.py

@@ -32,3 +32,22 @@ def runtime_path(name: str, default: str) -> str:
         return value
     path = Path(value).expanduser()
     return str((path if path.is_absolute() else application_root() / path).resolve())
+
+
+def protect_runtime_file(path: str) -> None:
+    """Keep durable personal data private to the service process owner."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.parent.chmod(0o700)
+    candidates = (target, Path(str(target) + "-wal"), Path(str(target) + "-shm"))
+    for candidate in candidates:
+        if candidate.exists():
+            candidate.chmod(0o600)
+
+
+def protect_runtime_tree(root: Path) -> None:
+    """Harden an existing runtime tree without changing or deleting data."""
+    root.mkdir(parents=True, exist_ok=True)
+    root.chmod(0o700)
+    for path in root.rglob("*"):
+        path.chmod(0o700 if path.is_dir() else 0o600)

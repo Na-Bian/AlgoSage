@@ -9,10 +9,31 @@
 
   let sidebarRefs = null;
   let collapsedBar = null;
+  const STEP_LABELS = {
+    "generation-safety-review": "生成与安全审核",
+    "security-audit-policy": "安全审计与策略",
+  };
+
+  function translateStepLabels() {
+    document.querySelectorAll('main button[id^="step-"]').forEach((button) => {
+      const safeName = decodeURIComponent(button.id.slice("step-".length));
+      const label = STEP_LABELS[safeName];
+      if (!label || button.dataset.egStepLabel === label) return;
+
+      button.dataset.egStepLabel = label;
+      button.childNodes.forEach((node) => {
+        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+          node.textContent = node.textContent.replace(safeName, label);
+        }
+      });
+    });
+  }
+
   const SIDEBAR_ICONS = {
     panel: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 4v16"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>',
     squarePen: '<path d="M12 3h5a2 2 0 0 1 2 2v5"/><path d="M18.4 3.6a2.1 2.1 0 0 1 3 3L11 17l-4 1 1-4Z"/>',
+    shieldCheck: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
   };
 
   function makeIconControl(label, svgPath, onClick) {
@@ -33,6 +54,27 @@
     button.append(icon);
     button.addEventListener("click", onClick);
     return button;
+  }
+
+  function storedSidebarOpen() {
+    const match = document.cookie.match(
+      /(?:^|;\s*)sidebar:state=(true|false)(?:;|$)/
+    );
+    return match ? match[1] === "true" : null;
+  }
+
+  function restoreSidebarPreference(group, trigger) {
+    const preferredOpen = storedSidebarOpen();
+    if (preferredOpen === null) return false;
+
+    const currentOpen = group.dataset.state !== "collapsed";
+    if (currentOpen === preferredOpen) return false;
+
+    // Chainlit writes this cookie on manual collapse, but its SidebarProvider
+    // does not read it after `/thread/:id` and `/` remount the page layout.
+    // Restore the user's choice before updating the custom presentation.
+    trigger.click();
+    return true;
   }
 
   function enhanceSidebar() {
@@ -110,9 +152,14 @@
     );
     sidebarRefs.collapseControl.title = sidebarRefs.collapseControl.getAttribute("aria-label");
 
+    if (restoreSidebarPreference(group, sourceTrigger)) return false;
+
     const collapsed = group.dataset.state === "collapsed";
     document.body.classList.toggle("eg-sidebar-collapsed", collapsed);
     if (collapsedBar) {
+      if (!collapsed && collapsedBar.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
       collapsedBar.id = "eg-collapsed-bar";
       collapsedBar.className = "eg-collapsed-bar";
       collapsedBar.classList.toggle("eg-sidebar-collapsed", collapsed);
@@ -140,6 +187,40 @@
     pill.append(expandButton, searchButton, newButton);
     collapsedBar.append(logo, pill);
     document.body.append(collapsedBar);
+  }
+
+  function enhanceStepStatusIcons() {
+    document.querySelectorAll('main button[id^="step-"]').forEach((button) => {
+      const row = button.closest(".ai-message");
+      const host = row?.querySelector(":scope > span");
+      if (!host) return;
+
+      const frame = host.firstElementChild || host;
+      host.classList.add("eg-step-avatar");
+      frame.classList.add("eg-step-avatar-shell");
+      frame.setAttribute("aria-hidden", "true");
+
+      const nativeVisual = frame.querySelector(
+        "svg:not(.eg-step-status-icon), img"
+      );
+      const existing = frame.querySelector(".eg-step-status-icon");
+      if (nativeVisual) {
+        existing?.remove();
+        return;
+      }
+      if (existing) return;
+
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.classList.add("eg-step-status-icon");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("fill", "none");
+      icon.setAttribute("stroke", "currentColor");
+      icon.setAttribute("stroke-width", "2");
+      icon.setAttribute("stroke-linecap", "round");
+      icon.setAttribute("stroke-linejoin", "round");
+      icon.innerHTML = SIDEBAR_ICONS.shieldCheck;
+      frame.append(icon);
+    });
   }
 
   function enhanceWelcome() {
@@ -198,6 +279,8 @@
     requestAnimationFrame(() => {
       scheduled = false;
       enhanceSidebar();
+      enhanceStepStatusIcons();
+      translateStepLabels();
       enhanceWelcome();
     });
   }

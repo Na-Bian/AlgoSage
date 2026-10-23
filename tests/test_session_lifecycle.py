@@ -51,6 +51,27 @@ class LifecycleTests(unittest.TestCase):
         other = svc.new_context("c", principal_id="student-2")
         self.assertEqual(other.session_guard.snapshot(), {})
 
+    def test_daily_request_quota_is_shared_by_student_principal(self):
+        from algosage.state_store import UsageLimitExceeded
+
+        svc = service(state_path="", daily_requests_per_student=1)
+        first = svc.new_context("first", principal_id="student:alice")
+        second = svc.new_context("second", principal_id="student:alice")
+        svc.chat(first, "解释 KMP 前缀函数")
+        with self.assertRaises(UsageLimitExceeded):
+            svc.chat(second, "解释深度优先搜索")
+        self.assertEqual(len(second.history), 0)
+
+    def test_global_daily_request_quota_is_shared_across_principals(self):
+        from algosage.state_store import UsageLimitExceeded
+
+        svc = service(state_path="", global_daily_requests=1)
+        alice = svc.new_context("a", principal_id="student:alice")
+        bob = svc.new_context("b", principal_id="student:bob")
+        svc.chat(alice, "解释 KMP 前缀函数")
+        with self.assertRaises(UsageLimitExceeded):
+            svc.chat(bob, "解释深度优先搜索")
+
     def test_same_session_cannot_rebind_principal(self):
         svc = service()
         svc.new_context("a", principal_id="student-1")

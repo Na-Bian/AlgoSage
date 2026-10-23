@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import io
+import asyncio
 import json
 import os
 import re
@@ -25,6 +26,7 @@ from chainlit.server import UserParam
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from .emailer import EmailMessage, EmailSender
+from .runtime_paths import protect_runtime_file
 
 _HUST_PATTERN = re.compile(r"^U202[0-9]1[0-9]{4}$")
 _CODE_ALPHABET = "0123456789"
@@ -173,7 +175,13 @@ def _student_from_request(request: Request) -> Any:
     return user if identifier.startswith("student:") else None
 
 
-def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=None) -> None:
+def install_profile_routes(
+    app: Any,
+    student_auth_factory,
+    chat_store_factory=None,
+    state_store_factory=None,
+    personal_state_factory=None,
+) -> None:
     """Install HUST profile APIs, avatar delivery, and the standalone profile page."""
     if getattr(app.state, "algosage_profile_routes_installed", False):
         return
@@ -300,13 +308,32 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
         return _issue_profile_cookie(request, account, payload)
 
     @router.get("/auth/profile")
-    async def read_profile(current_user: UserParam):
+    async def read_profile(request: Request, current_user: UserParam):
         if not current_user:
             raise HTTPException(status_code=401, detail="Unauthorized")
         account = student_auth().store.get_account(_student_id(current_user))
         if not account:
             raise HTTPException(status_code=404, detail="Profile not found")
-        return _profile_payload(account)
+        avatar_url = (
+            f"/auth/avatar/me?v={account['avatar_updated_at']}"
+            if account.get("avatar_mime")
+            else ""
+        )
+        principal_id = _student_id(current_user)
+        if chat_store_factory is not None:
+            await chat_store_factory().update_user_metadata(
+                f"student:{principal_id}",
+                {
+                    "provider": "hust-student",
+                    "student_id": account["student_id"],
+                    "session_version": int(account["session_version"]),
+                    "image": avatar_url,
+                },
+                account["nickname"],
+            )
+        # Re-sign the session so a pre-avatar login cookie cannot keep asking
+        # for an image that was never uploaded.
+        return _issue_profile_cookie(request, account, _profile_payload(account))
 
     @router.post("/auth/profile/close", include_in_schema=False)
     async def close_account(
@@ -324,6 +351,26 @@ def install_profile_routes(app: Any, student_auth_factory, _chat_store_factory=N
                 current_password=payload.current_password,
                 confirmation=payload.confirmation,
             )
+            if chat_store_factory is not None:
+                await chat_store_factory().delete_all_personal_data(
+                    f"student:{student_id}"
+                )
+            if state_store_factory is not None:
+                state_store_factory().delete_principal(
+                    "personal", f"principal:{student_id}"
+                )
+            if personal_state_factory is not None:
+                learning_state = personal_state_factory()
+                await asyncio.to_thread(
+                    learning_state.forget_personal_state,
+                    learning_state.settings.exam_id,
+                    student_id,
+                )
+                if state_store_factory is not None:
+                    state_store_factory().delete_principal(
+                        learning_state.settings.exam_id,
+                        f"principal:{student_id}",
+                    )
         except AuthValidationError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         except AuthCredentialsError as error:
@@ -480,6 +527,8 @@ class StudentAuthStore:
             if column not in columns:
                 self._conn.execute(statement)
         self._conn.commit()
+        if path != ":memory:":
+            protect_runtime_file(path)
 
     def close(self) -> None:
         with self._lock:
@@ -620,11 +669,17 @@ class StudentAuthStore:
         return True
 
     def close_account(self, student_id: str) -> bool:
-        """Close an account and invalidate every issued session immediately."""
+        """Close an account, invalidate sessions, and minimize retained identity."""
         changed = _iso(_now())
         with self._lock:
+            self._conn.execute(
+                "DELETE FROM verification_codes WHERE student_id=?",
+                (student_id,),
+            )
             cursor = self._conn.execute(
                 "UPDATE student_accounts SET status='closed', failed_login_count=0, locked_until=NULL, "
+                "nickname='已注销用户', email='closed.'||hex(randomblob(12))||'@invalid', "
+                "password_hash='!closed-account', "
                 "avatar_data=NULL, avatar_mime=NULL, avatar_updated_at='', "
                 "session_version=session_version+1, updated_at=? WHERE student_id=? AND status='active'",
                 (changed, student_id),

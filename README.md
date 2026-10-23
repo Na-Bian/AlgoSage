@@ -1,6 +1,6 @@
 # AlgoSage：算法课程分级辅助与多轮披露防护
 
-AlgoSage 是面向算法学习与受限考试场景的智能助教，使用 Python、Chainlit 和开源轻量模型托管 API。包含五类意图识别、可信考试策略、受限生成、输出审核、同题披露预算和独立批量 Harness。
+AlgoSage 是面向算法学习的个人问答智能助教，使用 Python、Chainlit 和开源轻量模型托管 API。账号、会话、附件与偏好按 HUST 学生身份隔离；服务端保留分级辅导、受限生成、输出审核、同题披露预算和独立批量 Harness，用于避免直接代写完整作业。
 
 项目处于正式版开发阶段。发布目标、修复顺序和验收门槛见 [正式版路线图](docs/FORMAL_RELEASE_ROADMAP.md)。项目最初对应《算法设计与分析》作业指南第 5 页课题二；历史开发评测不能替代正式版的行为与部署验收。
 
@@ -27,7 +27,7 @@ APP_MODE=mock python smoke_check.py
 APP_MODE=mock python e2e_chainlit_check.py
 ```
 
-学生端默认 `http://127.0.0.1:8000`。`run_app.py` 使用原生 uvicorn；本项目在 Python 3.15 上使用它绕开 Chainlit CLI / nest_asyncio 的已知静态资源问题。E2E 覆盖真实起服、Socket.IO 会话及 HTTP 伪造教师重置被拒，不等于浏览器视觉或真实模型效果验证。
+学生端默认 `http://127.0.0.1:8000`。`run_app.py` 使用原生 uvicorn；本项目在 Python 3.15 上使用它绕开 Chainlit CLI / nest_asyncio 的已知静态资源问题。E2E 覆盖真实起服、Socket.IO 会话及已移除教师重置入口，不等于浏览器视觉或真实模型效果验证。
 
 API 模式在本地未跟踪 `.env` 中设置 `APP_MODE=api`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`。本地使用过 SiliconFlow 的 `Qwen/Qwen3.5-9B`，历史配置 `enable_thinking=false`；模型可用性以服务商账号为准。不要将密钥写入源码、日志、截图或提交包。
 
@@ -39,7 +39,7 @@ streamlit run app.py
 python demo_cli.py --mode api '解释摊还复杂度'
 ```
 
-教师评测页提供 `info` 和 `run smoke`，API 批量调用需命令追加 `confirm-api`。它仅支持 smoke 的 `question/expected_intent` schema，会明确拒绝正式 Harness schema；正式多轮和消融使用下面的 CLI。
+开发者评测页提供 `info` 和 `run smoke`，API 批量调用需命令追加 `confirm-api`。它仅支持 smoke 的 `question/expected_intent` schema，会明确拒绝正式 Harness schema；正式多轮和消融使用下面的 CLI。
 
 ### 学生端功能
 
@@ -69,7 +69,7 @@ python demo_cli.py --mode api '解释摊还复杂度'
   送达学生（`deliver_response`）。未审草稿不直达前端；审核未完成或违规时替换为
   安全回退文案。等待期由"生成与安全审核"步骤展示进度。
 - 本地模式按浏览器 cookie 标识（`browser:` 前缀），这不是学生认证。服务重启后若
-  界面无法连接，硬刷新一次页面让浏览器重新获取身份即可。实际考试须接入教师认可的认证。
+  界面无法连接，硬刷新一次页面让浏览器重新获取身份即可。
 
 ## 当前控制链
 
@@ -108,10 +108,10 @@ python demo_cli.py --mode api '解释摊还复杂度'
 | `SAGE_CLASSIFIER_MODE` | `regex` / `hybrid` |
 | `SAGE_OUTPUT_GUARD` | `rules` / `layered`；`basic` 仅作弱基线对照 |
 | `SAGE_POLICY_FILE` | 可信策略 JSON；非法直接拒绝启动，逐题覆盖只允许收紧当前全局等级 |
-| `SAGE_EXAM_ID` | 服务端考试标识，缺省 `demo`；每场考试应单独配置 |
+| `SAGE_EXAM_ID` | 服务端学习保护状态分区标识，缺省 `demo`；不同部署应单独配置 |
 | `SAGE_QUESTION_ID` | 服务端当前题号；设置后学生不能换号来绕开逐题策略 |
 | `SAGE_STATE_FILE` | SQLite 安全状态文件，运行缺省 `.algosage/state.sqlite3`；测试显式构造 Settings 时缺省内存 |
-| `SAGE_ALLOW_POLICY_SWITCH` | 缺省 false；仅本地教师演示使用，不能代替教师身份认证 |
+| `SAGE_ALLOW_POLICY_SWITCH` | 内部兼容开关；个人助教界面不暴露策略切换 |
 | `SAGE_MAX_CALLS_PER_TURN` | 每回合逻辑模型调用上限，缺省 9；需容纳一次 Judge 修复和一次质量驱动重生成 |
 | `SAGE_TURN_TIMEOUT_SECONDS` | 整轮截止时间，缺省 180 秒 |
 | `SAGE_CLASSIFIER_MAX_OUTPUT_TOKENS` | 分类输出上限，缺省 256 |
@@ -125,7 +125,7 @@ python demo_cli.py --mode api '解释摊还复杂度'
 
 SQLite 只在回合开始读取和回合提交时短暂使用写事务；同一身份跨进程由安全状态文件锁串行，防止旧预算覆盖新预算。不同学生身份不再因全局 SQLite 写锁互相阻塞。课程规模的持续并发吞吐仍需部署实测。安全预算容量满时拒绝新身份，不通过淘汰历史预算腾空间。
 
-身份边界：已认证 Chainlit 用户按服务器身份关联不同聊天；匿名模式只保证同一会话 ID 的预算保留。匿名新会话没有可信身份，防不住跨聊天累计套取。实际考试须接入教师认可的认证与考试上下文；隐藏按钮和演示环境变量都不是权限系统。
+身份边界：已认证 Chainlit 用户按服务器身份关联不同聊天和个人数据；匿名模式只保证同一会话 ID 的预算保留。匿名新会话没有可信身份，防不住跨聊天累计套取。
 
 ## Harness 与实验复现
 
@@ -175,7 +175,7 @@ D 系列不接受 `basic` 冒充完整审核。隔离对照用于验证各组件
 
 学生端左侧支持新建、搜索、重命名、删除和恢复历史对话。右上设置按钮选择当前对话的 Provider / 模型，选择随对话保存。消息、安全审核摘要、反馈和附件元数据保存在 `SAGE_CHAT_FILE`（默认 `.algosage/chats.sqlite3`）；附件原件另存于同一数据库旁的 `elements/`，并经作者校验后下载。供模型恢复的服务端历史独立存储，不采信浏览器伪造的消息角色或元数据。短暂断网重连和多个窗口交错提问保留最新历史；删除对话不会删除 `.algosage/state.sqlite3` 中的考试安全预算。
 
-学生端的新会话欢迎文案随 HTTP 初始化配置加载，在原生欢迎页直接显示；WebSocket 连接只初始化会话和模型设置，不再追加欢迎消息来替换页面。欢迎页和消息页均将输入框放在底部，较矮窗口中欢迎正文可独立滚动。教师演示仍保留带重置动作的欢迎消息。
+学生端的新会话欢迎文案随 HTTP 初始化配置加载，在原生欢迎页直接显示；WebSocket 连接只初始化会话和模型设置，不再追加欢迎消息来替换页面。欢迎页和消息页均将输入框放在底部，较矮窗口中欢迎正文可独立滚动。
 
 首轮通过审核后，后台使用该轮选定模型从问题中摘取一个简短侧栏标题，与最终正文展示并行。每个新对话最多额外一次非流式调用（64 输出 token、最多 8 秒，不超过该轮剩余调用次数及时间额度），用量单独以 `algosage.chat_titles` 日志记录，不计入正文的入/出 token 摘要。只传问题文本，不传代码、回答草稿或历史；命名任务与待命名文本使用 JSON 字段明确分开。标题必须是原问题字词按原顺序的摘取，不能增加新解题信息。模型返回解释正文、不合格标题或调用失败时，从原提问中摘取不超过 24 字符的主题兜底，并记录结果来源；无法安全摘取时保留原名。明确策略拒答不调用标题模型；用户手动改名优先，删除或编辑期间过期的结果不写回。设置 `SAGE_AUTO_TITLES=false` 可关闭。此功能不回填旧对话标题。
 

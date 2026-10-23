@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+__pycache__
+*.py[cod]
+.algosage
+.examguard
+.env
+.env.*
+!.env.example
+results
+output
+docs/screenshots

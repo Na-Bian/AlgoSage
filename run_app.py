@@ -19,7 +19,9 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import sys
+import urllib.parse
 from pathlib import Path
 
 from algosage.runtime_paths import application_root, runtime_path, PROJECT_ROOT
@@ -59,6 +61,8 @@ def main() -> None:
     os.environ["CHAINLIT_ENV_FILE"] = runtime_path("CHAINLIT_ENV_FILE", ".env")
 
     import uvicorn
+    from fastapi.responses import FileResponse
+    from starlette.middleware.base import BaseHTTPMiddleware
 
     # —— 与 chainlit.cli.run_chainlit 相同的初始化（不含 nest_asyncio）——
     from chainlit.auth import ensure_jwt_secret
@@ -85,6 +89,24 @@ def main() -> None:
         raise SystemExit(f"{args.target} 未注册任何 on_chat_start/on_message 回调")
     init_markdown(config.root)
     init_lc_cache()
+
+    # Chainlit 1.x only accepts ASCII avatar IDs. Runs persisted before the
+    # safe internal step IDs use Chinese display names and would otherwise
+    # trigger harmless but noisy 400s when the browser requests their avatar.
+    # Return the project favicon for those legacy names; valid IDs still use
+    # Chainlit's own avatar lookup.
+    legacy_avatar_pattern = re.compile(r"^[a-zA-Z0-9_ .-]+$")
+
+    async def legacy_avatar_fallback(request, call_next):
+        if request.url.path.startswith("/avatars/"):
+            raw_path = request.scope.get("raw_path")
+            raw = raw_path.decode("utf-8", "ignore") if raw_path else request.url.path
+            avatar_id = urllib.parse.unquote(raw.removeprefix("/avatars/"))
+            if not legacy_avatar_pattern.fullmatch(avatar_id):
+                return FileResponse(PROJECT_ROOT / "public/favicon.png")
+        return await call_next(request)
+
+    app.add_middleware(BaseHTTPMiddleware, dispatch=legacy_avatar_fallback)
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info", ws="auto")
 

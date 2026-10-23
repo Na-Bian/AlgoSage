@@ -8,8 +8,7 @@
 - 本文件只负责展示与输入拆分；意图分类、帮助等级、模型调用、输出审核
   全部经由 algosage.service.TutorService 完成（业务逻辑与前端解耦）。
 - API Key 只存在于服务端进程；浏览器仅收到白名单元数据。
-- 考试模式默认由服务端 EXAM_MODE 决定；仅当以 SAGE_ALLOW_POLICY_SWITCH=true
-  启动（教师演示）时，界面上才会出现模式开关，学生常规运行无法绕过。
+- 学习保护策略默认由服务端 EXAM_MODE 决定；学生界面只提供模型选择，不可关闭保护。
 - 旧 Streamlit 界面 app.py 保留为回退方案。
 """
 
@@ -25,7 +24,7 @@ from pathlib import Path
 from weakref import WeakValueDictionary
 
 import chainlit as cl
-from chainlit.input_widget import Select, Switch
+from chainlit.input_widget import Select
 
 from algosage.config import Settings
 from algosage.service import TutorService, HISTORY_TURNS_KEPT
@@ -33,10 +32,13 @@ from algosage.providers import ProviderRegistry
 from algosage.invocation import streaming_transport, timing_summary
 from algosage.runtime_paths import runtime_path
 from algosage.attachments import prepare_attachment_elements
+from algosage.runtime_security import configure_auth_cookies, install_origin_guard
+from algosage.state_store import UsageLimitExceeded
 
 logger = logging.getLogger("algosage.chainlit")
 
 _FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
+MAX_MESSAGE_CHARS = 20_000
 
 _LEVEL_BADGES = {
     0: "L0 · 拒答越权请求",
@@ -47,7 +49,7 @@ _LEVEL_BADGES = {
 
 WELCOME_TMPL = """### 🧭 AlgoSage · 知衡
 
-正式版开发中：面向算法学习与受限考试场景，提供分级辅助与输出审核；**不构成可靠的防泄漏保障**。
+正式版开发中：面向算法学习的个人问答场景，提供分级辅导、代码调试与输出审核；**不构成代写完整作业的保障**。
 
 | 运行项 | 值 |
 | --- | --- |
@@ -127,6 +129,7 @@ async def hust_password_auth(username: str, password: str):
         return None
     if account is None:
         return None
+    avatar = get_student_auth().store.get_avatar(account.student_id)
     return User(
         identifier=account.identifier,
         display_name=account.nickname,
@@ -134,7 +137,9 @@ async def hust_password_auth(username: str, password: str):
             "provider": "hust-student",
             "student_id": account.student_id,
             "session_version": account.session_version,
-            "image": f"/auth/avatar/me?v={account.session_version}",
+            "image": (
+                f"/auth/avatar/me?v={account.session_version}" if avatar else ""
+            ),
         },
     )
 
@@ -151,6 +156,22 @@ def get_chat_store():
     return _chat_store
 
 
+def get_service() -> TutorService:
+    """惰性构建进程级 TutorService；Settings 只在服务端读取。"""
+    global _service
+    if _service is None:
+        settings = Settings.from_env()
+        _service = TutorService(settings, providers=ProviderRegistry(settings))
+        logger.info(
+            "TutorService 已初始化 mode=%s model=%s exam_mode=%s allow_policy_override=%s",
+            settings.mode,
+            settings.model,
+            settings.exam_mode,
+            _service.allow_policy_override,
+        )
+    return _service
+
+
 # Chainlit's standard element endpoint returns metadata. Local uploads also
 # need a durable byte endpoint because the temporary upload path is removed
 # after the websocket session ends.
@@ -161,6 +182,9 @@ try:  # pragma: no cover - exercised through the running Chainlit server
     from chainlit.types import DeleteFeedbackRequest, UpdateFeedbackRequest
     from chainlit.data.acl import is_thread_author
     from chainlit.server import UserParam, app as _chainlit_server_app
+
+    configure_auth_cookies()
+    install_origin_guard(_chainlit_server_app)
 
     @_chainlit_server_app.get(
         "/project/element/{thread_id}/{element_id}/content",
@@ -231,7 +255,13 @@ try:  # pragma: no cover - exercised through the running Chainlit server
     from algosage.student_auth import install_student_auth
 
     install_student_auth(_chainlit_server_app, get_student_auth)
-    install_profile_routes(_chainlit_server_app, get_student_auth, get_chat_store)
+    install_profile_routes(
+        _chainlit_server_app,
+        get_student_auth,
+        get_chat_store,
+        lambda: get_service().state_store,
+        get_service,
+    )
 except ImportError:
     # The service layer and unit tests do not require the HTTP route.
     pass
@@ -253,14 +283,6 @@ async def send_provider_settings(context) -> None:
             initial_value=context.provider_selection,
         )
     ]
-    if service.allow_policy_override:
-        widgets.append(
-            Switch(
-                id="exam_mode_switch",
-                label="考试限制模式（教师演示）",
-                initial=context.exam_mode,
-            )
-        )
     await cl.ChatSettings(widgets).send()
 
 
@@ -278,7 +300,6 @@ async def on_settings_update(settings: dict) -> None:
             ).send()
             await send_provider_settings(context)
             return
-        await _sync_teacher_settings(service)
         await persist_backend_history(context)
     info = service.provider_info(context)
     await cl.Message(content=f"当前模型：**{info['label']} · {info['model']}**").send()
@@ -417,12 +438,11 @@ async def run_turn(
     async with conversation_lock():
         # Every window reloads the latest private transcript before generating.
         context = await restore_conversation(service)
-        await _sync_teacher_settings(service)
         mapping = _msg_turn_map()
         if edit_turn is None:
             edit_turn = mapping.get(msg_id)  # 命中即编辑重发
         async with cl.Step(
-            name="生成与安全审核", type="run", icon="shield-check"
+            name="generation-safety-review", type="run", icon="shield-check"
         ) as step:
             step.output = "正在生成并审核回答…"
             with streaming_transport():
@@ -473,22 +493,6 @@ async def run_turn(
     return response
 
 
-def get_service() -> TutorService:
-    """惰性构建进程级 TutorService；Settings 只在服务端读取。"""
-    global _service
-    if _service is None:
-        settings = Settings.from_env()
-        _service = TutorService(settings, providers=ProviderRegistry(settings))
-        logger.info(
-            "TutorService 已初始化 mode=%s model=%s exam_mode=%s allow_policy_override=%s",
-            settings.mode,
-            settings.model,
-            settings.exam_mode,
-            _service.allow_policy_override,
-        )
-    return _service
-
-
 def authenticated_principal_id() -> str | None:
     """Only Chainlit's authenticated user is trusted, never message/settings data."""
     user = cl.user_session.get("user")
@@ -513,9 +517,13 @@ def split_question_and_code(message: str) -> tuple[str, str]:
 
 
 def prepare_message_inputs(
-    content: str, elements=()
+    content: str, elements=(), max_chars: int = MAX_MESSAGE_CHARS
 ) -> tuple[str, str, tuple]:
     """Split text, code blocks, and uploaded elements into one safe turn."""
+    if not isinstance(content, str):
+        raise ValueError("消息内容必须是文本")
+    if len(content) > max_chars:
+        raise ValueError(f"消息过长，请控制在 {max_chars} 字符以内")
     question, code = split_question_and_code(content)
     prepared = prepare_attachment_elements(elements)
     attachments = prepared.files
@@ -531,7 +539,7 @@ def prepare_message_inputs(
 def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
     """把白名单元数据渲染为前端审计面板（纯函数，便于测试）。
 
-    展示密度由 SAGE_UI_DETAIL 控制（默认 brief 学生视图；full 供教师/研究用）：
+    展示密度由 SAGE_UI_DETAIL 控制（默认 brief 学生视图；full 供研究/调试用）：
     - brief：一行摘要——意图 · 帮助等级 · 审核结论 ·（会话累计风险非零时）；
     - full：完整表格（分类方法/置信度/风险标记/审核层/重生成/Token/耗时等）。
     任何模式都不含系统提示词、API Key 或用户原始输入。
@@ -590,36 +598,12 @@ def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
     )
 
 
-async def _sync_teacher_settings(service: TutorService) -> None:
-    """教师演示模式下，把界面开关同步到后端策略（学生常规运行时无此控件）。"""
-    if not service.allow_policy_override:
-        return
-    ui_settings = cl.user_session.get("chat_settings") or {}
-    desired = ui_settings.get("exam_mode_switch")
-    if desired is None:
-        return
-    ctx = service.get_context(context_id())
-    if bool(desired) != ctx.exam_mode:
-        try:
-            await asyncio.to_thread(service.set_exam_mode, ctx, bool(desired))
-            await cl.Message(
-                content=f"⚙️ 教师演示开关：考试限制模式已切换为 **{'开启' if desired else '关闭'}**。"
-            ).send()
-        except PermissionError:  # pragma: no cover - 仅当配置竞态时出现
-            logger.warning("策略切换被拒绝")
-
-
 def welcome_markdown(service) -> str:
     settings = service.settings
-    switch_note = (
-        "教师演示可通过设置面板切换"
-        if service.allow_policy_override
-        else "界面不可切换"
-    )
-    mode_label = "考试限制" if settings.exam_mode else "练习演示"
+    mode_label = "学习保护" if settings.exam_mode else "宽松演示"
     return WELCOME_TMPL.format(
         mode_label=mode_label,
-        switch_note=switch_note,
+        switch_note="服务端固定",
         backend=settings.mode,
         model=settings.model,
         classifier=settings.classifier_mode,
@@ -643,43 +627,9 @@ async def chat_profiles(_current_user=None, _language=None):
 @cl.on_chat_start
 async def on_chat_start() -> None:
     service = get_service()
-    # The student welcome is already on screen from the HTTP bootstrap.
-    # Only teacher demo mode needs a message to host the privileged action.
-    if service.allow_policy_override:
-        welcome = cl.Message(
-            content=welcome_markdown(service),
-            actions=[
-                cl.Action(
-                    name="reset_session",
-                    payload={},
-                    label="🧹 教师重置安全状态",
-                    tooltip="教师明确重置：清空该身份本次考试的累计风险及聊天历史",
-                )
-            ],
-        )
-        await welcome.send()
     async with conversation_lock():
         context = await restore_conversation(service)
     await send_provider_settings(context)
-
-
-@cl.action_callback("reset_session")
-async def on_reset_session(action: cl.Action) -> None:
-    service = get_service()
-    session_id = context_id()
-    try:
-        context = await asyncio.to_thread(
-            service.new_context, session_id, principal_id=authenticated_principal_id()
-        )
-        await asyncio.to_thread(service.reset_security_state, context)
-    except PermissionError:
-        await cl.Message(
-            content="⚠️ 无权限重置安全状态，需服务端启用教师演示权限。"
-        ).send()
-        return
-    await cl.Message(
-        content="🧹 教师已重置该身份本次考试的累计安全状态与聊天历史。"
-    ).send()
 
 
 @cl.on_chat_end
@@ -696,7 +646,9 @@ async def on_message(message: cl.Message) -> None:
     started = time.perf_counter()
     try:
         question, code, attachments = prepare_message_inputs(
-            message.content, getattr(message, "elements", ())
+            message.content,
+            getattr(message, "elements", ()),
+            max_chars=service.settings.max_input_chars,
         )
         context = await asyncio.to_thread(
             service.new_context,
@@ -713,6 +665,10 @@ async def on_message(message: cl.Message) -> None:
         )
     except ValueError as error:
         reply.content = f"⚠️ 输入未通过校验：{error}"
+        await reply.send()
+        return
+    except UsageLimitExceeded as error:
+        reply.content = f"⚠️ {error}"
         await reply.send()
         return
     except Exception as error:  # noqa: BLE001 - 前端不向学生暴露堆栈细节
@@ -736,6 +692,6 @@ async def on_message(message: cl.Message) -> None:
 
     meta = TutorService.display_metadata(response)
     async with cl.Step(
-        name="🧭 安全审计与策略", type="run", icon="shield-check"
+        name="security-audit-policy", type="run", icon="shield-check"
     ) as step:
         step.output = render_audit_markdown(meta, latency_ms)

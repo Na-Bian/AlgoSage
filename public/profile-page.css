@@ -78,6 +78,12 @@ body.eg-profile-page::before {
     radial-gradient(700px 460px at 8% 104%, var(--pg-wash-2), transparent 66%),
     linear-gradient(180deg, rgba(240, 243, 255, .52), transparent 38%);
 }
+:root.dark body.eg-profile-page::before {
+  background:
+    radial-gradient(780px 480px at 88% -12%, var(--pg-wash-1), transparent 68%),
+    radial-gradient(700px 460px at 8% 104%, var(--pg-wash-2), transparent 66%),
+    linear-gradient(180deg, rgba(43, 51, 72, .28), transparent 38%);
+}
 
 /* Two quiet arcs add brand depth without competing with the white card. */
 body.eg-profile-page::after {

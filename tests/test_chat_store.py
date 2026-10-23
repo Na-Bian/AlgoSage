@@ -199,6 +199,38 @@ class ChatStoreTests(unittest.TestCase):
         assert run(store.get_thread("t1")) is None
         run(store.close())
 
+    def test_account_closure_deletes_only_owned_personal_data(self):
+        tmp_path = self.root
+        store = ChatDataLayer(str(tmp_path / "chat.sqlite3"))
+        run(store.create_user(User(identifier="alice", display_name="Alice")))
+        run(store.create_user(User(identifier="bob", display_name="Bob")))
+        for owner, thread_id in [("alice", "alice-1"), ("alice", "alice-2"), ("bob", "bob-1")]:
+            run(store.update_thread(thread_id, name=f"{owner} history", user_id=owner))
+            run(store.create_step(step(f"{thread_id}-step", thread_id, "answer", "2026-01-01T00:00:00Z")))
+
+        alice_element = tmp_path / "alice-attachment.txt"
+        alice_element.write_text("alice private attachment", encoding="utf-8")
+        element = SimpleNamespace(
+            id="alice-element", thread_id="alice-1", for_id="alice-1-step",
+            type="file", name="alice-attachment.txt", mime="text/plain",
+            display="inline", size="small", language=None, path=str(alice_element),
+            url=None, object_key=None, chainlit_key="alice-upload",
+        )
+        run(store.create_element(element))
+        persisted_attachment = Path(store.get_element_path("alice-1", "alice-element"))
+        self.assertEqual(persisted_attachment.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(persisted_attachment.parent.stat().st_mode & 0o777, 0o700)
+
+        deleted = run(store.delete_all_personal_data("alice"))
+        self.assertEqual(deleted, 2)
+        self.assertIsNone(run(store.get_thread("alice-1")))
+        self.assertIsNone(run(store.get_thread("alice-2")))
+        self.assertEqual(run(store.get_thread("bob-1"))["name"], "bob history")
+        self.assertFalse(persisted_attachment.exists())
+        self.assertIsNone(run(store.get_user("alice")))
+        self.assertEqual(run(store.get_user("bob")).identifier, "bob")
+        run(store.close())
+
     def test_step_uuid_cannot_move_between_threads(self):
         store = ChatDataLayer(str(self.root / "chat.sqlite3"))
         run(store.update_thread("victim", user_id="alice"))

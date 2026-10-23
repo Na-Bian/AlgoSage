@@ -20,7 +20,7 @@ persist_user_env = false
 mask_user_env = false
 
 # Authorized origins
-allow_origins = ["*"]
+allow_origins = ["http://localhost:8000", "http://127.0.0.1:8000"]
 
 [features]
 # Process and display HTML in messages. This can be a security risk (see https://stackoverflow.com/questions/19603097/why-is-it-dangerous-to-render-user-generated-html-or-javascript)
@@ -136,14 +136,14 @@ cot = "full"
 
 # Specify a CSS file that can be used to customize the user interface.
 # The CSS file can be served from the public directory or via an external link.
-custom_css = "/public/custom.css?v=20261022-rail-removal-force"
+custom_css = "/public/custom.css?v=20261022-chat-layout-5"
 
 # Specify additional attributes for a custom CSS file
 # custom_css_attributes = "media=\"print\""
 
 # Specify a JavaScript file that can be used to customize the user interface.
 # The JavaScript file can be served from the public directory.
-custom_js = "/public/algosage-app.js?v=20261022-sidebar-polish-1"
+custom_js = "/public/algosage-app.js?v=20261023-step-label-1"
 
 # The style of alert boxes. Can be "classic" or "modern".
 alert_style = "classic"

@@ -54,24 +54,8 @@ class ChainlitAppModuleTests(unittest.TestCase):
         self.module._service = None  # 重置惰性单例，保证环境隔离
         self.addCleanup(setattr, self.module, "_service", None)
 
-    def test_forged_reset_action_is_denied_without_erasing_risk(self):
-        service = self.module.get_service()
-        ctx = service.new_context("forged-reset")
-        service.chat(ctx, "解释什么是 KMP 前缀函数", question_id="q")
-        before = ctx.session_guard.snapshot()
-        message = mock.Mock()
-        message.send = mock.AsyncMock()
-        fake_cl = SimpleNamespace(
-            context=SimpleNamespace(session=SimpleNamespace(id=ctx.session_id)),
-            Message=mock.Mock(return_value=message),
-            user_session=SimpleNamespace(get=lambda key: None),
-        )
-        with mock.patch.object(self.module, "cl", fake_cl):
-            asyncio.run(inspect.unwrap(self.module.on_reset_session)(mock.Mock()))
-        self.assertEqual(
-            service.get_context(ctx.session_id).session_guard.snapshot(), before
-        )
-        self.assertIn("权限", fake_cl.Message.call_args.kwargs["content"])
+    def test_personal_app_does_not_register_teacher_reset(self):
+        self.assertFalse(hasattr(self.module, "on_reset_session"))
 
     def test_chat_start_binds_authenticated_identifier(self):
         svc = self.module.get_service()
@@ -198,24 +182,22 @@ class ChainlitAppModuleTests(unittest.TestCase):
         self.assertEqual(len(profiles), 1)
         self.assertTrue(profiles[0].default)
         self.assertIn("display-model", profiles[0].markdown_description)
-        self.assertIn("练习演示", profiles[0].markdown_description)
+        self.assertIn("宽松演示", profiles[0].markdown_description)
         self.assertNotIn("private-key-sentinel", profiles[0].markdown_description)
 
-    def test_teacher_demo_keeps_reset_action_available(self):
+    def test_personal_app_does_not_expose_policy_switch(self):
         service = self.module.get_service()
-        service.allow_policy_override = True
         sent = mock.Mock(send=mock.AsyncMock())
-        fake = SimpleNamespace(
-            context=SimpleNamespace(session=SimpleNamespace(id="teacher-welcome")),
-            user_session=SimpleNamespace(get=lambda key: None),
-            Message=mock.Mock(return_value=sent),
-            Action=mock.Mock(),
+        fake_cl = SimpleNamespace(
             ChatSettings=mock.Mock(return_value=sent),
         )
-        with mock.patch.object(self.module, "cl", fake):
-            asyncio.run(inspect.unwrap(self.module.on_chat_start)())
-        self.assertEqual(len(fake.Message.call_args.kwargs["actions"]), 1)
-        self.assertEqual(fake.Action.call_args.kwargs["name"], "reset_session")
+        with mock.patch.object(self.module, "cl", fake_cl):
+            asyncio.run(
+                self.module.send_provider_settings(service.get_context("personal"))
+            )
+        self.assertFalse(service.allow_policy_override)
+        widgets = fake_cl.ChatSettings.call_args.args[0]
+        self.assertEqual([widget.id for widget in widgets], ["provider_selection"])
 
     def test_disconnect_preserves_shared_thread_context_and_guard(self):
         svc = self.module.get_service()
@@ -250,7 +232,7 @@ class ChainlitAppModuleTests(unittest.TestCase):
         self.assertTrue(callable(self.module.on_chat_start))
         self.assertTrue(callable(self.module.on_message))
         self.assertTrue(callable(self.module.on_chat_end))
-        self.assertTrue(callable(self.module.on_reset_session))
+        self.assertFalse(hasattr(self.module, "on_reset_session"))
 
     def test_get_service_builds_singleton(self):
         service_a = self.module.get_service()
@@ -269,6 +251,12 @@ class ChainlitAppModuleTests(unittest.TestCase):
         question, code = self.module.split_question_and_code("什么是前缀函数？")
         self.assertEqual(question, "什么是前缀函数？")
         self.assertEqual(code, "")
+
+    def test_prepare_message_inputs_rejects_oversized_message_before_model(self):
+        with self.assertRaises(ValueError):
+            self.module.prepare_message_inputs(
+                "x" * (self.module.MAX_MESSAGE_CHARS + 1), ()
+            )
 
     def test_split_code_only_uses_neutral_default(self):
         question, code = self.module.split_question_and_code("```python\nprint(1)\n```")

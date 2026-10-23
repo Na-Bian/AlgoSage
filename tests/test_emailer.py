@@ -110,6 +110,14 @@ class SMTPEmailerTests(unittest.TestCase):
         client.login.assert_called_once_with("algo", "secret")
         client.send_message.assert_not_called()
 
+    def test_outbox_messages_are_private(self):
+        with tempfile.TemporaryDirectory() as root:
+            outbox = Path(root) / "outbox"
+            sender = OutboxEmailSender(outbox)
+            asyncio_run(sender.send(message()))
+            written = next(outbox.glob("*.eml"))
+            self.assertEqual(written.stat().st_mode & 0o777, 0o600)
+
     def test_environment_supports_new_and_legacy_prefixes(self):
         with tempfile.TemporaryDirectory() as root:
             with patch.dict(os.environ, {

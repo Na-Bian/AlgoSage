@@ -49,6 +49,7 @@ class OutboxEmailSender:
         temporary = target.with_suffix(".tmp")
         temporary.write_bytes(mail.as_bytes())
         temporary.replace(target)
+        target.chmod(0o600)
 
 
 class SMTPEmailSender:

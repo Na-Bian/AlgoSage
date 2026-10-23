@@ -188,6 +188,22 @@ class TutorService:
             for ctx in [context, *related]:
                 ctx.history.clear()
 
+    def forget_personal_state(self, exam_id: str, principal_id: str) -> None:
+        """Remove all account-linked learning state after account closure."""
+        principal_key = f"principal:{principal_id}"
+        with self._context_lock:
+            doomed_sessions = [
+                session_id
+                for session_id, context in self._contexts.items()
+                if context._budget is not None
+                and context._budget.exam_id == exam_id
+                and context._budget.principal_key == principal_key
+            ]
+            for session_id in doomed_sessions:
+                self._contexts.pop(session_id, None)
+                self._session_bindings.pop(session_id, None)
+        self.state_store.delete_principal(exam_id, principal_key)
+
     def set_exam_mode(self, context: ServiceContext, exam_mode: bool) -> None:
         """Teacher-only switch; refused unless SAGE_ALLOW_POLICY_SWITCH is enabled."""
         if exam_mode != self.settings.exam_mode:
@@ -219,6 +235,13 @@ class TutorService:
                 raise ValueError("题目由服务端 SAGE_QUESTION_ID 绑定，不允许切换")
             question_id = self.settings.question_id
         with self.state_store.turn(self._context_budget(context)):
+            self.state_store.consume_global_daily_request(
+                self.settings.global_daily_requests
+            )
+            self.state_store.consume_daily_request(
+                context._budget.principal_key,
+                self.settings.daily_requests_per_student,
+            )
             # Trusted server policy also wins if an in-process caller mutated
             # the context directly instead of using the guarded switch.
             if not self.allow_policy_override:
@@ -255,6 +278,13 @@ class TutorService:
                 raise ValueError("题目由服务端 SAGE_QUESTION_ID 绑定，不允许切换")
             question_id = self.settings.question_id
         with self.state_store.turn(self._context_budget(context)):
+            self.state_store.consume_global_daily_request(
+                self.settings.global_daily_requests
+            )
+            self.state_store.consume_daily_request(
+                context._budget.principal_key,
+                self.settings.daily_requests_per_student,
+            )
             if not self.allow_policy_override:
                 context.exam_mode = self.settings.exam_mode
             keep = 2 * turn_index

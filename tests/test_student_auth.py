@@ -259,11 +259,14 @@ class StudentProfileRouteTests(unittest.TestCase):
         secret.start()
         self.addCleanup(secret.stop)
         from fastapi import FastAPI
+        from algosage.chat_store import ChatDataLayer
 
         from algosage.student_auth import install_student_auth
 
         self.app = FastAPI()
-        install_student_auth(self.app, lambda: self.auth)
+        self.chat_store = ChatDataLayer(str(self.root / "chats.sqlite3"))
+        self.addCleanup(lambda: run(self.chat_store.close()))
+        install_student_auth(self.app, lambda: self.auth, lambda: self.chat_store)
 
     def test_profile_view_and_updates(self):
         from chainlit.server import get_current_user
@@ -338,11 +341,22 @@ class ProfileRouteTests(unittest.TestCase):
             code=code_from(self.sender.messages[0]),
         )
         from fastapi import FastAPI
+        from algosage.chat_store import ChatDataLayer
+        from algosage.state_store import RiskStateStore
+        from algosage.session_guard import RiskState
 
         from algosage.student_auth import install_profile_routes
 
         self.app = FastAPI()
-        install_profile_routes(self.app, lambda: self.auth)
+        self.chat_store = ChatDataLayer(str(self.root / "chats.sqlite3"))
+        self.addCleanup(lambda: run(self.chat_store.close()))
+        self.state_store = RiskStateStore(str(self.root / "state.sqlite3"))
+        install_profile_routes(
+            self.app,
+            lambda: self.auth,
+            lambda: self.chat_store,
+            lambda: self.state_store,
+        )
         self.client = TestClient(self.app)
         current = SimpleNamespace(identifier="student:U202113566")
         self.app.dependency_overrides[
@@ -363,6 +377,8 @@ class ProfileRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["student_id"], "U202113566")
         self.assertFalse(response.json()["has_avatar"])
+        persisted_user = run(self.chat_store.get_user("student:U202113566"))
+        self.assertEqual(persisted_user.metadata.get("image"), "")
 
         renamed = self.client.patch(
             "/auth/profile", json={"nickname": "界面验收同学"}
@@ -393,6 +409,9 @@ class ProfileRouteTests(unittest.TestCase):
         self.assertIn("profile-page.css", page.text)
 
     def test_account_security_page_and_closure(self):
+        from chainlit.user import User
+        from algosage.session_guard import RiskState
+
         authenticated = self.client.patch("/auth/profile", json={"nickname": "验收同学"})
         self.assertEqual(authenticated.status_code, 200)
         security = self.client.get("/profile/security")
@@ -409,6 +428,37 @@ class ProfileRouteTests(unittest.TestCase):
         self.assertEqual(
             self.auth.store.get_account("U202113566")["status"], "active"
         )
+
+        run(
+            self.chat_store.create_user(
+                User(identifier="student:U202113566", display_name="验收同学")
+            )
+        )
+        run(
+            self.chat_store.update_thread(
+                "personal-thread", name="Personal history", user_id="student:U202113566"
+            )
+        )
+        run(
+            self.chat_store.create_step(
+                {
+                    "id": "personal-answer",
+                    "threadId": "personal-thread",
+                    "type": "assistant_message",
+                    "name": "answer",
+                    "output": "personal answer",
+                    "createdAt": "2026-01-01T00:00:00Z",
+                }
+            )
+        )
+        principal_key = "principal:U202113566"
+        budget = self.state_store.get("personal", principal_key)
+        with self.state_store.turn(budget):
+            budget.guard._states["qid:personal-question"] = RiskState(
+                question_id="personal-question",
+                turns=1,
+            )
+        self.state_store.consume_daily_request(principal_key, 10)
 
         wrong_password = self.client.post(
             "/auth/profile/close",
@@ -428,6 +478,97 @@ class ProfileRouteTests(unittest.TestCase):
         account = self.auth.store.get_account("U202113566")
         self.assertEqual(account["status"], "closed")
         self.assertIsNone(self.auth.authenticate("U202113566", "correct-horse-battery"))
+        self.assertIsNone(run(self.chat_store.get_thread("personal-thread")))
+        self.assertIsNone(
+            run(self.chat_store.get_user("student:U202113566"))
+        )
+        import sqlite3
+
+        with sqlite3.connect(self.root / "auth.sqlite3") as database:
+            self.assertEqual(
+                database.execute(
+                    "SELECT COUNT(*) FROM verification_codes WHERE student_id=?",
+                    ("U202113566",),
+                ).fetchone()[0],
+                0,
+            )
+        account = self.auth.store.get_account("U202113566")
+        self.assertNotIn("U202113566@hust.edu.cn", account["email"])
+        self.assertNotEqual("验收同学", account["nickname"])
+        self.assertFalse(account["password_hash"].startswith("$argon2"))
+
+    def test_account_closure_forgets_actual_service_state_partition(self):
+        from algosage.session_guard import RiskState
+        from algosage.state_store import RiskStateStore
+
+        state_store = RiskStateStore(str(self.root / "service-state.sqlite3"))
+        principal_key = "principal:U202113566"
+        budget = state_store.get("demo", principal_key)
+        with state_store.turn(budget):
+            budget.guard._states["qid:personal-question"] = RiskState(
+                question_id="personal-question",
+                turns=1,
+            )
+        state_store.consume_daily_request(principal_key, 10)
+
+        class PersonalStateService:
+            settings = type("Settings", (), {"exam_id": "demo"})()
+
+            def __init__(self, store):
+                self.state_store = store
+
+            def forget_personal_state(self, exam_id, principal_id):
+                self.state_store.delete_principal(exam_id, f"principal:{principal_id}")
+
+        from fastapi import FastAPI
+        from algosage.student_auth import install_profile_routes
+
+        app = FastAPI()
+        install_profile_routes(
+            app,
+            lambda: self.auth,
+            lambda: self.chat_store,
+            lambda: state_store,
+            lambda: PersonalStateService(state_store),
+        )
+        client = TestClient(app)
+        current = SimpleNamespace(identifier="student:U202113566")
+        app.dependency_overrides[self.current_user_dependency()] = lambda: current
+        closed = client.post(
+            "/auth/profile/close",
+            json={"current_password": "correct-horse-battery", "confirmation": "注销账号"},
+        )
+        self.assertEqual(closed.status_code, 200)
+        with state_store._database() as database:
+            self.assertEqual(
+                database.execute(
+                    "SELECT COUNT(*) FROM risk_states WHERE exam_id='demo' AND principal_key=?",
+                    (principal_key,),
+                ).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                database.execute(
+                    "SELECT COUNT(*) FROM daily_requests WHERE principal_key=?",
+                    (principal_key,),
+                ).fetchone()[0],
+                0,
+            )
+        with self.state_store._database() as database:
+            self.assertEqual(
+                database.execute(
+                    "SELECT COUNT(*) FROM risk_states WHERE principal_key=?",
+                    (principal_key,),
+                ).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                database.execute(
+                    "SELECT COUNT(*) FROM daily_requests WHERE principal_key=?",
+                    (principal_key,),
+                ).fetchone()[0],
+                0,
+            )
 
     def test_profile_page_redirects_unauthenticated_user(self):
         self.app.dependency_overrides[self.current_user_dependency()] = lambda: None

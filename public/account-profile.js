@@ -2,62 +2,25 @@
    通过 Chainlit custom_js 注入；只复制页面上已渲染的最终文本，
    不访问任何密钥、系统提示词或未送达内容。
    DOM 结构依据 Chainlit 2.11 实测：每条消息顶层为 div[id^='step-']，
-   助手正文在 .message-content，用户气泡为 .bg-accent.rounded-3xl。
-   防御式查询：前端升级时按钮可能失效，但不影响聊天与安全功能。 */
+   助手正文在 .ai-message .message-content。原生消息操作按钮保持唯一，
+   这里只补充可访问名称，不复制消息内容或插入重复控件。 */
 (function () {
   "use strict";
 
-  function isMessageBlock(el) {
-    return (
-      el.tagName === "DIV" &&
-      /^step-/.test(el.id || "") &&
-      !!(el.querySelector(".message-content") || el.querySelector(".bg-accent.rounded-3xl"))
-    );
+  function labelAction(block, iconName, label) {
+    var icon = block.querySelector(".ai-message svg.lucide-" + iconName);
+    var button = icon && icon.closest("button");
+    if (!button) return;
+    if (!button.getAttribute("aria-label")) {
+      button.setAttribute("aria-label", label);
+    }
+    if (!button.title) button.title = label;
   }
 
-  function messageText(block) {
-    var content =
-      block.querySelector(".message-content") ||
-      block.querySelector(".bg-accent.rounded-3xl");
-    return ((content && content.innerText) || "").trim();
-  }
-
-  function makeButton(block) {
-    var btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "eg-copy-btn";
-    btn.textContent = "复制";
-    btn.addEventListener("click", function (ev) {
-      ev.stopPropagation();
-      ev.preventDefault();
-      var text = messageText(block);
-      if (!text) return;
-      var done = function (label) {
-        btn.textContent = label;
-        setTimeout(function () {
-          btn.textContent = "复制";
-        }, 1500);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(
-          function () {
-            done("已复制 ✓");
-          },
-          function () {
-            done("复制失败");
-          }
-        );
-      } else {
-        done("浏览器不支持");
-      }
-    });
-    return btn;
-  }
-
-  function decorate(block) {
-    if (block.dataset.egCopy === "1") return;
-    block.dataset.egCopy = "1";
-    block.appendChild(makeButton(block));
+  function decorateMessageActions(block) {
+    labelAction(block, "copy", "复制回答");
+    labelAction(block, "thumbs-up", "有帮助");
+    labelAction(block, "thumbs-down", "没有帮助");
   }
 
   var pending = null;
@@ -111,7 +74,7 @@
   function scanAll() {
     var blocks = document.querySelectorAll("main div[id^='step-']");
     for (var i = 0; i < blocks.length; i++) {
-      if (isMessageBlock(blocks[i])) decorate(blocks[i]);
+      decorateMessageActions(blocks[i]);
     }
     syncUserAvatar(false);
     syncThemeMenu();

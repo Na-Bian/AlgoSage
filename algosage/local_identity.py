@@ -7,6 +7,7 @@ import secrets
 from pathlib import Path
 
 from .runtime_paths import runtime_path
+from .runtime_paths import protect_runtime_file, protect_runtime_tree
 
 
 def ensure_local_secret(path: Path | None = None) -> str:
@@ -26,5 +27,7 @@ def ensure_local_secret(path: Path | None = None) -> str:
             handle.write(value)
     if len(value) < 40:
         raise ValueError("本地身份签名密钥无效")
+    protect_runtime_file(str(path))
+    protect_runtime_tree(path.parent)
     os.environ["CHAINLIT_AUTH_SECRET"] = value
     return value

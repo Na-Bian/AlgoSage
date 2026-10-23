@@ -184,11 +184,17 @@
 .eg-profile-menu-item { display: flex; align-items: center; gap: 8px; }
 .eg-profile-menu-item .eg-profile-dot { width: 6px; height: 6px; border-radius: 50%; background: hsl(var(--primary)); }
 
-/* ---------- 布局：居中阅读宽度（DeepSeek 风格） ---------- */
+/* ---------- 布局：消息流与输入框共用同一阅读列 ---------- */
+body.eg-chat-shell main :is(
+  div.flex.flex-col.mx-auto.w-full.flex-grow.p-4,
+  div.flex.flex-col.mx-auto.w-full.p-4.pt-0
+) {
+  width: min(960px, calc(100% - 48px)) !important;
+  max-width: min(960px, calc(100% - 48px)) !important;
+}
 #messages {
-  max-width: 52rem;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: min(960px, 100%);
+  margin-inline: auto;
 }
 
 /* 欢迎文案由原生 ChatProfile 的初始化配置渲染，不等待 WebSocket 消息。
@@ -201,7 +207,7 @@ main div:has(> #welcome-screen) {
 }
 
 #welcome-screen {
-  max-width: 52rem;
+  max-width: min(928px, 100%);
   min-height: 0;
   margin-top: 0;
   align-items: stretch;
@@ -274,24 +280,117 @@ pre code,
   font-size: 0.88em;
 }
 
-/* ---------- 审计步骤（cl.Step）：左侧蓝色提示线 ---------- */
-.step,
-[class*="step"] {
-  border-left: 2px solid hsl(var(--primary) / 0.35);
+/* ---------- 审计步骤（cl.Step）：紧凑状态，不绘制贯穿时间线 ---------- */
+.step {
+  border-left: 0;
 }
 
-.step .step-header,
-[class*="step"] [class*="header"] {
+main div.step.py-2 > div.flex.flex-col {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.step .step-header {
   color: hsl(var(--muted-foreground));
   font-size: 0.85rem;
 }
 
-/* Chainlit 的上传/输入容器有 tabindex。鼠标点进输入区空白处时，浏览器会给
-   这个大容器画一个默认白色 outline，看起来像输入框闪现白框。这里只抑制指针
-   触发的焦点描边；键盘 Tab 仍保留原生可见焦点。 */
-:root [role="presentation"][tabindex="0"][data-eg-pointer-focus] :focus,
-:root [role="presentation"][tabindex="0"][data-eg-pointer-focus]:focus {
+main .ai-message:has(> div > div > div > h3 > button[id^="step-"]) > span {
+  margin-top: 5px;
+  color: var(--pg-blue, #4478f5);
+}
+
+.eg-step-avatar {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 3px !important;
+  color: var(--pg-blue, #4478f5) !important;
+}
+
+.eg-step-avatar-shell {
+  width: 20px;
+  height: 20px;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--pg-blue, #4478f5) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pg-blue, #4478f5) 10%, transparent);
+}
+
+.eg-step-avatar-shell .animate-pulse {
+  display: none !important;
+}
+
+.eg-step-status-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+  flex: 0 0 auto;
+}
+
+main .ai-message h3:has(> button[id^="step-"]) {
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+}
+
+main .ai-message button[id^="step-"] {
+  flex: 0 1 auto !important;
+  width: fit-content;
+  min-height: 32px;
+  padding: 5px 10px !important;
+  border: 1px solid hsl(var(--border) / .78);
+  border-radius: 999px;
+  background: hsl(var(--muted) / .28);
+  color: hsl(var(--muted-foreground)) !important;
+  font-size: .78rem !important;
+  font-weight: 600;
+  line-height: 1.25;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+main .ai-message button[id^="step-"]:hover,
+main .ai-message button[id^="step-"][data-state="open"] {
+  border-color: hsl(var(--border));
+  background: hsl(var(--accent) / .78);
+  color: hsl(var(--foreground)) !important;
+}
+
+main .ai-message button[id^="step-"]:focus-visible {
+  outline: 2px solid var(--pg-focus, #5b87f7);
+  outline-offset: 2px;
+}
+
+main .ai-message [role="region"] > .pb-4.pt-0 {
+  padding-top: 8px !important;
+}
+
+main .ai-message [role="region"] > .pb-4.pt-0 > .flex-grow {
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  border: 1px solid var(--chat-card-line) !important;
+  border-radius: 12px !important;
+  background: hsl(var(--muted) / .2);
+  overflow-x: auto;
+}
+
+/* Chainlit 的外层 presentation 容器和 textarea 都参与焦点处理。浏览器的
+   原生白色焦点环可能在点击瞬间抢在运行时标记之前出现。聊天区只保留外层
+   输入卡片的蓝紫色 focus ring，因此静态关闭这两个节点的原生描边。 */
+body.eg-chat-shell [role="presentation"][tabindex="0"]:is(:focus, :focus-visible),
+body.eg-chat-shell [role="presentation"][tabindex="0"] #chat-input:is(:focus, :focus-visible) {
   outline: none !important;
+  outline-color: transparent !important;
+}
+body.eg-chat-shell #chat-input {
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* ---------- 输入区 ----------
@@ -319,34 +418,32 @@ pre code,
   font-weight: 600;
 }
 
-/* ---------- 消息复制按钮（clipboard-buttons.js 注入） ---------- */
+/* ---------- 消息操作图标 ---------- */
 main div[id^='step-'] {
   position: relative;
 }
 
 .eg-copy-btn {
-  position: absolute;
-  right: 0.3rem;
-  bottom: 0.2rem;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--background));
-  color: hsl(var(--muted-foreground));
-  border-radius: 0.5rem;
-  font-size: 0.72rem;
-  padding: 0.15rem 0.5rem;
-  cursor: pointer;
-  z-index: 5;
+  display: none !important;
 }
 
-main div[id^='step-']:hover .eg-copy-btn {
-  opacity: 1;
+main .ai-message .message-content ~ div button {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 9px !important;
+  color: hsl(var(--muted-foreground)) !important;
 }
 
-.eg-copy-btn:hover {
-  color: hsl(var(--primary));
-  border-color: hsl(var(--primary));
+main .ai-message .message-content ~ div button:hover,
+main .ai-message .message-content ~ div button:focus-visible {
+  background: hsl(var(--accent)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+main .ai-message .message-content ~ div button svg {
+  width: 19px !important;
+  height: 19px !important;
+  stroke-width: 1.9;
 }
 
 /* ---------- 统一交互动画：面板、弹窗、菜单与主题 ----------
@@ -454,6 +551,9 @@ main div[id^='step-']:hover .eg-copy-btn {
    inside the shell instead of expanding the document. */
 html:has(body.eg-chat-shell) { height: 100%; }
 body.eg-chat-shell {
+  --eg-message-avatar-size: 20px;
+  --eg-message-avatar-gap: 16px;
+  --eg-message-text-inset: calc(var(--eg-message-avatar-size) + var(--eg-message-avatar-gap));
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
@@ -479,8 +579,18 @@ body.eg-chat-shell #messages {
 body.eg-chat-shell #message-composer,
 body.eg-chat-shell #welcome-screen::after { flex-shrink: 0; }
 
-   These rules intentionally style Chainlit's existing sidebar/welcome/composer
-   DOM. They do not alter message transport, uploads, settings, or auth flows. */
+/* The native scrollbar consumes width only from the message pane. Hide its
+   layout gutter so the messages and composer share the same centered column. */
+body.eg-chat-shell main div.flex.flex-col.flex-grow.overflow-y-auto:has(div[id^="step-"]) {
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+body.eg-chat-shell main div.flex.flex-col.flex-grow.overflow-y-auto:has(div[id^="step-"])::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 :root {
   --chat-canvas: #f8fafd;
   --chat-card-line: #e2e7f0;
@@ -508,16 +618,16 @@ body:not(.eg-profile-page)::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(920px 620px at 88% -12%, rgba(117, 72, 238, .09), transparent 68%),
-    radial-gradient(780px 540px at 4% 104%, rgba(255, 8, 122, .055), transparent 66%),
-    linear-gradient(180deg, rgba(238, 242, 255, .54), transparent 38%);
+    radial-gradient(920px 620px at 88% -12%, rgba(117, 72, 238, .065), transparent 68%),
+    radial-gradient(780px 540px at 4% 104%, rgba(255, 8, 122, .04), transparent 66%),
+    linear-gradient(180deg, rgba(238, 242, 255, .46), transparent 38%);
 }
 :root.dark body:not(.eg-profile-page)::before {
   background:
-    radial-gradient(920px 640px at 90% -10%, rgba(97, 95, 255, .13), transparent 68%),
-    radial-gradient(760px 540px at 3% 104%, rgba(255, 8, 122, .08), transparent 66%),
-    radial-gradient(660px 520px at 104% 58%, rgba(83, 78, 220, .08), transparent 70%),
-    linear-gradient(180deg, rgba(43, 51, 72, .28), transparent 38%);
+    radial-gradient(920px 640px at 90% -10%, rgba(97, 95, 255, .1), transparent 68%),
+    radial-gradient(760px 540px at 3% 104%, rgba(255, 8, 122, .055), transparent 66%),
+    radial-gradient(660px 520px at 104% 58%, rgba(83, 78, 220, .06), transparent 70%),
+    linear-gradient(180deg, rgba(43, 51, 72, .24), transparent 38%);
 }
 body:not(.eg-profile-page)::after {
   content: "";
@@ -531,8 +641,8 @@ body:not(.eg-profile-page)::after {
 }
 :root.dark body:not(.eg-profile-page)::after {
   background:
-    radial-gradient(circle at 92% 12%, transparent 280px, rgba(114, 150, 255, .075) 281px, transparent 285px),
-    radial-gradient(circle at 6% 92%, transparent 220px, rgba(255, 8, 122, .06) 221px, transparent 225px);
+    radial-gradient(circle at 92% 12%, transparent 280px, rgba(114, 150, 255, .055) 281px, transparent 285px),
+    radial-gradient(circle at 6% 92%, transparent 220px, rgba(255, 8, 122, .045) 221px, transparent 225px);
 }
 
 main { background: transparent !important; }
@@ -567,7 +677,7 @@ button[data-sidebar="rail"]::after {
 [data-sidebar="header"] {
   min-height: 64px;
   padding: 10px 12px !important;
-  border-bottom: 1px solid hsl(var(--sidebar-border) / .72);
+  border-bottom: 0 !important;
 }
 [data-sidebar="content"] { padding-top: 12px !important; }
 
@@ -584,21 +694,90 @@ button[data-sidebar="rail"]::after {
   background: hsl(var(--sidebar-accent));
   color: hsl(var(--sidebar-accent-foreground));
 }
+/* Chainlit can keep a second copy of the native header controls when the
+   off-canvas sidebar changes state. Both copies remain clickable through the
+   proxied custom controls, but only the AlgoSage presentation is visible. */
+body.eg-chat-shell :is(
+  #sidebar-trigger-button,
+  #search-chats-button,
+  #new-chat-button
+) {
+  display: none !important;
+}
 
 #thread-history > div {
-  border: 1px solid #cfe0ff !important;
-  border-radius: 16px !important;
-  background: #f2f6ff !important;
-  color: #2755c9 !important;
-  box-shadow: 0 6px 20px rgba(42, 52, 100, .05);
+  padding: 2px 4px 4px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: hsl(var(--sidebar-foreground)) !important;
+  box-shadow: none !important;
 }
-:root.dark #thread-history > div {
-  border-color: #3958b7 !important;
-  background: #1a2756 !important;
-  color: #c8d8ff !important;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, .24);
+#thread-history [data-sidebar="group-label"] {
+  height: 28px !important;
+  margin: 0 !important;
+  padding: 4px 8px !important;
+  color: hsl(var(--muted-foreground)) !important;
+  font-size: 11px !important;
+  font-weight: 650 !important;
+  letter-spacing: .035em;
 }
-#thread-history > div svg { color: currentColor; opacity: .82; }
+#thread-history [data-sidebar="group-content"] { margin-top: 2px; }
+#thread-history li[data-sidebar="menu-item"] { position: relative; }
+#thread-history [data-sidebar="menu-button"] {
+  min-height: 40px;
+  padding: 8px 42px 8px 10px !important;
+  border-radius: 10px !important;
+  color: hsl(var(--sidebar-foreground) / .86) !important;
+  box-shadow: none !important;
+}
+#thread-history [data-sidebar="menu-button"]:hover {
+  background: hsl(var(--sidebar-accent) / .72) !important;
+  color: hsl(var(--sidebar-accent-foreground)) !important;
+}
+#thread-history [data-sidebar="menu-button"][data-active="true"] {
+  background: #edf3ff !important;
+  color: #2f62d8 !important;
+  box-shadow: inset 0 0 0 1px #cfe0ff !important;
+}
+:root.dark #thread-history [data-sidebar="menu-button"][data-active="true"] {
+  background: #1c2b55 !important;
+  color: #9bb5ff !important;
+  box-shadow: inset 0 0 0 1px #3958b7 !important;
+}
+#thread-history [data-sidebar="menu-button"] > span,
+#thread-history [data-sidebar="menu-button"] span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#thread-history [id^="thread-options"] {
+  width: 34px !important;
+  height: 34px !important;
+  top: 3px !important;
+  right: 3px !important;
+  bottom: 3px !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: hsl(var(--muted-foreground)) !important;
+  opacity: 0;
+  transition: opacity 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+#thread-history li:hover [id^="thread-options"],
+#thread-history li:focus-within [id^="thread-options"],
+#thread-history [data-active="true"] [id^="thread-options"] {
+  opacity: 1;
+}
+#thread-history [id^="thread-options"]:hover,
+#thread-history [id^="thread-options"]:focus-visible {
+  background: hsl(var(--sidebar-accent)) !important;
+  color: hsl(var(--sidebar-accent-foreground)) !important;
+}
+#thread-history [id^="thread-options"] svg {
+  width: 18px !important;
+  height: 18px !important;
+}
 
 /* ---------- Sidebar: expanded header, new action, collapsed floating bar ---------- */
 .eg-original-sidebar-header > :not(.eg-sidebar-presentation) { display: none !important; }
@@ -751,38 +930,10 @@ body.eg-sidebar-collapsed .eg-collapsed-bar {
 }
 .eg-collapsed-pill .eg-sidebar-icon-button { border-radius: 999px; }
 
-/* History rows keep real titles and native operations while gaining the palette. */
-#thread-history [data-sidebar="menu-button"] {
-  min-height: 42px;
-  border-radius: 12px;
-  color: hsl(var(--sidebar-foreground) / .86);
-  transition: background var(--eg-motion-fast) var(--eg-motion-ease),
-    color var(--eg-motion-fast) var(--eg-motion-ease);
-}
-#thread-history [data-sidebar="menu-button"]:hover {
-  background: hsl(var(--sidebar-accent) / .72);
-  color: hsl(var(--sidebar-accent-foreground));
-}
-#thread-history [data-sidebar="menu-button"][data-active="true"] {
-  background: #edf3ff;
-  color: #2f62d8;
-}
-:root.dark #thread-history [data-sidebar="menu-button"][data-active="true"] {
-  background: #1c2b55;
-  color: #8ba8ff;
-}
-#thread-history [data-sidebar="menu-button"] > span,
-#thread-history [data-sidebar="menu-button"] span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Keep message and welcome content in one comfortable reading column. */
 #messages,
 #welcome-screen {
-  max-width: min(58rem, 100%);
+  max-width: min(928px, 100%);
 }
 main div:has(> #welcome-screen) > div {
   width: min(58rem, 100%) !important;
@@ -797,7 +948,7 @@ main div:has(> #welcome-screen) > div {
   padding-top: clamp(6px, 1.5vh, 20px);
 }
 #welcome-screen > div:first-child {
-  padding: 4px clamp(8px, 2vw, 20px) 0;
+  padding: 4px 0 0 var(--eg-message-text-inset);
 }
 #welcome-screen .eg-welcome-title {
   display: flex;
@@ -919,7 +1070,8 @@ main div:has(> #welcome-screen) > div {
 /* Composer: primary interaction surface. */
 #welcome-screen #message-composer,
 #message-composer {
-  min-height: 118px !important;
+  box-sizing: border-box;
+  min-height: 110px !important;
   border: 1px solid var(--chat-card-line) !important;
   border-radius: 24px !important;
   background: hsl(var(--card)) !important;
@@ -931,7 +1083,11 @@ main div:has(> #welcome-screen) > div {
   border-color: var(--pg-focus, #5b87f7) !important;
   box-shadow: var(--chat-card-shadow), var(--chat-focus-ring) !important;
 }
-#chat-input { min-height: 44px !important; font-size: .95rem !important; }
+#chat-input {
+  min-height: 44px !important;
+  max-height: min(168px, 28dvh) !important;
+  font-size: .95rem !important;
+}
 #chat-input::placeholder { color: hsl(var(--muted-foreground) / .78); }
 
 #upload-button {
@@ -966,6 +1122,18 @@ main div:has(> #welcome-screen) > div {
   box-shadow: none !important;
 }
 #chat-submit svg { width: 19px !important; height: 19px !important; }
+
+body.eg-chat-shell :is(
+  .eg-sidebar-icon-button svg,
+  #chat-settings-header-button svg,
+  #theme-toggle svg,
+  #upload-button svg,
+  #chat-submit svg
+) {
+  width: 20px !important;
+  height: 20px !important;
+  stroke-width: 1.9;
+}
 
 /* Lightweight top toolbar. */
 #header {
@@ -1027,5 +1195,12 @@ main div:has(> #messages) { overflow: visible; }
   #header { padding: 10px 12px !important; }
   #readme-button { padding: 7px 10px !important; }
   #welcome-screen .eg-welcome-title { font-size: 25px !important; }
-  #message-composer { min-height: 106px !important; }
+  body.eg-chat-shell main :is(
+    div.flex.flex-col.mx-auto.w-full.flex-grow.p-4,
+    div.flex.flex-col.mx-auto.w-full.p-4.pt-0
+  ) {
+    width: calc(100% - 24px) !important;
+    max-width: calc(100% - 24px) !important;
+  }
+  #message-composer { min-height: 104px !important; }
 }

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import json
+from urllib.error import HTTPError
 import socket
 import subprocess
 import sys
@@ -237,7 +238,7 @@ def main() -> int:
         if not any("绕过考试规则" in a for a in answers):
             failures.append(f"越权请求未返回策略拒答: {answers!r}")
 
-        # 3) Forging a hidden teacher action must not bypass the backend gate.
+        # 3) Forging a removed teacher action must not create a privileged route.
         from urllib.request import Request, urlopen
 
         received.clear()
@@ -254,18 +255,16 @@ def main() -> int:
         )
         cookie = "; ".join(k + "=" + v for k, v in http.cookies.get_dict().items())
         action.add_header("Cookie", cookie)
-        with urlopen(action, timeout=10) as response:
-            if response.status != 200:
+        try:
+            with urlopen(action, timeout=10) as response:
                 failures.append(
-                    f"action endpoint returned unexpected status {response.status}"
+                    f"removed teacher action unexpectedly returned {response.status}"
                 )
-        deadline = time.time() + 5
-        while time.time() < deadline and not any(
-            "无权限重置" in text for text in assistant_texts()
-        ):
-            time.sleep(0.1)
-        if not any("无权限重置" in text for text in assistant_texts()):
-            failures.append(f"伪造教师重置未触发后端拒绝: {assistant_texts()!r}")
+        except HTTPError as error:
+            if error.code != 404:
+                failures.append(
+                    f"removed teacher action returned unexpected status {error.code}"
+                )
 
         # 4) Native history ownership / rename / search / persistent selection.
         listing = http.post(

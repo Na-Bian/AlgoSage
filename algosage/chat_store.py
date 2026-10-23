@@ -26,6 +26,8 @@ from chainlit.types import (
 )
 from chainlit.user import PersistedUser, User
 
+from .runtime_paths import protect_runtime_file
+
 _MAX_PAGE = 100
 _MAX_NAME = 200
 _MAX_HISTORY_IMAGES = 6
@@ -174,6 +176,9 @@ class ChatDataLayer(BaseDataLayer):
                     ON feedbacks(thread_id);
                 """)
             self._conn.commit()
+            if path != ":memory:":
+                protect_runtime_file(path)
+                self._element_root.chmod(0o700)
 
     def _thread_row(self, thread_id: str) -> Optional[sqlite3.Row]:
         return self._conn.execute(
@@ -282,6 +287,40 @@ class ChatDataLayer(BaseDataLayer):
             self._conn.commit()
         if cursor.rowcount == 0:
             return None
+        return await self.get_user(identifier)
+
+    async def update_user_metadata(
+        self,
+        identifier: str,
+        metadata: Dict[str, Any],
+        display_name: str | None = None,
+    ) -> Optional[PersistedUser]:
+        """Update or create persisted metadata for a HUST profile sync."""
+        clean_metadata = _json(metadata)
+        created = _now()
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE users SET metadata=?, "
+                "display_name=COALESCE(?, display_name) WHERE identifier=?",
+                (
+                    clean_metadata,
+                    display_name[:200] if display_name else None,
+                    identifier,
+                ),
+            )
+            if cursor.rowcount == 0:
+                self._conn.execute(
+                    "INSERT INTO users(id, identifier, display_name, metadata, created_at) "
+                    "VALUES(?,?,?,?,?)",
+                    (
+                        str(uuid4()),
+                        identifier,
+                        (display_name or "学员")[:200],
+                        clean_metadata,
+                        created,
+                    ),
+                )
+            self._conn.commit()
         return await self.get_user(identifier)
 
     async def delete_feedback(self, feedback_id: str) -> bool:
@@ -411,10 +450,12 @@ class ChatDataLayer(BaseDataLayer):
         relative = Path(hashlib.sha256(element_id.encode()).hexdigest())
         target_dir = self._element_root / hashlib.sha256(thread_id.encode()).hexdigest()[:24]
         target_dir.mkdir(parents=True, exist_ok=True)
+        target_dir.chmod(0o700)
         target = target_dir / relative.name
         temporary = target.with_suffix(".tmp")
         temporary.write_bytes(content)
         temporary.replace(target)
+        target.chmod(0o600)
         with self._lock:
             if self._conn.execute(
                 "SELECT 1 FROM deleted_threads WHERE thread_id = ?", (thread_id,)
@@ -541,6 +582,26 @@ class ChatDataLayer(BaseDataLayer):
             self._conn.commit()
         for item in element_rows:
             Path(item["storage_path"]).unlink(missing_ok=True)
+
+    async def delete_all_personal_data(self, principal_id: str) -> int:
+        """Delete all conversations and the persisted user record for one owner."""
+        if not isinstance(principal_id, str) or not principal_id.strip():
+            raise ValueError("principal_id must be nonempty")
+        with self._lock:
+            thread_ids = [
+                row["id"]
+                for row in self._conn.execute(
+                    "SELECT id FROM threads "
+                    "WHERE user_identifier = ? OR user_id = ?",
+                    (principal_id, principal_id),
+                ).fetchall()
+            ]
+        for thread_id in thread_ids:
+            await self.delete_thread(thread_id)
+        with self._lock:
+            self._conn.execute("DELETE FROM users WHERE identifier = ?", (principal_id,))
+            self._conn.commit()
+        return len(thread_ids)
 
     async def list_threads(
         self, pagination: Pagination, filters: ThreadFilter

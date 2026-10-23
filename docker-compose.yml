@@ -1,0 +1,16 @@
+services:
+  algosage:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      SAGE_ALLOWED_ORIGINS: ${SAGE_ALLOWED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
+      SAGE_SECURE_COOKIES: ${SAGE_SECURE_COOKIES:-false}
+    volumes:
+      - algosage-runtime:/app/.algosage
+    restart: unless-stopped
+
+volumes:
+  algosage-runtime:
