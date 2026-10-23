@@ -230,21 +230,30 @@ main div:has(> #welcome-screen) {
   padding-block: clamp(16px, 2dvh, 28px) clamp(28px, 7dvh, 88px);
 }
 
-.eg-welcome-brand {
+#welcome-screen.eg-empty-welcome::before {
   grid-row: 1;
+  content: "";
   width: clamp(214px, 22vw, 262px);
+  aspect-ratio: 2172 / 724;
+  background-image: url("/public/brand-logo-light.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  pointer-events: none;
 }
 
-.eg-welcome-brand img {
-  width: 100%;
-  height: auto;
-  display: block;
+:root.dark #welcome-screen.eg-empty-welcome::before {
+  background-image: url("/public/brand-logo.png");
 }
 
-.eg-welcome-brand .eg-logo-dark,
-:root.dark .eg-welcome-brand .eg-logo-light { display: none; }
-:root.dark .eg-welcome-brand .eg-logo-dark,
-:root:not(.dark) .eg-welcome-brand .eg-logo-light { display: block; }
+#welcome-screen.eg-empty-welcome[data-eg-brand-exit="1"]::before {
+  opacity: 0;
+}
+
+#welcome-screen.eg-empty-welcome.eg-brand-reveal::before {
+  animation: eg-brand-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 
 #welcome-screen.eg-empty-welcome #message-composer {
   grid-row: 2;
@@ -553,10 +562,6 @@ main .ai-message .message-content ~ div button svg {
   animation: eg-first-message-in 300ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
 }
 
-.eg-brand-reveal {
-  animation: eg-brand-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
 @keyframes eg-brand-exit {
   from { opacity: 1; transform: none; }
   to { opacity: 0; transform: translateY(-12px) scale(0.96); }
@@ -581,7 +586,7 @@ main .ai-message .message-content ~ div button svg {
   .eg-brand-exit-ghost,
   .eg-chat-exit-ghost,
   .eg-first-message-reveal,
-  .eg-brand-reveal {
+  #welcome-screen.eg-empty-welcome.eg-brand-reveal::before {
     animation: none !important;
   }
   .eg-composer-motion-stage {
@@ -1310,7 +1315,7 @@ main div:has(> #messages) { overflow: visible; }
 @media (max-width: 640px) {
   #header { padding: 10px 12px !important; }
   #readme-button { padding: 7px 10px !important; }
-  .eg-welcome-brand { width: min(196px, 58vw); }
+  #welcome-screen.eg-empty-welcome::before { width: min(196px, 58vw); }
   body.eg-chat-shell main :is(
     div.flex.flex-col.mx-auto.w-full.flex-grow.p-4,
     div.flex.flex-col.mx-auto.w-full.p-4.pt-0

@@ -400,7 +400,9 @@ class ChainlitAttachmentInputTests(unittest.TestCase):
         # and send controls).
         self.assertIn("#welcome-screen > div:first-child {", css)
         self.assertIn("display: none !important;", css)
-        self.assertIn("eg-welcome-brand .eg-logo-dark", css)
+        self.assertIn("#welcome-screen.eg-empty-welcome::before", css)
+        self.assertIn('background-image: url("/public/brand-logo-light.png")', css)
+        self.assertIn('background-image: url("/public/brand-logo.png")', css)
 
 
 if __name__ == "__main__":

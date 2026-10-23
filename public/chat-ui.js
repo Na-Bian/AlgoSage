@@ -291,23 +291,9 @@
     const details = heading.closest(".prose")?.parentElement;
     if (details) details.hidden = true;
 
-    let brand = welcome.querySelector(":scope > .eg-welcome-brand");
-    if (!brand) {
-      brand = document.createElement("div");
-      brand.className = "eg-welcome-brand";
-      brand.innerHTML = `
-        <img class="eg-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">
-        <img class="eg-logo-light" src="/public/brand-logo-light.png" alt="">
-      `;
-    }
-    if (!brand.isConnected) {
-      const nativeComposer = welcome.querySelector("#message-composer");
-      if (nativeComposer) {
-        welcome.insertBefore(brand, nativeComposer);
-      } else {
-        welcome.append(brand);
-      }
-    }
+    // The brand is drawn by #welcome-screen::before. Injected logo DOM used to
+    // be removed and restored while React re-rendered during IME input, which
+    // made it flash. A pseudo-element belongs to the stable layout row instead.
 
     // Chainlit puts a 48rem max-width inline on this container. Use the compact
     // welcome column without fighting the inline declaration from CSS.
@@ -396,6 +382,43 @@
     return portal;
   }
 
+  function brandRectForComposer(composer) {
+    const composerRect = composer.getBoundingClientRect();
+    const width = Math.max(196, Math.min(262, window.innerWidth * 0.22));
+    const height = width * (724 / 2172);
+    return {
+      left: composerRect.left + composerRect.width / 2 - width / 2,
+      top: composerRect.top - 30 - height,
+      width,
+      height,
+      right: composerRect.left + composerRect.width / 2 + width / 2,
+      bottom: composerRect.top - 30,
+    };
+  }
+
+  function captureBrandGhost(rect) {
+    const dark = document.documentElement.classList.contains("dark");
+    const ghost = document.createElement("div");
+    ghost.className = "eg-brand-exit-ghost";
+    ghost.setAttribute("aria-hidden", "true");
+    Object.assign(ghost.style, {
+      position: "fixed",
+      left: `${rect.left}px`,
+      top: `${rect.top}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      margin: "0",
+      pointerEvents: "none",
+      backgroundImage: `url('/public/brand-logo-${dark ? "dark" : "light"}.png')`,
+      backgroundSize: "contain",
+      backgroundRepeat: "no-repeat",
+      backgroundPosition: "center",
+    });
+    ensureMotionPortal().append(ghost);
+    composerMotion.ghost = ghost;
+    return ghost;
+  }
+
   function captureGhost(node, className) {
     if (!node) return null;
     const rect = node.getBoundingClientRect();
@@ -466,6 +489,7 @@
     composerMotion.sourceNext = null;
     composerMotion.sourceStyle = null;
     removeMotionGhost();
+    document.getElementById('welcome-screen')?.classList.remove("eg-brand-reveal");
     composerMotion.phase = "idle";
     composerMotion.timer = 0;
     composerMotion.reverseEligible = composerMotion.direction === "to-chat";
@@ -482,7 +506,8 @@
       }
     }
     const welcome = activeWelcome();
-    welcome?.querySelector(".eg-welcome-brand")?.classList.remove("eg-motion-hidden");
+    delete welcome?.dataset.egBrandExit;
+    welcome?.classList.remove("eg-brand-reveal");
     removeMotionGhost();
     composerMotion.candidate = null;
     composerMotion.firstRect = null;
@@ -581,8 +606,7 @@
       }
       window.clearInterval(composerMotion.timer);
       target.classList.add("eg-motion-hidden");
-      const brand = welcome.querySelector(".eg-welcome-brand");
-      if (brand && !reduceMotionQuery.matches) brand.classList.add("eg-brand-reveal");
+      if (!reduceMotionQuery.matches) welcome.classList.add("eg-brand-reveal");
       const targetRect = target.getBoundingClientRect();
 
       window.setTimeout(async () => {
@@ -626,9 +650,8 @@
     composerMotion.candidate = composer;
     composerMotion.firstRect = composer.getBoundingClientRect();
     composer.dataset.egMotionCandidate = "1";
-    const brand = welcome.querySelector(".eg-welcome-brand");
-    captureGhost(brand, "eg-brand-exit-ghost");
-    if (brand) brand.classList.add("eg-motion-hidden");
+    welcome.dataset.egBrandExit = "1";
+    captureBrandGhost(composerMotion.firstRect);
     composerMotion.timer = window.setTimeout(() => {
       if (composerMotion.phase === "armed-chat") disarmComposerCandidate();
     }, 2000);
