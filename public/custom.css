@@ -589,6 +589,18 @@ main .ai-message .message-content ~ div button svg {
   }
 }
 
+/* Message editing replaces the bubble in-place. Do not let the global accent
+   background transition start from transparent, or the page's dark canvas will
+   show through as a one-frame black box. */
+main [data-step-type="user_message"]:has(#edit-chat-input) .bg-accent {
+  background-color: hsl(var(--accent)) !important;
+  transition: none !important;
+}
+
+#edit-chat-input {
+  transition: none !important;
+}
+
 /* Initial cookie restoration is a state correction, not a user action. */
 body.eg-sidebar-restoring :is(
   [data-collapsible][data-state] > div,
