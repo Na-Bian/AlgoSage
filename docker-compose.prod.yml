@@ -1,0 +1,35 @@
+services:
+  algosage:
+    build: .
+    expose:
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      SAGE_ALLOWED_ORIGINS: ${SAGE_ALLOWED_ORIGINS:-http://101.37.35.197}
+      SAGE_SECURE_COOKIES: ${SAGE_SECURE_COOKIES:-false}
+      CHAINLIT_HOST: 0.0.0.0
+      CHAINLIT_PORT: "8000"
+    volumes:
+      - algosage-runtime:/app/.algosage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - algosage
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/ecs/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/ecs/nginx-top.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
+
+volumes:
+  algosage-runtime:
