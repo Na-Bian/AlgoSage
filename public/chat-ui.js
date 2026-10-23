@@ -243,16 +243,45 @@
 
   function enhanceWelcome() {
     const welcome = document.getElementById("welcome-screen");
-    if (!welcome || welcome.dataset.egChatUi === "1") return false;
+    if (!welcome) return false;
+    const alreadyEnhanced = welcome.dataset.egChatUi === "1";
+    let heading = welcome.querySelector(".prose > h3");
+    let lede = heading?.nextElementSibling;
+    let configCard = welcome.querySelector(".prose > div:has(table)");
+    let usageHeading = configCard?.nextElementSibling;
+    let usageList = usageHeading?.nextElementSibling;
 
-    const heading = welcome.querySelector(".prose > h3");
-    const lede = heading?.nextElementSibling;
-    const configCard = welcome.querySelector(".prose > div:has(table)");
-    const usageHeading = configCard?.nextElementSibling;
-    const usageList = usageHeading?.nextElementSibling;
-    if (!heading || !lede || !configCard || !usageHeading || !usageList) return false;
+    // Chainlit can reuse this DOM after returning from a thread while resetting
+    // React-controlled classes. Restore presentation state idempotently; never
+    // key the layout only on dataset.
+    if (!alreadyEnhanced) {
+      if (!heading || !lede || !configCard || !usageHeading || !usageList) return false;
+      welcome.dataset.egChatUi = "1";
+      heading.classList.add("eg-welcome-title");
+      lede.classList.add("eg-welcome-lede");
+      configCard.classList.add("eg-config-card");
 
-    welcome.dataset.egChatUi = "1";
+      // The markdown renderer emits the usage heading and list as siblings.
+      // Move only these presentation siblings into one card wrapper.
+      const usageCard = document.createElement("section");
+      usageCard.className = "eg-usage-card";
+      usageHeading.parentNode.insertBefore(usageCard, usageHeading);
+      usageCard.append(usageHeading, usageList);
+      usageHeading.classList.add("eg-card-heading");
+
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("fill", "none");
+      icon.setAttribute("stroke", "currentColor");
+      icon.setAttribute("stroke-width", "1.7");
+      icon.setAttribute("stroke-linecap", "round");
+      icon.setAttribute("stroke-linejoin", "round");
+      icon.setAttribute("aria-hidden", "true");
+      icon.classList.add("eg-card-icon");
+      icon.innerHTML = '<path d="M4 19.5V6a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 17.5Z"/><path d="M8 8h7M8 12h6"/>';
+      usageHeading.prepend(icon);
+    }
+
     welcome.classList.add("eg-welcome", "eg-empty-welcome");
     welcome.setAttribute("aria-label", "AlgoSage 新会话");
 
@@ -262,17 +291,22 @@
     const details = heading.closest(".prose")?.parentElement;
     if (details) details.hidden = true;
 
-    const brand = document.createElement("div");
-    brand.className = "eg-welcome-brand";
-    brand.innerHTML = `
-      <img class="eg-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">
-      <img class="eg-logo-light" src="/public/brand-logo-light.png" alt="">
-    `;
-    const nativeComposer = welcome.querySelector("#message-composer");
-    if (nativeComposer) {
-      welcome.insertBefore(brand, nativeComposer);
-    } else {
-      welcome.append(brand);
+    let brand = welcome.querySelector(":scope > .eg-welcome-brand");
+    if (!brand) {
+      brand = document.createElement("div");
+      brand.className = "eg-welcome-brand";
+      brand.innerHTML = `
+        <img class="eg-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">
+        <img class="eg-logo-light" src="/public/brand-logo-light.png" alt="">
+      `;
+    }
+    if (!brand.isConnected) {
+      const nativeComposer = welcome.querySelector("#message-composer");
+      if (nativeComposer) {
+        welcome.insertBefore(brand, nativeComposer);
+      } else {
+        welcome.append(brand);
+      }
     }
 
     // Chainlit puts a 48rem max-width inline on this container. Use the compact
@@ -282,30 +316,6 @@
       container.style.width = "min(54rem, 100%)";
       container.style.maxWidth = "min(54rem, 100%)";
     }
-    heading.classList.add("eg-welcome-title");
-    lede.classList.add("eg-welcome-lede");
-    configCard.classList.add("eg-config-card");
-
-    // The markdown renderer emits the usage heading and list as siblings. Move
-    // only these presentation siblings into one card wrapper.
-    const usageCard = document.createElement("section");
-    usageCard.className = "eg-usage-card";
-    usageHeading.parentNode.insertBefore(usageCard, usageHeading);
-    usageCard.append(usageHeading, usageList);
-    usageHeading.classList.add("eg-card-heading");
-
-    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    icon.setAttribute("viewBox", "0 0 24 24");
-    icon.setAttribute("fill", "none");
-    icon.setAttribute("stroke", "currentColor");
-    icon.setAttribute("stroke-width", "1.7");
-    icon.setAttribute("stroke-linecap", "round");
-    icon.setAttribute("stroke-linejoin", "round");
-    icon.setAttribute("aria-hidden", "true");
-    icon.classList.add("eg-card-icon");
-    icon.innerHTML = '<path d="M4 19.5V6a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 17.5Z"/><path d="M8 8h7M8 12h6"/>';
-    usageHeading.prepend(icon);
-
     return true;
   }
 
@@ -334,6 +344,367 @@
   }
 
   buildCollapsedBar();
+
+  // Chainlit remounts the empty-state and chat-state composers. The retiring
+  // real node becomes the FLIP actor for this short state-driven hand-off; the
+  // incoming real node stays hidden until the actor reaches its measured
+  // destination. AI completion never controls the transition.
+  const composerMotion = {
+    phase: "idle",
+    actor: null,
+    stage: null,
+    portal: null,
+    sourceParent: null,
+    sourceNext: null,
+    sourceStyle: null,
+    ghost: null,
+    timer: 0,
+    guardUntil: 0,
+    direction: "none",
+    reverseEligible: false,
+  };
+  const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  window.__egComposerMotion = composerMotion;
+
+  function activeWelcome() {
+    return document.getElementById("welcome-screen");
+  }
+
+  function activeComposer() {
+    return document.getElementById("message-composer");
+  }
+
+  function composerHasPayload(composer) {
+    const input = composer.querySelector("#chat-input");
+    const files = composer.querySelector('input[type="file"]')?.files;
+    return Boolean(input?.value.trim() || files?.length);
+  }
+
+  function isCoarsePointer() {
+    return window.matchMedia("(pointer: coarse)").matches;
+  }
+
+  function ensureMotionPortal() {
+    if (composerMotion.portal?.isConnected) return composerMotion.portal;
+    const portal = document.createElement("div");
+    portal.id = "eg-composer-motion-portal";
+    portal.setAttribute("aria-hidden", "false");
+    document.body.append(portal);
+    composerMotion.portal = portal;
+    return portal;
+  }
+
+  function captureGhost(node, className) {
+    if (!node) return null;
+    const rect = node.getBoundingClientRect();
+    const ghost = node.cloneNode(true);
+    ghost.className = `${className} ${node.className || ""}`;
+    ghost.removeAttribute("id");
+    ghost.setAttribute("aria-hidden", "true");
+    Object.assign(ghost.style, {
+      position: "fixed",
+      left: `${rect.left}px`,
+      top: `${rect.top}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      margin: "0",
+      pointerEvents: "none",
+    });
+    ensureMotionPortal().append(ghost);
+    composerMotion.ghost = ghost;
+    return ghost;
+  }
+
+  function removeMotionGhost() {
+    composerMotion.ghost?.remove();
+    composerMotion.ghost = null;
+  }
+
+  function captureComposerActor(composer) {
+    const rect = composer.getBoundingClientRect();
+    composerMotion.sourceParent = composer.parentNode;
+    composerMotion.sourceNext = composer.nextSibling;
+    composerMotion.sourceStyle = composer.getAttribute("style");
+
+    const stage = document.createElement("div");
+    stage.className = "eg-composer-motion-stage";
+    stage.style.left = `${rect.left}px`;
+    stage.style.top = `${rect.top}px`;
+    stage.style.width = `${rect.width}px`;
+    stage.style.height = `${rect.height}px`;
+
+    composer.classList.add("eg-composer-motion-actor");
+    composer.dataset.egOriginalId = composer.id;
+    composer.removeAttribute("id");
+    composer.style.width = "100%";
+    stage.append(composer);
+    ensureMotionPortal().append(stage);
+    composerMotion.actor = composer;
+    composerMotion.stage = stage;
+    return rect;
+  }
+
+  function releaseComposerActor(target) {
+    if (target) {
+      target.classList.remove("eg-motion-hidden");
+    }
+    composerMotion.stage?.remove();
+    composerMotion.portal?.remove();
+    if (composerMotion.actor) {
+      composerMotion.actor.classList.remove("eg-composer-motion-actor");
+      if (!document.getElementById(composerMotion.actor.dataset.egOriginalId || "")) {
+        composerMotion.actor.id = composerMotion.actor.dataset.egOriginalId || "";
+      }
+      delete composerMotion.actor.dataset.egOriginalId;
+      composerMotion.actor.style.removeProperty("width");
+      composerMotion.actor.style.removeProperty("height");
+    }
+    composerMotion.actor = null;
+    composerMotion.stage = null;
+    composerMotion.portal = null;
+    composerMotion.sourceParent = null;
+    composerMotion.sourceNext = null;
+    composerMotion.sourceStyle = null;
+    removeMotionGhost();
+    composerMotion.phase = "idle";
+    composerMotion.timer = 0;
+    composerMotion.reverseEligible = composerMotion.direction === "to-chat";
+    composerMotion.direction = "none";
+  }
+
+  function restoreComposerActor() {
+    const actor = composerMotion.actor;
+    if (actor && composerMotion.sourceParent?.isConnected) {
+      composerMotion.sourceParent.insertBefore(actor, composerMotion.sourceNext);
+      if (composerMotion.sourceStyle === null) {
+        actor.removeAttribute("style");
+      } else {
+        actor.setAttribute("style", composerMotion.sourceStyle);
+      }
+      actor.classList.remove("eg-composer-motion-actor");
+      if (composerMotion.sourceParent?.isConnected && !document.getElementById(actor.dataset.egOriginalId || "")) {
+        actor.id = actor.dataset.egOriginalId || "";
+      }
+      delete actor.dataset.egOriginalId;
+    }
+    composerMotion.stage?.remove();
+    composerMotion.portal?.remove();
+    removeMotionGhost();
+    composerMotion.reverseEligible = false;
+    composerMotion.direction = "none";
+    composerMotion.actor = null;
+    composerMotion.stage = null;
+    composerMotion.portal = null;
+    composerMotion.sourceParent = null;
+    composerMotion.sourceNext = null;
+    composerMotion.sourceStyle = null;
+    composerMotion.phase = "idle";
+    composerMotion.timer = 0;
+  }
+
+  function settleMotionImmediately() {
+    if (composerMotion.phase === "idle") return;
+    const target = activeComposer();
+    if (target && target !== composerMotion.actor) {
+      releaseComposerActor(target);
+    } else {
+      restoreComposerActor();
+    }
+  }
+
+  function animateComposerActor(first, target, duration) {
+    const dx = target.left - first.left;
+    const dy = target.top - first.top;
+    const scaleX = target.width / Math.max(first.width, 1);
+    const scaleY = target.height / Math.max(first.height, 1);
+    return composerMotion.stage.animate(
+      [
+        { transform: "none" },
+        {
+          transform: `translate3d(${dx}px, ${dy}px, 0) scale(${scaleX}, ${scaleY})`,
+        },
+      ],
+      { duration, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "forwards" }
+    ).finished;
+  }
+
+  function beginForwardTransition() {
+    if (reduceMotionQuery.matches) return false;
+    const welcome = activeWelcome();
+    const composer = activeComposer();
+    if (!welcome || !composer || !composerHasPayload(composer)) return false;
+
+    composerMotion.phase = "waiting-chat";
+    composerMotion.direction = "to-chat";
+    const firstRect = captureComposerActor(composer);
+    const brand = welcome.querySelector(".eg-welcome-brand");
+    const brandGhost = captureGhost(brand, "eg-brand-exit-ghost");
+    if (brand) brand.classList.add("eg-motion-hidden");
+
+    const started = performance.now();
+    const duration = isCoarsePointer() ? 320 : 520;
+    composerMotion.timer = window.setInterval(() => {
+      const target = activeComposer();
+      if (!target || target === composerMotion.actor) {
+        if (performance.now() - started > 2400) restoreComposerActor();
+        return;
+      }
+      window.clearInterval(composerMotion.timer);
+
+      target.classList.add("eg-motion-hidden");
+      const targetRect = target.getBoundingClientRect();
+      const userMessage = document.querySelector(
+        '[data-step-type="user_message"]'
+      );
+      if (userMessage) userMessage.classList.add("eg-first-message-reveal");
+
+      const delay = reduceMotionQuery.matches ? 0 : Math.max(0, 520 - duration);
+      window.setTimeout(async () => {
+        if (composerMotion.phase !== "waiting-chat") return;
+        try {
+          if (!reduceMotionQuery.matches) {
+            await animateComposerActor(firstRect, targetRect, duration);
+          }
+          releaseComposerActor(target);
+          target.querySelector("#chat-input")?.focus({ preventScroll: true });
+        } catch (_) {
+          settleMotionImmediately();
+        }
+      }, delay);
+    }, 24);
+    return true;
+  }
+
+  function beginReverseTransition() {
+    if (reduceMotionQuery.matches) return false;
+    const composer = activeComposer();
+    if (!composer || activeWelcome() || !composerMotion.reverseEligible) {
+      composerMotion.reverseEligible = false;
+      return false;
+    }
+    composerMotion.reverseEligible = false;
+
+    composerMotion.phase = "waiting-welcome";
+    composerMotion.direction = "to-welcome";
+    const firstRect = captureComposerActor(composer);
+
+    const messageSurface = document.querySelector(
+      'main div.relative.flex.flex-col.flex-grow.overflow-y-auto'
+    );
+    if (messageSurface) {
+      captureGhost(messageSurface, "eg-chat-exit-ghost");
+      composerMotion.ghost?.classList.add("eg-chat-exit-ghost");
+    }
+
+    const started = performance.now();
+    const duration = isCoarsePointer() ? 220 : 350;
+    composerMotion.timer = window.setInterval(() => {
+      const welcome = activeWelcome();
+      const target = activeComposer();
+      if (!welcome || !target || target === composerMotion.actor) {
+        if (performance.now() - started > 2000) restoreComposerActor();
+        return;
+      }
+      window.clearInterval(composerMotion.timer);
+
+      target.classList.add("eg-motion-hidden");
+      const brand = welcome.querySelector(".eg-welcome-brand");
+      if (brand && !reduceMotionQuery.matches) {
+        brand.classList.add("eg-brand-reveal");
+      }
+      const targetRect = target.getBoundingClientRect();
+
+      window.setTimeout(async () => {
+        if (composerMotion.phase !== "waiting-welcome") return;
+        try {
+          if (!reduceMotionQuery.matches) {
+            await animateComposerActor(firstRect, targetRect, duration);
+          }
+          releaseComposerActor(target);
+          target.querySelector("#chat-input")?.focus({ preventScroll: true });
+        } catch (_) {
+          settleMotionImmediately();
+        }
+      }, 0);
+    }, 24);
+    return true;
+  }
+
+  function visibleNewChatButton(eventTarget) {
+    const button = eventTarget?.closest?.('[aria-label="新建对话"]');
+    return button && Boolean(button.offsetWidth || button.offsetHeight)
+      ? button
+      : null;
+  }
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const now = performance.now();
+      if (now < composerMotion.guardUntil) return;
+
+      const submit = event.target?.closest?.("#chat-submit");
+      if (submit && composerMotion.phase === "idle" && activeWelcome()) {
+        const composer = activeComposer();
+        if (composer?.contains(submit) && composerHasPayload(composer)) {
+          composerMotion.guardUntil = now + 700;
+          beginForwardTransition();
+        }
+        return;
+      }
+
+      if (visibleNewChatButton(event.target)) {
+        if (composerMotion.phase === "idle" && !activeWelcome()) {
+          composerMotion.guardUntil = now + 700;
+          beginReverseTransition();
+        }
+      }
+    },
+    true
+  );
+
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.key !== "Enter" ||
+        event.shiftKey ||
+        composerMotion.phase !== "idle"
+      ) {
+        return;
+      }
+      const composer = activeComposer();
+      if (!composer || !activeWelcome() || !composer.contains(event.target)) {
+        return;
+      }
+      if (!composerHasPayload(composer)) return;
+      composerMotion.guardUntil = performance.now() + 700;
+      beginForwardTransition();
+    },
+    true
+  );
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (event.target?.closest?.('a[href^="/thread/"]')) {
+        composerMotion.reverseEligible = false;
+      }
+    },
+    true
+  );
+
+  window.addEventListener("resize", () => {
+    if (composerMotion.phase !== "idle") settleMotionImmediately();
+  });
+
+  new MutationObserver(() => {
+    if (composerMotion.phase !== "idle") settleMotionImmediately();
+  }).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class"],
+  });
+
 
   function scheduleEnhance() {
     if (scheduled) return;

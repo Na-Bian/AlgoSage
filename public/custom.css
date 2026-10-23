@@ -513,6 +513,82 @@ main .ai-message .message-content ~ div button svg {
   animation-name: eg-drawer-right-in;
 }
 
+/* Composer hand-off: one visible actor and one hidden incoming real node. */
+#eg-composer-motion-portal {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  pointer-events: none;
+}
+
+.eg-composer-motion-stage {
+  position: fixed;
+  z-index: 1101;
+  transform-origin: top left;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.eg-composer-motion-actor {
+  pointer-events: none;
+}
+
+.eg-motion-hidden {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.eg-brand-exit-ghost {
+  z-index: 1102;
+  animation: eg-brand-exit 230ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.eg-chat-exit-ghost {
+  z-index: 900;
+  overflow: hidden;
+  animation: eg-chat-exit 150ms ease-out both;
+}
+
+.eg-first-message-reveal {
+  animation: eg-first-message-in 300ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
+}
+
+.eg-brand-reveal {
+  animation: eg-brand-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes eg-brand-exit {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-12px) scale(0.96); }
+}
+
+@keyframes eg-chat-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes eg-first-message-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes eg-brand-enter {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eg-brand-exit-ghost,
+  .eg-chat-exit-ghost,
+  .eg-first-message-reveal,
+  .eg-brand-reveal {
+    animation: none !important;
+  }
+  .eg-composer-motion-stage {
+    will-change: auto;
+  }
+}
+
 /* Initial cookie restoration is a state correction, not a user action. */
 body.eg-sidebar-restoring :is(
   [data-collapsible][data-state] > div,
