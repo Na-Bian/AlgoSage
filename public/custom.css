@@ -494,6 +494,16 @@ main .ai-message .message-content ~ div button svg {
   animation-name: eg-drawer-right-in;
 }
 
+/* Initial cookie restoration is a state correction, not a user action. */
+body.eg-sidebar-restoring :is(
+  [data-collapsible][data-state] > div,
+  [data-sidebar="sidebar"],
+  .eg-collapsed-bar
+) {
+  transition: none !important;
+  animation: none !important;
+}
+
 /* 桌面侧栏保留原生宽度/位置过渡，仅统一时长与曲线。 */
 :root [data-collapsible][data-state] > div {
   transition-duration: var(--eg-motion-enter);

@@ -5,6 +5,15 @@
   "use strict";
 
   document.body.classList.add("eg-chat-shell");
+
+  // Chainlit always mounts with defaultOpen=true, so a stored collapsed choice
+  // has to be replayed after React mounts. Mark the first restore so the replay
+  // changes layout instantly instead of looking like a user-triggered collapse.
+  let sidebarRestorePending = storedSidebarOpen() === false;
+  if (sidebarRestorePending) {
+    document.body.classList.add("eg-sidebar-restoring");
+  }
+
   let scheduled = false;
 
   let sidebarRefs = null;
@@ -153,6 +162,15 @@
     sidebarRefs.collapseControl.title = sidebarRefs.collapseControl.getAttribute("aria-label");
 
     if (restoreSidebarPreference(group, sourceTrigger)) return false;
+
+    if (sidebarRestorePending) {
+      // Keep motion suppressed through React's post-click paint, then remove
+      // the flag after the longest sidebar transition would have completed.
+      sidebarRestorePending = false;
+      window.setTimeout(() => {
+        document.body.classList.remove("eg-sidebar-restoring");
+      }, 360);
+    }
 
     const collapsed = group.dataset.state === "collapsed";
     document.body.classList.toggle("eg-sidebar-collapsed", collapsed);

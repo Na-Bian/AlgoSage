@@ -14,7 +14,7 @@
 
   loadScript("/public/theme-transition.js?v=20261022-sidebar-polish-1")
     .then(() => loadScript("/public/account-profile.js?v=20261022-chat-layout-1"))
-    .then(() => loadScript("/public/chat-ui.js?v=20261023-step-label-1"))
+    .then(() => loadScript("/public/chat-ui.js?v=20261023-sidebar-restore-1"))
     .catch(() => {
       // Existing behavior remains usable even if optional enhancements fail.
       loadScript("/public/account-profile.js?v=20261022-chat-layout-1");
