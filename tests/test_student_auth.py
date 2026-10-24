@@ -266,7 +266,16 @@ class StudentProfileRouteTests(unittest.TestCase):
         self.app = FastAPI()
         self.chat_store = ChatDataLayer(str(self.root / "chats.sqlite3"))
         self.addCleanup(lambda: run(self.chat_store.close()))
-        install_student_auth(self.app, lambda: self.auth, lambda: self.chat_store)
+        # 签名已演进：install_student_auth(app, service_factory)；
+        # /auth/hust/profile 由 install_profile_routes 提供
+        install_student_auth(self.app, lambda: self.auth)
+        from algosage.student_auth import install_profile_routes
+
+        install_profile_routes(
+            self.app,
+            lambda: self.auth,
+            lambda: self.chat_store,
+        )
 
     def test_profile_view_and_updates(self):
         from chainlit.server import get_current_user

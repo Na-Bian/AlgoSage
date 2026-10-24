@@ -48,7 +48,21 @@ def main() -> None:
     parser.add_argument(
         "--port", type=int, default=int(os.environ.get("CHAINLIT_PORT", "8000"))
     )
+    parser.add_argument(
+        "--ssl-certfile",
+        default=os.environ.get("SAGE_TLS_CERT_FILE"),
+        help="TLS certificate PEM; enables HTTPS when paired with --ssl-keyfile",
+    )
+    parser.add_argument(
+        "--ssl-keyfile",
+        default=os.environ.get("SAGE_TLS_KEY_FILE"),
+        help="TLS private key PEM; enables HTTPS when paired with --ssl-certfile",
+    )
     args = parser.parse_args()
+    if bool(args.ssl_certfile) != bool(args.ssl_keyfile):
+        parser.error("--ssl-certfile and --ssl-keyfile must be provided together")
+    if args.ssl_certfile and not (Path(args.ssl_certfile).is_file() and Path(args.ssl_keyfile).is_file()):
+        parser.error("TLS certificate or private key does not exist")
 
     os.environ["CHAINLIT_HOST"] = args.host
     os.environ["CHAINLIT_PORT"] = str(args.port)
@@ -108,7 +122,15 @@ def main() -> None:
 
     app.add_middleware(BaseHTTPMiddleware, dispatch=legacy_avatar_fallback)
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info", ws="auto")
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        log_level="info",
+        ws="auto",
+        ssl_certfile=args.ssl_certfile,
+        ssl_keyfile=args.ssl_keyfile,
+    )
 
 
 if __name__ == "__main__":

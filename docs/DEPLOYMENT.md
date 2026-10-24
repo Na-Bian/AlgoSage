@@ -46,6 +46,30 @@ Compose 只把宿主机回环地址 `127.0.0.1:8000` 暴露到本机；公网访
 
 认证库中的关闭状态记录会保留，用于防止旧登录 Cookie 继续使用账号；后续如需缩短保留期或清理安全事件计数，应先通过法律与安全评审确定保留清单。
 
+## 无域名 ECS 的临时 HTTPS
+
+当前 ECS 使用 IP 访问，公网 CA 通常不能为裸 IP 签发可信证书。首次上线可生成包含 ECS IP 的自签名证书，浏览器第一次访问时选择继续访问；绑定域名后应换成 CA 证书并删除该临时证书。
+
+```bash
+.venv/bin/python tools/generate_selfsigned_cert.py \
+  --cert .algosage/tls/algosage.crt \
+  --key .algosage/tls/algosage.key \
+  --host 101.37.35.197 --host localhost
+
+python run_app.py --host 0.0.0.0 --port 443 \
+  --ssl-certfile .algosage/tls/algosage.crt \
+  --ssl-keyfile .algosage/tls/algosage.key
+```
+
+同时在 `.env` 中设置：
+
+```bash
+SAGE_ALLOWED_ORIGINS=https://101.37.35.197
+SAGE_SECURE_COOKIES=true
+```
+
+云安全组必须放行 `443/tcp`；不要公网暴露 `8000/tcp`。
+
 ## Windows Server 原生部署（当前 ECS）
 
 当前阿里云 ECS 是 Windows Server 2022，采用原生 Python 部署而不是 Docker：

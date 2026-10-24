@@ -238,7 +238,11 @@ class RiskStateStore:
                         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                     break
                 except OSError as error:
-                    retriable = sys.platform == "win32" and error.errno in {
+                    # POSIX 的 flock(LOCK_NB) 忙时抛 BlockingIOError
+                    # （EAGAIN/EWOULDBLOCK），Windows 的 msvcrt 抛 EACCES/
+                    # EAGAIN/EDEADLK；两者都应按"锁被同身份上一轮持有"处理，
+                    # 在截止时间内重试而不是立刻失败。
+                    retriable = error.errno in {
                         errno.EACCES,
                         errno.EAGAIN,
                         errno.EDEADLK,

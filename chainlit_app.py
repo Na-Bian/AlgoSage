@@ -215,13 +215,25 @@ try:  # pragma: no cover - exercised through the running Chainlit server
     # Chainlit authenticates /feedback but delegates ownership entirely to the
     # data layer without passing the caller. Replace its routes with owner-
     # checked versions so one workspace cannot alter another workspace's rating.
-    for route in list(_chainlit_server_app.router.routes):
-        if (
-            isinstance(route, APIRoute)
-            and route.path == "/feedback"
-            and route.methods.intersection({"PUT", "DELETE"})
-        ):
-            _chainlit_server_app.router.routes.remove(route)
+    # FastAPI >= 0.143 的 include_router 是组合式委托路由：chainlit 原版
+    # 路由实际保留在源 APIRouter（chainlit.server.router）内部，仅从
+    # app.router.routes 按 path 移除是空操作，原版无 owner 检查的
+    # /feedback 仍会先命中。必须把源 router 内的 PUT/DELETE /feedback 一并
+    # 剥离，改写版才可达。
+    from chainlit.server import router as _chainlit_source_router
+
+    _feedback_route_targets = (
+        _chainlit_server_app.router.routes,
+        _chainlit_source_router.routes,
+    )
+    for _target in _feedback_route_targets:
+        for route in list(_target):
+            if (
+                isinstance(route, APIRoute)
+                and route.path == "/feedback"
+                and route.methods.intersection({"PUT", "DELETE"})
+            ):
+                _target.remove(route)
 
     @_chainlit_server_app.put("/feedback", include_in_schema=False)
     async def update_owned_feedback(

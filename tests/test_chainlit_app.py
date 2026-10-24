@@ -104,66 +104,70 @@ class ChainlitAppModuleTests(unittest.TestCase):
             )
         )
 
-        with TestClient(app) as client:
-            self.addCleanup(app.dependency_overrides.clear)
-            app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-                identifier="bob"
-            )
-            denied = client.put(
-                "/feedback",
-                json={
-                    "feedback": {
-                        "forId": "answer-1",
-                        "value": 1,
-                        "threadId": "alice-thread",
-                    },
-                    "sessionId": "unrelated-session",
+        # 不用 `with TestClient(app)`：Chainlit 的 lifespan shutdown 以
+        # os._exit(0) 结束进程（chainlit/server.py），会静默杀掉整个测试
+        # 运行器、后续用例全部丢失。裸 TestClient 不触发 lifespan，路由与
+        # dependency_overrides 照常工作（与 test_student_auth 同一模式）。
+        client = TestClient(app)
+        self.addCleanup(app.dependency_overrides.clear)
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            identifier="bob"
+        )
+        denied = client.put(
+            "/feedback",
+            json={
+                "feedback": {
+                    "forId": "answer-1",
+                    "value": 1,
+                    "threadId": "alice-thread",
                 },
-            )
-            self.assertEqual(denied.status_code, 403)
-            self.assertIsNone(store.get_thread("alice-thread")["steps"][0].get("feedback"))
+                "sessionId": "unrelated-session",
+            },
+        )
+        self.assertEqual(denied.status_code, 403)
+        self.assertIsNone(asyncio.run(store.get_thread("alice-thread"))["steps"][0].get("feedback"))
 
-            app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-                identifier="alice"
-            )
-            allowed = client.put(
-                "/feedback",
-                json={
-                    "feedback": {
-                        "forId": "answer-1",
-                        "value": 1,
-                        "threadId": "alice-thread",
-                        "comment": "helpful",
-                    },
-                    "sessionId": "unrelated-session",
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            identifier="alice"
+        )
+        allowed = client.put(
+            "/feedback",
+            json={
+                "feedback": {
+                    "forId": "answer-1",
+                    "value": 1,
+                    "threadId": "alice-thread",
+                    "comment": "helpful",
                 },
-            )
-            self.assertEqual(allowed.status_code, 200)
-            feedback_id = allowed.json()["feedbackId"]
-            self.assertEqual(
-                store.get_thread("alice-thread")["steps"][0]["feedback"]["comment"],
-                "helpful",
-            )
+                "sessionId": "unrelated-session",
+            },
+        )
+        self.assertEqual(allowed.status_code, 200)
+        feedback_id = allowed.json()["feedbackId"]
+        self.assertEqual(
+            asyncio.run(store.get_thread("alice-thread"))["steps"][0]["feedback"]["comment"],
+            "helpful",
+        )
 
-            app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-                identifier="bob"
-            )
-            denied_delete = client.delete(
-                "/feedback", json={"feedbackId": feedback_id}
-            )
-            self.assertEqual(denied_delete.status_code, 403)
-            self.assertIn("feedback", store.get_thread("alice-thread")["steps"][0])
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            identifier="bob"
+        )
+        denied_delete = client.request(
+            "DELETE", "/feedback", json={"feedbackId": feedback_id}
+        )
+        self.assertEqual(denied_delete.status_code, 403)
+        self.assertIn("feedback", asyncio.run(store.get_thread("alice-thread"))["steps"][0])
 
-            app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-                identifier="alice"
-            )
-            allowed_delete = client.delete(
-                "/feedback", json={"feedbackId": feedback_id}
-            )
-            self.assertEqual(allowed_delete.status_code, 200)
-            self.assertNotIn(
-                "feedback", store.get_thread("alice-thread")["steps"][0]
-            )
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            identifier="alice"
+        )
+        allowed_delete = client.request(
+            "DELETE", "/feedback", json={"feedbackId": feedback_id}
+        )
+        self.assertEqual(allowed_delete.status_code, 200)
+        self.assertNotIn(
+            "feedback", asyncio.run(store.get_thread("alice-thread"))["steps"][0]
+        )
 
     def test_bootstrap_welcome_uses_public_runtime_settings(self):
         from algosage.config import Settings
@@ -197,7 +201,10 @@ class ChainlitAppModuleTests(unittest.TestCase):
             )
         self.assertFalse(service.allow_policy_override)
         widgets = fake_cl.ChatSettings.call_args.args[0]
-        self.assertEqual([widget.id for widget in widgets], ["provider_selection"])
+        widget_ids = [widget.id for widget in widgets]
+        self.assertIn("provider_selection", widget_ids)
+        # 学生界面不得出现考试/练习模式开关；模型参数微调不属策略开关
+        self.assertNotIn("exam_mode_switch", widget_ids)
 
     def test_disconnect_preserves_shared_thread_context_and_guard(self):
         svc = self.module.get_service()
