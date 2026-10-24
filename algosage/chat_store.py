@@ -118,6 +118,30 @@ def _safe_thread_metadata(
     return {"chat_settings": allowed} if allowed else None
 
 
+def _merged_thread_metadata(
+    existing: Optional[Dict[str, Any]],
+    metadata: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Merge a browser metadata update without losing durable thread state.
+
+    Chainlit clients can refresh generic chat settings without knowing the
+    server-selected conversation model. Treat provider_selection as absent,
+    not cleared, in those updates.
+    """
+    incoming = _safe_thread_metadata(metadata)
+    if incoming is None:
+        return None
+    saved = _safe_thread_metadata(existing)
+    if saved is None:
+        return incoming
+    settings = {**saved["chat_settings"], **incoming["chat_settings"]}
+    if "provider_selection" not in incoming["chat_settings"]:
+        settings["provider_selection"] = saved["chat_settings"][
+            "provider_selection"
+        ]
+    return {"chat_settings": settings}
+
+
 def _safe_step(step: Dict[str, Any]) -> Dict[str, Any]:
     clean = {key: step[key] for key in _STEP_FIELDS if key in step}
     # Client-provided step metadata is never trusted for backend model state.
@@ -722,6 +746,9 @@ class ChatDataLayer(BaseDataLayer):
                                 )
                             else:
                                 name = None  # Late initialization cannot undo a title.
+                merged_metadata = _merged_thread_metadata(
+                    _decode(row["metadata"], {}), metadata
+                )
                 self._conn.execute(
                     "UPDATE threads SET name=COALESCE(?, name), user_id=COALESCE(user_id, ?), "
                     "user_identifier=COALESCE(user_identifier, ?), tags=COALESCE(?, tags), metadata=COALESCE(?, metadata) WHERE id=?",
@@ -730,11 +757,7 @@ class ChatDataLayer(BaseDataLayer):
                         new_owner,
                         new_owner,
                         _json(tags) if tags is not None else None,
-                        (
-                            _json(_safe_thread_metadata(metadata))
-                            if _safe_thread_metadata(metadata)
-                            else None
-                        ),
+                        _json(merged_metadata) if merged_metadata else None,
                         thread_id,
                     ),
                 )

@@ -130,6 +130,33 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.session_id, "thread")
         await store.close()
 
+    async def test_thread_updates_do_not_erase_selected_provider(self):
+        from algosage.chat_store import ChatDataLayer
+        from chainlit.user import User
+
+        store = ChatDataLayer(":memory:")
+        await store.create_user(User(identifier="p"))
+        await store.update_thread(
+            "thread",
+            user_id="p",
+            metadata={
+                "chat_settings": {
+                    "provider_selection": "other::m",
+                    "temperature": 0.2,
+                }
+            },
+        )
+        await store.update_thread(
+            "thread",
+            user_id="p",
+            metadata={"chat_settings": {"temperature": 0.7}},
+        )
+        thread = await store.get_thread("thread")
+        settings = (thread.get("metadata") or {}).get("chat_settings", {})
+        self.assertEqual(settings["provider_selection"], "other::m")
+        self.assertEqual(settings["temperature"], 0.7)
+        await store.close()
+
     async def test_settings_from_stale_window_cannot_overwrite_completed_turn(self):
         self.assertTrue(
             hasattr(chainlit_app, "restore_conversation"),
@@ -169,11 +196,13 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
             chainlit_app, "get_service", return_value=svc
         ), patch.object(chainlit_app, "get_chat_store", return_value=store):
             await inspect.unwrap(chainlit_app.on_settings_update)(
-                {"provider_selection": "other::m"}
+                {"provider_selection": "other::m", "temperature": 0.2}
             )
         saved, selection = await store.load_backend_history("thread", "p")
         self.assertEqual(saved, history)
-        self.assertEqual(selection, "other::m")
+        # Provider changes moved to the composer endpoint; stale generic
+        # settings must not mutate the thread's model selection.
+        self.assertEqual(selection, registry.default)
         await store.close()
 
     async def test_two_windows_append_turns_to_latest_private_history(self):

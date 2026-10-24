@@ -202,8 +202,10 @@ class ChainlitAppModuleTests(unittest.TestCase):
         self.assertFalse(service.allow_policy_override)
         widgets = fake_cl.ChatSettings.call_args.args[0]
         widget_ids = [widget.id for widget in widgets]
-        self.assertIn("provider_selection", widget_ids)
-        # 学生界面不得出现考试/练习模式开关；模型参数微调不属策略开关
+        self.assertIn("model_catalog", widget_ids)
+        self.assertIn("temperature", widget_ids)
+        # 学生界面不得出现考试/练习模式开关；Provider 配置也仅服务端只读展示
+        self.assertNotIn("provider_selection", widget_ids)
         self.assertNotIn("exam_mode_switch", widget_ids)
 
     def test_disconnect_preserves_shared_thread_context_and_guard(self):

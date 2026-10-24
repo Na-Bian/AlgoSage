@@ -112,6 +112,57 @@ async def restore_conversation(service):
     return context
 
 
+_model_selection_locks: dict[str, asyncio.Lock] = {}
+
+
+def model_selection_lock(thread_id: str) -> asyncio.Lock:
+    key = str(thread_id)
+    lock = _model_selection_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _model_selection_locks[key] = lock
+    return lock
+
+
+async def send_model_catalog(context) -> None:
+    """Push the authorized catalog and thread-local selection to the composer."""
+    service = get_service()
+    options = service.providers.options()
+    groups: dict[str, dict] = {}
+    for option in options:
+        group = groups.setdefault(
+            option["id"],
+            {
+                "id": option["id"],
+                "label": option["label"],
+                "available": bool(option["available"]),
+                "models": [],
+            },
+        )
+        group["models"].append(
+            {
+                "selection": option["selection"],
+                "model": option["model"],
+                "available": bool(option["available"]),
+            }
+        )
+    info = service.provider_info(context)
+    try:
+        await cl.send_window_message(
+            {
+                "type": "algosage-model-state",
+                "thread_id": context_id(),
+                "current_selection": context.provider_selection,
+                "current_label": f"{info['label']} · {info['model']}",
+                "default_selection": service.providers.default,
+                "providers": list(groups.values()),
+            }
+        )
+    except Exception:
+        # Catalog state is presentation-only; model execution remains server-authoritative.
+        pass
+
+
 def get_student_auth():
     global _student_auth
     if _student_auth is None:
@@ -265,7 +316,101 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             raise HTTPException(status_code=404, detail="Feedback not found")
         return {"success": True}
 
-    from algosage.student_auth import _chainlit_router
+    from algosage.student_auth import _chainlit_router, _move_routes_before_catchall
+
+    models_router = _chainlit_router(_chainlit_server_app)
+
+    @models_router.get("/models/catalog", include_in_schema=False)
+    async def read_model_catalog(thread_id: str = "", *, current_user: UserParam):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        service = get_service()
+        options = service.providers.options()
+        groups: dict[str, dict] = {}
+        for option in options:
+            group = groups.setdefault(
+                option["id"],
+                {
+                    "id": option["id"],
+                    "label": option["label"],
+                    "available": bool(option["available"]),
+                    "models": [],
+                },
+            )
+            group["models"].append(
+                {
+                    "selection": option["selection"],
+                    "model": option["model"],
+                    "available": bool(option["available"]),
+                }
+            )
+        current = service.providers.default
+        if thread_id:
+            try:
+                _, current = await get_chat_store().load_backend_history(
+                    thread_id, current_user.identifier
+                )
+            except PermissionError as error:
+                raise HTTPException(status_code=403, detail="Thread owner mismatch") from error
+        current = current or service.providers.default
+        try:
+            current_info = service.providers.info(current)
+            current_available = True
+        except ValueError:
+            current_info = {"label": current, "model": current}
+            current_available = False
+        return {
+            "default_selection": service.providers.default,
+            "current_selection": current,
+            "current_available": current_available,
+            "current_label": f"{current_info['label']} · {current_info['model']}",
+            "providers": list(groups.values()),
+        }
+
+    @models_router.post("/models/select", include_in_schema=False)
+    async def select_thread_model(payload: dict, current_user: UserParam):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        thread_id = str(payload.get("thread_id") or "").strip()
+        selection = str(payload.get("selection") or "").strip()
+        if not thread_id or len(thread_id) > 128:
+            raise HTTPException(status_code=400, detail="Invalid thread")
+        if not selection:
+            raise HTTPException(status_code=400, detail="Model selection is required")
+        service = get_service()
+        try:
+            async with model_selection_lock(thread_id):
+                context = await asyncio.to_thread(
+                    service.new_context, thread_id, principal_id=current_user.identifier
+                )
+                await asyncio.to_thread(service.select_provider, context, selection)
+                info = service.provider_info(context)
+                thread = await get_chat_store().get_thread(thread_id)
+                if thread is not None:
+                    history, _ = await get_chat_store().load_backend_history(
+                        thread_id, current_user.identifier
+                    )
+                    await get_chat_store().save_backend_history(
+                        thread_id,
+                        current_user.identifier,
+                        history,
+                        selection,
+                    )
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return {
+            "success": True,
+            "selection": context.provider_selection,
+            "label": f"{info['label']} · {info['model']}",
+            "model": info["model"],
+        }
+
+    _move_routes_before_catchall(
+        _chainlit_router(_chainlit_server_app),
+        ("/models/catalog", "/models/select"),
+    )
 
     preferences_router = _chainlit_router(_chainlit_server_app)
 
@@ -312,20 +457,22 @@ except ImportError:
 async def send_provider_settings(context) -> None:
     service = get_service()
     options = service.providers.options()
+    options = service.providers.options()
     items = {
         f"{o['label']} · {o['model']}": o["selection"]
         for o in options
-        if o["available"]
     }
     provider = service.providers.resolve(context.provider_selection)
     params = service.normalize_model_params(context.model_params or {}, provider)
     max_output = min(int(params.get("max_output_tokens", provider.max_output_tokens)), provider.max_output_tokens)
     widgets = [
         Select(
-            id="provider_selection",
-            label="模型服务 / 模型",
+            id="model_catalog",
+            label="模型与 Provider（服务端只读目录）",
             items=items,
             initial_value=context.provider_selection,
+            disabled=True,
+            description="模型在聊天输入框发送按钮左侧切换；Provider 配置由服务端管理。",
         ),
         Slider(
             id="temperature",
@@ -404,6 +551,7 @@ async def send_provider_settings(context) -> None:
         ),
     ]
     await cl.ChatSettings(widgets).send()
+    await send_model_catalog(context)
 
 
 def _normalize_ui_settings(settings: dict) -> dict:
@@ -427,15 +575,6 @@ async def on_settings_update(settings: dict) -> None:
     service = get_service()
     async with conversation_lock():
         context = await restore_conversation(service)
-        selection = settings.get("provider_selection", context.provider_selection)
-        try:
-            await asyncio.to_thread(service.select_provider, context, selection)
-        except ValueError:
-            await cl.Message(
-                content="⚠️ 所选模型服务不可用，请选择已配置的选项。"
-            ).send()
-            await send_provider_settings(context)
-            return
         await asyncio.to_thread(
             service.set_model_params,
             context,
@@ -580,6 +719,7 @@ async def on_chat_resume(thread: dict) -> None:
     async with conversation_lock():
         context = await restore_conversation(service)
     await send_provider_settings(context)
+    await send_model_catalog(context)
 
 
 async def deliver_response(
@@ -803,6 +943,7 @@ async def on_chat_start() -> None:
     async with conversation_lock():
         context = await restore_conversation(service)
     await send_provider_settings(context)
+    await send_model_catalog(context)
 
 
 @cl.on_chat_end
