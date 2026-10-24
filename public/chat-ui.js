@@ -352,6 +352,9 @@
     reverseEligible: false,
   };
   const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  function motionDisabled() {
+    return reduceMotionQuery.matches || document.body.classList.contains("eg-preferences-no-motion");
+  }
   window.__egComposerMotion = composerMotion;
 
   function activeWelcome() {
@@ -574,7 +577,7 @@
       window.setTimeout(async () => {
         if (composerMotion.phase !== "waiting-chat") return;
         try {
-          if (!reduceMotionQuery.matches) {
+          if (!motionDisabled()) {
             await animateComposerActor(firstRect, targetRect, duration);
           }
           releaseComposerActor(target);
@@ -606,13 +609,13 @@
       }
       window.clearInterval(composerMotion.timer);
       target.classList.add("eg-motion-hidden");
-      if (!reduceMotionQuery.matches) welcome.classList.add("eg-brand-reveal");
+      if (!motionDisabled()) welcome.classList.add("eg-brand-reveal");
       const targetRect = target.getBoundingClientRect();
 
       window.setTimeout(async () => {
         if (composerMotion.phase !== "waiting-welcome") return;
         try {
-          if (!reduceMotionQuery.matches) {
+          if (!motionDisabled()) {
             await animateComposerActor(firstRect, targetRect, duration);
           }
           releaseComposerActor(target);
@@ -659,7 +662,7 @@
   }
 
   function beginForwardTransition() {
-    if (reduceMotionQuery.matches) return false;
+    if (motionDisabled()) return false;
     const result = armForwardTransition();
     if (!result) composerMotion.direction = "none";
     return result;

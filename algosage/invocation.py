@@ -78,7 +78,7 @@ def timing_summary(calls):
     return [{key: call[key] for key in fields if key in call} for call in calls]
 
 
-def generate(backend, messages, stage="generation", max_output_tokens=None):
+def generate(backend, messages, stage="generation", max_output_tokens=None, sampling=None):
     ledger = _current.get()
     remaining = None
     started = time.monotonic()
@@ -104,11 +104,17 @@ def generate(backend, messages, stage="generation", max_output_tokens=None):
         )
         if use_stream:
             result = backend.generate_stream_with_options(
-                messages, max_output_tokens=max_output_tokens, timeout=remaining
+                messages,
+                max_output_tokens=max_output_tokens,
+                timeout=remaining,
+                sampling=sampling,
             )
         elif hasattr(backend, "generate_with_options"):
             result = backend.generate_with_options(
-                messages, max_output_tokens=max_output_tokens, timeout=remaining
+                messages,
+                max_output_tokens=max_output_tokens,
+                timeout=remaining,
+                sampling=sampling,
             )
         else:
             result = backend.generate(messages)

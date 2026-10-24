@@ -94,9 +94,24 @@ def _safe_thread_metadata(
     settings = (metadata or {}).get("chat_settings")
     if not isinstance(settings, dict):
         return None
+    allowed_keys = (
+        "provider_selection",
+        "exam_mode_switch",
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty",
+        "max_output_tokens",
+        "enter_behavior",
+        "autoscroll",
+        "keep_drafts",
+        "animations",
+        "font_size",
+        "audit_summary",
+    )
     allowed = {
         key: settings[key]
-        for key in ("provider_selection", "exam_mode_switch")
+        for key in allowed_keys
         if key in settings
         and isinstance(settings[key], (str, bool, int, float, type(None)))
     }
@@ -801,6 +816,7 @@ class ChatDataLayer(BaseDataLayer):
         principal_id: str,
         history: List[Dict[str, Any]],
         provider_selection: str,
+        model_params: dict | None = None,
     ) -> None:
         safe_history = []
         for message in history[-24:]:
@@ -873,6 +889,8 @@ class ChatDataLayer(BaseDataLayer):
                 "chat_settings": {}
             }
             metadata["chat_settings"]["provider_selection"] = provider
+            if model_params:
+                metadata["chat_settings"].update(model_params)
             self._conn.execute(
                 "UPDATE threads SET metadata=? WHERE id=?", (_json(metadata), thread_id)
             )
@@ -902,6 +920,17 @@ class ChatDataLayer(BaseDataLayer):
             if history
             else ([], "")
         )
+
+    async def load_thread_settings(self, thread_id: str, principal_id: str) -> dict:
+        with self._lock:
+            row = self._thread_row(thread_id)
+            if row is None:
+                return {}
+            owner = row["user_identifier"] or row["user_id"]
+            if owner != principal_id:
+                raise PermissionError("thread owner mismatch")
+        metadata = _safe_thread_metadata(_decode(row["metadata"], {})) or {}
+        return metadata.get("chat_settings", {})
 
     async def get_favorite_steps(self, user_id: str) -> List[Dict[str, Any]]:
         with self._lock:

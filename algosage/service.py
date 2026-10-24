@@ -54,7 +54,46 @@ class ServiceContext:
     session_guard: SessionGuard = field(default_factory=SessionGuard)
     principal_id: str | None = None
     provider_selection: str = ""
+    model_params: dict[str, float | int | str] = field(default_factory=dict)
     _budget: SafetyBudget | None = field(default=None, repr=False)
+
+
+def normalize_model_params(params: dict, settings: Settings) -> dict[str, float | int | str]:
+    """Clamp user-owned sampling controls against the selected provider profile."""
+    raw = params if isinstance(params, dict) else {}
+    try:
+        max_output = max(128, min(int(raw.get("max_output_tokens", settings.max_output_tokens)), settings.max_output_tokens))
+    except (TypeError, ValueError):
+        max_output = settings.max_output_tokens
+
+    def bounded_float(key: str, default: float, low: float, high: float) -> float:
+        try:
+            value = float(raw.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+        return min(high, max(low, value))
+
+    enter_behavior = raw.get("enter_behavior", "enter")
+    font_size = raw.get("font_size", "standard")
+    def optional_bool(key: str, default: bool) -> bool:
+        value = raw.get(key, default)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    return {
+        "temperature": bounded_float("temperature", 0.7, 0.0, 2.0),
+        "top_p": bounded_float("top_p", 0.95, 0.0, 1.0),
+        "frequency_penalty": bounded_float("frequency_penalty", 0.0, 0.0, 2.0),
+        "presence_penalty": bounded_float("presence_penalty", 0.0, 0.0, 2.0),
+        "max_output_tokens": max_output,
+        "enter_behavior": enter_behavior if enter_behavior in {"enter", "ctrl_enter"} else "enter",
+        "autoscroll": optional_bool("autoscroll", True),
+        "keep_drafts": optional_bool("keep_drafts", True),
+        "animations": optional_bool("animations", True),
+        "font_size": font_size if font_size in {"small", "standard", "large"} else "standard",
+        "audit_summary": optional_bool("audit_summary", True),
+    }
 
 
 def _env_flag(name: str, default: str = "false") -> bool:
@@ -395,7 +434,10 @@ class TutorService:
             attachments=tuple(attachments),
         )
         return self._selected_tutor(context).respond(
-            request, history=context.history, session_guard=context.session_guard
+            request,
+            history=context.history,
+            session_guard=context.session_guard,
+            generation_options=context.model_params or None,
         )
 
     def select_provider(self, context: ServiceContext, selection: str) -> None:
@@ -403,6 +445,17 @@ class TutorService:
         with self._context_budget(context).lock:
             self.providers.resolve(selection)
             context.provider_selection = selection
+            # Sampling controls are re-clamped against the newly selected profile.
+            context.model_params = normalize_model_params(
+                context.model_params, self.providers.resolve(selection)
+            )
+
+    def set_model_params(self, context: ServiceContext, params: dict) -> None:
+        settings = self.providers.resolve(context.provider_selection)
+        context.model_params = normalize_model_params(params, settings)
+
+    def normalize_model_params(self, params: dict, settings: Settings) -> dict:
+        return normalize_model_params(params, settings)
 
     def provider_info(self, context: ServiceContext) -> dict:
         return self.providers.info(context.provider_selection)

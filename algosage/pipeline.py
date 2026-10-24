@@ -124,11 +124,26 @@ class AlgoSageTutor:
         )
         self._prompt_builder = prompt_builder or system_prompt
 
-    def respond(self, request, history=None, session_guard=None):
+    def respond(
+        self,
+        request,
+        history=None,
+        session_guard=None,
+        generation_options: dict | None = None,
+    ):
         with turn_ledger(self.settings) as ledger:
-            return self._respond(request, history, session_guard, ledger)
+            return self._respond(
+                request, history, session_guard, ledger, generation_options
+            )
 
-    def _respond(self, request, history, session_guard, ledger):
+    def _respond(
+        self,
+        request,
+        history,
+        session_guard,
+        ledger,
+        generation_options=None,
+    ):
         question = request.question.strip()
         if not question:
             raise ValueError("问题不能为空")
@@ -241,6 +256,9 @@ class AlgoSageTutor:
                     messages,
                     "generation",
                     generation_limit,
+                    sampling=(
+                        generation_options if isinstance(generation_options, dict) else None
+                    ),
                 )
                 if isinstance(self.output_guard, LayeredOutputGuard):
                     audit = self.output_guard.review(

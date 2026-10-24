@@ -24,7 +24,7 @@ from pathlib import Path
 from weakref import WeakValueDictionary
 
 import chainlit as cl
-from chainlit.input_widget import Select
+from chainlit.input_widget import Select, Slider, Switch
 
 from algosage.config import Settings
 from algosage.service import TutorService, HISTORY_TURNS_KEPT
@@ -106,6 +106,11 @@ async def restore_conversation(service):
                 await asyncio.to_thread(
                     service.select_provider, context, service.providers.default
                 )
+        if principal:
+            settings = await get_chat_store().load_thread_settings(
+                context_id(), principal
+            )
+            await asyncio.to_thread(service.set_model_params, context, settings)
     return context
 
 
@@ -275,15 +280,109 @@ async def send_provider_settings(context) -> None:
         for o in options
         if o["available"]
     }
+    provider = service.providers.resolve(context.provider_selection)
+    params = service.normalize_model_params(context.model_params or {}, provider)
+    max_output = min(int(params.get("max_output_tokens", provider.max_output_tokens)), provider.max_output_tokens)
     widgets = [
         Select(
             id="provider_selection",
-            label="LLM Provider / 模型",
+            label="模型服务 / 模型",
             items=items,
             initial_value=context.provider_selection,
-        )
+        ),
+        Slider(
+            id="temperature",
+            label="Temperature（创造性）",
+            minimum=0,
+            maximum=2,
+            step=0.05,
+            initial=float(params.get("temperature", 0.7)),
+            description="值越高回答越发散，值越低越稳定。",
+        ),
+        Slider(
+            id="top_p",
+            label="Top P（采样范围）",
+            minimum=0,
+            maximum=1,
+            step=0.01,
+            initial=float(params.get("top_p", 0.95)),
+            description="一般与 Temperature 二选一调整即可。",
+        ),
+        Slider(
+            id="frequency_penalty",
+            label="Frequency Penalty（减少重复）",
+            minimum=0,
+            maximum=2,
+            step=0.05,
+            initial=float(params.get("frequency_penalty", 0)),
+        ),
+        Slider(
+            id="presence_penalty",
+            label="Presence Penalty（引入新话题）",
+            minimum=0,
+            maximum=2,
+            step=0.05,
+            initial=float(params.get("presence_penalty", 0)),
+        ),
+        Slider(
+            id="max_output_tokens",
+            label="最大输出长度（Token）",
+            minimum=128,
+            maximum=provider.max_output_tokens,
+            step=128,
+            initial=max_output,
+            description=f"服务端硬上限：{provider.max_output_tokens} Token。",
+        ),
+        Select(
+            id="enter_behavior",
+            label="发送快捷键",
+            initial_value=str(params.get("enter_behavior", "enter")),
+            items={"enter": "Enter 发送", "ctrl_enter": "Ctrl+Enter 发送"},
+        ),
+        Switch(
+            id="autoscroll",
+            label="回复时自动滚动",
+            initial=bool(params.get("autoscroll", True)),
+        ),
+        Switch(
+            id="keep_drafts",
+            label="切换会话时保留草稿",
+            initial=bool(params.get("keep_drafts", True)),
+        ),
+        Switch(
+            id="animations",
+            label="启用界面动画",
+            initial=bool(params.get("animations", True)),
+        ),
+        Select(
+            id="font_size",
+            label="字体大小",
+            initial_value=str(params.get("font_size", "standard")),
+            items={"small": "小", "standard": "标准", "large": "大"},
+        ),
+        Switch(
+            id="audit_summary",
+            label="显示安全摘要",
+            initial=bool(params.get("audit_summary", True)),
+        ),
     ]
     await cl.ChatSettings(widgets).send()
+
+
+def _normalize_ui_settings(settings: dict) -> dict:
+    normalized = dict(settings)
+    if normalized.get("enter_behavior") not in {"enter", "ctrl_enter"}:
+        normalized["enter_behavior"] = "enter"
+    if normalized.get("font_size") not in {"small", "standard", "large"}:
+        normalized["font_size"] = "standard"
+    for key in ("autoscroll", "keep_drafts", "animations", "audit_summary"):
+        normalized[key] = bool(normalized.get(key, True))
+    for key in ("temperature", "top_p", "frequency_penalty", "presence_penalty", "max_output_tokens"):
+        try:
+            normalized[key] = float(normalized.get(key, 0))
+        except (TypeError, ValueError):
+            normalized.pop(key, None)
+    return normalized
 
 
 @cl.on_settings_update
@@ -296,13 +395,42 @@ async def on_settings_update(settings: dict) -> None:
             await asyncio.to_thread(service.select_provider, context, selection)
         except ValueError:
             await cl.Message(
-                content="⚠️ 所选 Provider / 模型不可用，请选择已配置的选项。"
+                content="⚠️ 所选模型服务不可用，请选择已配置的选项。"
             ).send()
             await send_provider_settings(context)
             return
+        await asyncio.to_thread(
+            service.set_model_params,
+            context,
+            _normalize_ui_settings(settings),
+        )
         await persist_backend_history(context)
     info = service.provider_info(context)
-    await cl.Message(content=f"当前模型：**{info['label']} · {info['model']}**").send()
+    try:
+        await cl.send_window_message(
+            {
+                "type": "algosage-preferences",
+                "preferences": {
+                    key: context.model_params.get(key)
+                    for key in (
+                        "enter_behavior",
+                        "autoscroll",
+                        "keep_drafts",
+                        "animations",
+                        "font_size",
+                        "audit_summary",
+                    )
+                },
+            }
+        )
+    except Exception:
+        pass  # 偏好仍会持久化；旧客户端下次打开设置时可读取元数据。
+    await cl.Message(
+        content=(
+            f"设置已保存。当前模型：**{info['label']} · {info['model']}**；"
+            f"最大输出长度：**{context.model_params.get('max_output_tokens')} Token**。"
+        )
+    ).send()
 
 
 def _msg_turn_map():
@@ -349,7 +477,11 @@ async def persist_backend_history(context) -> None:
     if principal:
         history, selection = await asyncio.to_thread(_snapshot_context, context)
         await get_chat_store().save_backend_history(
-            cl.context.session.thread_id, principal, history, selection
+            cl.context.session.thread_id,
+            principal,
+            history,
+            selection,
+            model_params=dict(context.model_params or {}),
         )
 
 

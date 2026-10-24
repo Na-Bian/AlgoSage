@@ -522,6 +522,18 @@ main .ai-message .message-content ~ div button svg {
   animation-name: eg-drawer-right-in;
 }
 
+/* User preference states. These never alter server safety policy. */
+body.eg-preferences-no-motion *,
+body.eg-preferences-no-motion *::before,
+body.eg-preferences-no-motion *::after {
+  transition-duration: 0ms !important;
+  animation-duration: 0ms !important;
+}
+
+body.eg-hide-audit-summary main button[id^="step-"] {
+  display: none !important;
+}
+
 /* Composer hand-off: one visible actor and one hidden incoming real node. */
 #eg-composer-motion-portal {
   position: fixed;

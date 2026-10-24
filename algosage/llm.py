@@ -60,7 +60,12 @@ class OpenAICompatibleBackend:
         return self.generate_with_options(messages)
 
     def generate_with_options(
-        self, messages, *, max_output_tokens=None, timeout=None
+        self,
+        messages,
+        *,
+        max_output_tokens=None,
+        timeout=None,
+        sampling=None,
     ) -> LLMResult:
         kwargs = {
             "model": self.settings.model,
@@ -73,6 +78,10 @@ class OpenAICompatibleBackend:
                 else self.settings.timeout
             ),
         }
+        if isinstance(sampling, dict):
+            for key in ("temperature", "top_p", "frequency_penalty", "presence_penalty"):
+                if key in sampling:
+                    kwargs[key] = sampling[key]
         if self.settings.extra_body:
             kwargs["extra_body"] = dict(self.settings.extra_body)
         completion = self.client.chat.completions.create(**kwargs)
@@ -86,7 +95,12 @@ class OpenAICompatibleBackend:
         )
 
     def generate_stream_with_options(
-        self, messages, *, max_output_tokens=None, timeout=None
+        self,
+        messages,
+        *,
+        max_output_tokens=None,
+        timeout=None,
+        sampling=None,
     ) -> LLMResult:
         effective_timeout = (
             min(self.settings.timeout, timeout)
@@ -103,6 +117,10 @@ class OpenAICompatibleBackend:
             "stream": True,
             "stream_options": {"include_usage": True},
         }
+        if isinstance(sampling, dict):
+            for key in ("temperature", "top_p", "frequency_penalty", "presence_penalty"):
+                if key in sampling:
+                    kwargs[key] = sampling[key]
         if self.settings.extra_body:
             kwargs["extra_body"] = dict(self.settings.extra_body)
 
