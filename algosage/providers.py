@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -11,6 +12,90 @@ from urllib.parse import urlparse
 
 from .config import Settings
 from .runtime_paths import runtime_path
+
+# BYOK（自带密钥）自定义 Provider 只允许接入小参数量模型：小模型的输出更
+# 容易被本系统的规则与 LLM Judge 审核层可靠约束。
+DEFAULT_CUSTOM_MODEL_MAX_B = 27.0
+
+
+def custom_model_max_b() -> float:
+    try:
+        value = float(
+            os.environ.get("SAGE_CUSTOM_MODEL_MAX_B", "") or DEFAULT_CUSTOM_MODEL_MAX_B
+        )
+    except ValueError:
+        return DEFAULT_CUSTOM_MODEL_MAX_B
+    return value if value > 0 else DEFAULT_CUSTOM_MODEL_MAX_B
+
+
+_MOE_SIZE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)\s*[bB](?![a-zA-Z0-9])"
+)
+_PLAIN_SIZE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*[bB](?![a-zA-Z0-9])")
+
+
+def parse_model_params_b(model_id: str) -> float | None:
+    """Best-effort parameter-size read from the model id ("8B" -> 8.0).
+
+    MoE ids like "8x7B" count the total (8*7=56). Returns None when no size
+    marker is present; callers must treat that as "unverifiable".
+    """
+    if not isinstance(model_id, str) or not model_id.strip():
+        return None
+    moe = _MOE_SIZE.search(model_id)
+    if moe:
+        return float(moe.group(1)) * float(moe.group(2))
+    plain = _PLAIN_SIZE.search(model_id)
+    if plain:
+        return float(plain.group(1))
+    return None
+
+
+def validate_public_base_url(url: str) -> str:
+    """Same URL policy as the server allowlist: HTTPS only, no credentials."""
+    candidate = (url or "").strip()
+    parsed = urlparse(candidate)
+    loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+    if (
+        not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or (parsed.scheme != "https" and not (loopback and parsed.scheme == "http"))
+    ):
+        raise ValueError(
+            "Base URL 必须使用 HTTPS（本机 loopback 除外），且不能携带账号或查询参数"
+        )
+    return candidate
+
+
+def build_custom_settings(
+    base: Settings, base_url: str, api_key: str, model: str
+) -> Settings:
+    """A per-user BYOK provider profile; same trusted Settings the pipeline uses."""
+    url = validate_public_base_url(base_url)
+    if not isinstance(api_key, str) or not api_key.strip() or len(api_key) > 4096:
+        raise ValueError("API Key 不能为空且长度需在 4096 字符以内")
+    if not isinstance(model, str) or not model.strip() or len(model) > 200:
+        raise ValueError("模型名不能为空且长度需在 200 字符以内")
+    params_b = parse_model_params_b(model)
+    if params_b is None:
+        raise ValueError(
+            "无法从模型名识别参数量（需要形如 8B / 14B 的标注），为稳妥起见拒绝添加"
+        )
+    if params_b > custom_model_max_b():
+        raise ValueError(
+            f"模型参数量 {params_b:g}B 超过自定义上限 {custom_model_max_b():g}B"
+        )
+    return replace(base, mode="api", api_key=api_key, base_url=url, model=model)
+
+
+def custom_selection_id(label: str, base_url: str, model: str) -> str:
+    digest = hashlib.sha1(
+        f"{label}|{base_url}|{model}".encode("utf-8", "ignore")
+    ).hexdigest()[:10]
+    return f"custom:{digest}"
 
 
 class ProviderRegistry:
@@ -26,9 +111,7 @@ class ProviderRegistry:
         }
         self._add(default, default=True)
         if entries is None:
-            path = runtime_path(
-                "SAGE_PROVIDERS_FILE", ".algosage/providers.json"
-            )
+            path = runtime_path("SAGE_PROVIDERS_FILE", ".algosage/providers.json")
             if path and Path(path).is_file():
                 parsed = json.loads(Path(path).read_text(encoding="utf-8"))
                 if not isinstance(parsed, dict) or set(parsed) != {"providers"}:

@@ -125,7 +125,9 @@ class ChainlitAppModuleTests(unittest.TestCase):
             },
         )
         self.assertEqual(denied.status_code, 403)
-        self.assertIsNone(asyncio.run(store.get_thread("alice-thread"))["steps"][0].get("feedback"))
+        self.assertIsNone(
+            asyncio.run(store.get_thread("alice-thread"))["steps"][0].get("feedback")
+        )
 
         app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
             identifier="alice"
@@ -145,7 +147,9 @@ class ChainlitAppModuleTests(unittest.TestCase):
         self.assertEqual(allowed.status_code, 200)
         feedback_id = allowed.json()["feedbackId"]
         self.assertEqual(
-            asyncio.run(store.get_thread("alice-thread"))["steps"][0]["feedback"]["comment"],
+            asyncio.run(store.get_thread("alice-thread"))["steps"][0]["feedback"][
+                "comment"
+            ],
             "helpful",
         )
 
@@ -156,7 +160,9 @@ class ChainlitAppModuleTests(unittest.TestCase):
             "DELETE", "/feedback", json={"feedbackId": feedback_id}
         )
         self.assertEqual(denied_delete.status_code, 403)
-        self.assertIn("feedback", asyncio.run(store.get_thread("alice-thread"))["steps"][0])
+        self.assertIn(
+            "feedback", asyncio.run(store.get_thread("alice-thread"))["steps"][0]
+        )
 
         app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
             identifier="alice"
@@ -204,9 +210,10 @@ class ChainlitAppModuleTests(unittest.TestCase):
         widget_ids = [widget.id for widget in widgets]
         self.assertIn("model_catalog", widget_ids)
         self.assertIn("temperature", widget_ids)
-        # 学生界面不得出现考试/练习模式开关；Provider 配置也仅服务端只读展示
+        # 学生界面不得出现考试/练习模式开关；采样控制与 Temperature 二选一，仅保留后者
         self.assertNotIn("provider_selection", widget_ids)
         self.assertNotIn("exam_mode_switch", widget_ids)
+        self.assertNotIn("top_p", widget_ids)
 
     def test_disconnect_preserves_shared_thread_context_and_guard(self):
         svc = self.module.get_service()

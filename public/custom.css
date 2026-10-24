@@ -662,6 +662,210 @@ main .ai-message .message-content ~ div button svg {
   font-size: .78rem;
 }
 
+.eg-model-custom-badge {
+  flex: 0 0 auto;
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: hsl(var(--accent));
+  color: hsl(var(--muted-foreground));
+  font-size: .66rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+
+.eg-model-option {
+  position: relative;
+}
+
+.eg-model-remove {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 6px;
+  color: hsl(var(--muted-foreground));
+  font-size: .95rem;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.eg-model-remove:hover {
+  background: hsl(var(--destructive) / .14);
+  color: hsl(var(--destructive));
+}
+
+.eg-model-add {
+  flex: 0 0 auto;
+  margin: 2px 7px 9px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 10px;
+  color: hsl(var(--foreground) / .86);
+  font: inherit;
+  font-size: .83rem;
+  cursor: pointer;
+}
+
+.eg-model-add:hover { border-color: hsl(var(--primary) / .55); color: hsl(var(--foreground)); }
+
+.eg-model-add svg { width: 15px; height: 15px; }
+
+/* Add-custom-model dialog */
+.eg-add-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: hsl(var(--background) / .55);
+  backdrop-filter: blur(3px);
+}
+
+.eg-add-dialog {
+  width: min(430px, 100%);
+  max-height: min(86vh, 620px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid hsl(var(--border));
+  border-radius: 16px;
+  padding: 18px 18px 14px;
+  background: hsl(var(--background));
+  box-shadow: 0 24px 70px hsl(0 0% 0% / .28);
+  overflow-y: auto;
+}
+
+.eg-add-title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.eg-add-hint {
+  color: hsl(var(--muted-foreground));
+  font-size: .78rem;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.eg-add-field {
+  display: block;
+  color: hsl(var(--foreground) / .86);
+  font-size: .8rem;
+  margin-bottom: 10px;
+}
+
+.eg-add-field input {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 9px;
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: .84rem;
+}
+
+.eg-add-field input:focus {
+  outline: none;
+  border-color: hsl(var(--primary) / .6);
+}
+
+.eg-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 2px;
+}
+
+.eg-add-secondary,
+.eg-add-primary {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font: inherit;
+  font-size: .82rem;
+  cursor: pointer;
+}
+
+.eg-add-secondary {
+  border: 1px solid hsl(var(--border));
+  background: transparent;
+  color: hsl(var(--foreground) / .85);
+}
+
+.eg-add-primary {
+  border: 1px solid transparent;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.eg-add-primary:disabled { opacity: .6; cursor: wait; }
+
+.eg-add-results {
+  margin-top: 12px;
+  border-top: 1px solid hsl(var(--border));
+  padding-top: 8px;
+}
+
+.eg-add-model {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 9px;
+  padding: 7px 9px;
+  background: transparent;
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: .82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.eg-add-model:hover:not(:disabled) { background: hsl(var(--accent)); }
+
+.eg-add-model-blocked { color: hsl(var(--muted-foreground) / .7); cursor: not-allowed; }
+
+.eg-add-model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eg-add-model-size {
+  flex: 0 0 auto;
+  color: hsl(var(--muted-foreground));
+  font-size: .74rem;
+}
+
+.eg-add-more {
+  padding: 8px 9px;
+  color: hsl(var(--muted-foreground));
+  font-size: .74rem;
+}
+
+.eg-add-status {
+  min-height: 18px;
+  margin-top: 9px;
+  color: hsl(var(--muted-foreground));
+  font-size: .78rem;
+}
+
+.eg-add-status.eg-model-error { color: hsl(var(--destructive)); }
+
 .eg-model-option:disabled .eg-model-option-state { color: hsl(var(--muted-foreground)); }
 
 .eg-model-menu-empty,
@@ -802,6 +1006,10 @@ body.eg-sidebar-restoring :is(
 }
 @starting-style {
   :root [data-panel]:has(#chat-settings-sidebar-title) { flex-grow: 0 !important; }
+}
+/* 窄视口下抽屉可被拖得很窄；按钮行允许换行，避免"确认"被裁切。 */
+:root [data-panel]:has(#chat-settings-sidebar-title) .flex.gap-2.border-t {
+  flex-wrap: wrap;
 }
 :root [data-panel-group]:has([data-resize-handle-state="drag"]) > [data-panel] {
   transition: none;

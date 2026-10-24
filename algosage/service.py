@@ -58,11 +58,19 @@ class ServiceContext:
     _budget: SafetyBudget | None = field(default=None, repr=False)
 
 
-def normalize_model_params(params: dict, settings: Settings) -> dict[str, float | int | str]:
+def normalize_model_params(
+    params: dict, settings: Settings
+) -> dict[str, float | int | str]:
     """Clamp user-owned sampling controls against the selected provider profile."""
     raw = params if isinstance(params, dict) else {}
     try:
-        max_output = max(128, min(int(raw.get("max_output_tokens", settings.max_output_tokens)), settings.max_output_tokens))
+        max_output = max(
+            128,
+            min(
+                int(raw.get("max_output_tokens", settings.max_output_tokens)),
+                settings.max_output_tokens,
+            ),
+        )
     except (TypeError, ValueError):
         max_output = settings.max_output_tokens
 
@@ -75,6 +83,7 @@ def normalize_model_params(params: dict, settings: Settings) -> dict[str, float 
 
     enter_behavior = raw.get("enter_behavior", "enter")
     font_size = raw.get("font_size", "standard")
+
     def optional_bool(key: str, default: bool) -> bool:
         value = raw.get(key, default)
         if isinstance(value, str):
@@ -87,11 +96,15 @@ def normalize_model_params(params: dict, settings: Settings) -> dict[str, float 
         "frequency_penalty": bounded_float("frequency_penalty", 0.0, 0.0, 2.0),
         "presence_penalty": bounded_float("presence_penalty", 0.0, 0.0, 2.0),
         "max_output_tokens": max_output,
-        "enter_behavior": enter_behavior if enter_behavior in {"enter", "ctrl_enter"} else "enter",
+        "enter_behavior": (
+            enter_behavior if enter_behavior in {"enter", "ctrl_enter"} else "enter"
+        ),
         "autoscroll": optional_bool("autoscroll", True),
         "keep_drafts": optional_bool("keep_drafts", True),
         "animations": optional_bool("animations", True),
-        "font_size": font_size if font_size in {"small", "standard", "large"} else "standard",
+        "font_size": (
+            font_size if font_size in {"small", "standard", "large"} else "standard"
+        ),
         "audit_summary": optional_bool("audit_summary", True),
     }
 
@@ -112,7 +125,11 @@ class TutorService:
     ):
         self.settings = settings
         self.providers = providers or ProviderRegistry(settings, entries=[])
+        from .custom_providers import CustomProviderStore
+
+        self.custom_providers = CustomProviderStore(settings)
         self._provider_tutors = {}
+        self._custom_tutors: dict[tuple[str, str], AlgoSageTutor] = {}
         self._provider_lock = threading.RLock()
         self.backend = backend if backend is not None else make_backend(settings)
         # P2：可信策略文件（非法即启动失败，fail closed）。
@@ -370,9 +387,7 @@ class TutorService:
         user_record = {"role": "user", "content": user_entry, "msg_id": user_msg_id}
         if images:
             user_record["images"] = images
-        context.history.append(
-            user_record
-        )
+        context.history.append(user_record)
         context.history.append({"role": "assistant", "content": response.answer})
         context.history[:] = context.history[-2 * HISTORY_TURNS_KEPT :]
 
@@ -440,43 +455,141 @@ class TutorService:
             generation_options=context.model_params or None,
         )
 
+    def _resolve_selection_settings(
+        self, context: ServiceContext, selection: str
+    ) -> Settings:
+        """Builtin allowlist selections plus this principal's BYOK entries."""
+        if selection.startswith("custom:"):
+            if not context.principal_id:
+                raise ValueError("自定义模型需要已登录身份")
+            return self.custom_providers.resolve(context.principal_id, selection)
+        return self.providers.resolve(selection)
+
     def select_provider(self, context: ServiceContext, selection: str) -> None:
         # Serialize against an in-flight turn; every turn uses one immutable profile.
         with self._context_budget(context).lock:
-            self.providers.resolve(selection)
+            settings = self._resolve_selection_settings(context, selection)
             context.provider_selection = selection
             # Sampling controls are re-clamped against the newly selected profile.
             context.model_params = normalize_model_params(
-                context.model_params, self.providers.resolve(selection)
+                context.model_params, settings
             )
 
+    # ------------------------------------------------------------------
+    # BYOK custom providers (per principal, memory only)
+    # ------------------------------------------------------------------
+    def register_custom_provider(
+        self,
+        principal_id: str,
+        *,
+        base_url: str,
+        api_key: str,
+        model: str,
+        label: str = "",
+    ) -> dict:
+        return self.custom_providers.register(
+            principal_id,
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            label=label,
+        )
+
+    def list_custom_providers(self, principal_id: str) -> list[dict]:
+        return self.custom_providers.list_for(principal_id)
+
+    def remove_custom_provider(self, principal_id: str, selection: str) -> bool:
+        removed = self.custom_providers.remove(principal_id, selection)
+        if removed:
+            with self._provider_lock:
+                self._custom_tutors.pop((principal_id, selection), None)
+        return removed
+
+    def discover_custom_models(self, base_url: str, api_key: str) -> list[dict]:
+        return self.custom_providers.discover(base_url, api_key)
+
     def set_model_params(self, context: ServiceContext, params: dict) -> None:
-        settings = self.providers.resolve(context.provider_selection)
+        settings = self._resolve_selection_settings(context, context.provider_selection)
         context.model_params = normalize_model_params(params, settings)
 
     def normalize_model_params(self, params: dict, settings: Settings) -> dict:
         return normalize_model_params(params, settings)
 
     def provider_info(self, context: ServiceContext) -> dict:
+        if context.provider_selection.startswith("custom:"):
+            if not context.principal_id:
+                raise ValueError("未知自定义模型")
+            return self.custom_providers.info(
+                context.principal_id, context.provider_selection
+            )
         return self.providers.info(context.provider_selection)
 
-    def generate_title(self, selection: str, question: str, timeout: float = 8):
+    def generate_title(
+        self,
+        selection: str,
+        question: str,
+        timeout: float = 8,
+        principal_id: str | None = None,
+    ):
         """Use the first turn's captured model; title calls have their own usage log."""
         from .chat_titles import generate_title
 
-        settings = self.providers.resolve(selection)
-        with self._provider_lock:
-            tutor = (
-                self.tutor
-                if selection == self.providers.default
-                else self._provider_tutors[selection]
-            )
+        if selection.startswith("custom:"):
+            if not principal_id:
+                raise ValueError("自定义模型标题生成需要身份")
+            settings = self.custom_providers.resolve(principal_id, selection)
+            cache_key = (principal_id, selection)
+            with self._provider_lock:
+                tutor = self._custom_tutors.get(cache_key)
+                if tutor is None:
+                    backend = make_backend(settings)
+                    tutor = AlgoSageTutor(
+                        backend,
+                        settings,
+                        output_guard=make_output_guard(settings, backend),
+                        policy_config=self.policy_config,
+                    )
+                    self._custom_tutors[cache_key] = tutor
+        else:
+            settings = self.providers.resolve(selection)
+            with self._provider_lock:
+                tutor = (
+                    self.tutor
+                    if selection == self.providers.default
+                    else self._provider_tutors[selection]
+                )
         return generate_title(tutor.backend, settings, question, timeout)
 
     def _selected_tutor(self, context: ServiceContext) -> AlgoSageTutor:
         selection = context.provider_selection
         if selection == self.providers.default:
             return self.tutor
+        if selection.startswith("custom:"):
+            if not context.principal_id:
+                raise ValueError("自定义模型需要已登录身份")
+            cache_key = (context.principal_id, selection)
+            with self._provider_lock:
+                tutor = self._custom_tutors.get(cache_key)
+                if tutor is not None:
+                    return tutor
+                settings = self.custom_providers.resolve(
+                    context.principal_id, selection
+                )
+                backend = make_backend(settings)
+                classifier = (
+                    HybridIntentClassifier(backend, settings, self.policy_config)
+                    if settings.classifier_mode == "hybrid"
+                    else None
+                )
+                tutor = AlgoSageTutor(
+                    backend,
+                    settings,
+                    classifier=classifier,
+                    output_guard=make_output_guard(settings, backend),
+                    policy_config=self.policy_config,
+                )
+                self._custom_tutors[cache_key] = tutor
+                return tutor
         with self._provider_lock:
             if selection not in self._provider_tutors:
                 settings = self.providers.resolve(selection)

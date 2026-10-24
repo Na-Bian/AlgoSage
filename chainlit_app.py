@@ -127,9 +127,8 @@ def model_selection_lock(thread_id: str) -> asyncio.Lock:
 async def send_model_catalog(context) -> None:
     """Push the authorized catalog and thread-local selection to the composer."""
     service = get_service()
-    options = service.providers.options()
     groups: dict[str, dict] = {}
-    for option in options:
+    for option in service.providers.options():
         group = groups.setdefault(
             option["id"],
             {
@@ -146,6 +145,24 @@ async def send_model_catalog(context) -> None:
                 "available": bool(option["available"]),
             }
         )
+    if context.principal_id:
+        for entry in service.list_custom_providers(context.principal_id):
+            group = groups.setdefault(
+                "custom",
+                {
+                    "id": "custom",
+                    "label": "自定义 API（我的密钥）",
+                    "available": True,
+                    "models": [],
+                },
+            )
+            group["models"].append(
+                {
+                    "selection": entry["selection"],
+                    "model": entry["model"],
+                    "available": True,
+                }
+            )
     info = service.provider_info(context)
     try:
         await cl.send_window_message(
@@ -179,7 +196,9 @@ async def hust_password_auth(username: str, password: str):
     try:
         account = get_student_auth().authenticate(username, password)
     except Exception:
-        logger.exception("HUST login authentication failed without exposing credentials")
+        logger.exception(
+            "HUST login authentication failed without exposing credentials"
+        )
         return None
     if account is None:
         return None
@@ -191,9 +210,7 @@ async def hust_password_auth(username: str, password: str):
             "provider": "hust-student",
             "student_id": account.student_id,
             "session_version": account.session_version,
-            "image": (
-                f"/auth/avatar/me?v={account.session_version}" if avatar else ""
-            ),
+            "image": (f"/auth/avatar/me?v={account.session_version}" if avatar else ""),
         },
     )
 
@@ -320,12 +337,7 @@ try:  # pragma: no cover - exercised through the running Chainlit server
 
     models_router = _chainlit_router(_chainlit_server_app)
 
-    @models_router.get("/models/catalog", include_in_schema=False)
-    async def read_model_catalog(thread_id: str = "", *, current_user: UserParam):
-        if not current_user:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        service = get_service()
-        options = service.providers.options()
+    def _catalog_groups(service, options):
         groups: dict[str, dict] = {}
         for option in options:
             group = groups.setdefault(
@@ -344,6 +356,31 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                     "available": bool(option["available"]),
                 }
             )
+        return list(groups.values())
+
+    @models_router.get("/models/catalog", include_in_schema=False)
+    async def read_model_catalog(thread_id: str = "", *, current_user: UserParam):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        service = get_service()
+        groups = _catalog_groups(service, service.providers.options())
+        custom = service.list_custom_providers(current_user.identifier)
+        if custom:
+            groups.append(
+                {
+                    "id": "custom",
+                    "label": "自定义 API（我的密钥）",
+                    "available": True,
+                    "models": [
+                        {
+                            "selection": entry["selection"],
+                            "model": entry["model"],
+                            "available": True,
+                        }
+                        for entry in custom
+                    ],
+                }
+            )
         current = service.providers.default
         if thread_id:
             try:
@@ -351,7 +388,9 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                     thread_id, current_user.identifier
                 )
             except PermissionError as error:
-                raise HTTPException(status_code=403, detail="Thread owner mismatch") from error
+                raise HTTPException(
+                    status_code=403, detail="Thread owner mismatch"
+                ) from error
         current = current or service.providers.default
         try:
             current_info = service.providers.info(current)
@@ -364,8 +403,71 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             "current_selection": current,
             "current_available": current_available,
             "current_label": f"{current_info['label']} · {current_info['model']}",
-            "providers": list(groups.values()),
+            "providers": groups,
         }
+
+    @models_router.post("/models/discover", include_in_schema=False)
+    async def discover_models(payload: dict, current_user: UserParam):
+        """List models on a user-supplied endpoint; ≤27B ones are addable."""
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Invalid payload")
+        base_url = str(payload.get("base_url") or "").strip()
+        api_key = str(payload.get("api_key") or "").strip()
+        if not base_url or not api_key:
+            raise HTTPException(status_code=400, detail="Base URL 和 API Key 不能为空")
+        service = get_service()
+        try:
+            models = await asyncio.to_thread(
+                service.discover_custom_models, base_url, api_key
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except (
+            Exception
+        ) as error:  # noqa: BLE001 - vendor errors surface as one message
+            logger.info("model discovery failed error_type=%s", type(error).__name__)
+            raise HTTPException(
+                status_code=400,
+                detail="无法获取模型列表：请检查 Base URL、API Key 与网络连通性",
+            ) from error
+        return {"models": models}
+
+    @models_router.post("/models/custom", include_in_schema=False)
+    async def register_custom_model(payload: dict, current_user: UserParam):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Invalid payload")
+        service = get_service()
+        try:
+            entry = await asyncio.to_thread(
+                service.register_custom_provider,
+                current_user.identifier,
+                base_url=str(payload.get("base_url") or "").strip(),
+                api_key=str(payload.get("api_key") or "").strip(),
+                model=str(payload.get("model") or "").strip(),
+                label=str(payload.get("label") or "").strip(),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return {"success": True, "entry": entry}
+
+    @models_router.delete("/models/custom", include_in_schema=False)
+    async def remove_custom_model(payload: dict, current_user: UserParam):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        selection = str((payload or {}).get("selection") or "").strip()
+        if not selection.startswith("custom:"):
+            raise HTTPException(status_code=400, detail="Invalid selection")
+        service = get_service()
+        removed = await asyncio.to_thread(
+            service.remove_custom_provider, current_user.identifier, selection
+        )
+        if not removed:
+            raise HTTPException(status_code=404, detail="Entry not found")
+        return {"success": True}
 
     @models_router.post("/models/select", include_in_schema=False)
     async def select_thread_model(payload: dict, current_user: UserParam):
@@ -409,7 +511,12 @@ try:  # pragma: no cover - exercised through the running Chainlit server
 
     _move_routes_before_catchall(
         _chainlit_router(_chainlit_server_app),
-        ("/models/catalog", "/models/select"),
+        (
+            "/models/catalog",
+            "/models/select",
+            "/models/discover",
+            "/models/custom",
+        ),
     )
 
     preferences_router = _chainlit_router(_chainlit_server_app)
@@ -441,7 +548,9 @@ try:  # pragma: no cover - exercised through the running Chainlit server
     from algosage.student_auth import install_student_auth
 
     install_student_auth(_chainlit_server_app, get_student_auth)
-    _move_routes_before_catchall(_chainlit_router(_chainlit_server_app), ("/auth/preferences",))
+    _move_routes_before_catchall(
+        _chainlit_router(_chainlit_server_app), ("/auth/preferences",)
+    )
     install_profile_routes(
         _chainlit_server_app,
         get_student_auth,
@@ -457,22 +566,23 @@ except ImportError:
 async def send_provider_settings(context) -> None:
     service = get_service()
     options = service.providers.options()
-    options = service.providers.options()
-    items = {
-        f"{o['label']} · {o['model']}": o["selection"]
-        for o in options
-    }
-    provider = service.providers.resolve(context.provider_selection)
+    items = {f"{o['label']} · {o['model']}": o["selection"] for o in options}
+    if context.principal_id:
+        for entry in service.list_custom_providers(context.principal_id):
+            items[f"{entry['label']} · {entry['model']}"] = entry["selection"]
+    provider = service._resolve_selection_settings(context, context.provider_selection)
     params = service.normalize_model_params(context.model_params or {}, provider)
-    max_output = min(int(params.get("max_output_tokens", provider.max_output_tokens)), provider.max_output_tokens)
+    max_output = min(
+        int(params.get("max_output_tokens", provider.max_output_tokens)),
+        provider.max_output_tokens,
+    )
     widgets = [
         Select(
             id="model_catalog",
-            label="模型与 Provider（服务端只读目录）",
+            label="模型与 Provider",
             items=items,
             initial_value=context.provider_selection,
-            disabled=True,
-            description="模型在聊天输入框发送按钮左侧切换；Provider 配置由服务端管理。",
+            description="可在此快速切换；聊天输入框旁的模型菜单支持用 Base URL + API Key 添加自定义模型（≤27B）。",
         ),
         Slider(
             id="temperature",
@@ -481,16 +591,7 @@ async def send_provider_settings(context) -> None:
             maximum=2,
             step=0.05,
             initial=float(params.get("temperature", 0.7)),
-            description="值越高回答越发散，值越低越稳定。",
-        ),
-        Slider(
-            id="top_p",
-            label="Top P（采样范围）",
-            minimum=0,
-            maximum=1,
-            step=0.01,
-            initial=float(params.get("top_p", 0.95)),
-            description="一般与 Temperature 二选一调整即可。",
+            description="控制回答的发散程度：越低越稳定、越高越有创造性，通常 0.3～0.7。",
         ),
         Slider(
             id="frequency_penalty",
@@ -499,6 +600,7 @@ async def send_provider_settings(context) -> None:
             maximum=2,
             step=0.05,
             initial=float(params.get("frequency_penalty", 0)),
+            description="越高越不容易反复使用相同的词句；调太高可能语句不通顺，一般 0～0.5。",
         ),
         Slider(
             id="presence_penalty",
@@ -507,6 +609,7 @@ async def send_provider_settings(context) -> None:
             maximum=2,
             step=0.05,
             initial=float(params.get("presence_penalty", 0)),
+            description="越高越倾向于展开新内容、不纠缠旧话题；调太高容易跑题，一般 0～0.5。",
         ),
         Slider(
             id="max_output_tokens",
@@ -515,13 +618,13 @@ async def send_provider_settings(context) -> None:
             maximum=provider.max_output_tokens,
             step=128,
             initial=max_output,
-            description=f"服务端硬上限：{provider.max_output_tokens} Token。",
         ),
         Select(
             id="enter_behavior",
             label="发送快捷键",
             initial_value=str(params.get("enter_behavior", "enter")),
-            items={"enter": "Enter 发送", "ctrl_enter": "Ctrl+Enter 发送"},
+            # Chainlit 2.11 以 {显示名: 内部值} 序列化 items，方向反了会渲染成空下拉框。
+            items={"Enter 发送": "enter", "Ctrl+Enter 发送": "ctrl_enter"},
         ),
         Switch(
             id="autoscroll",
@@ -542,7 +645,7 @@ async def send_provider_settings(context) -> None:
             id="font_size",
             label="字体大小",
             initial_value=str(params.get("font_size", "standard")),
-            items={"small": "小", "standard": "标准", "large": "大"},
+            items={"小号": "small", "标准": "standard", "大号": "large"},
         ),
         Switch(
             id="audit_summary",
@@ -562,11 +665,17 @@ def _normalize_ui_settings(settings: dict) -> dict:
         normalized["font_size"] = "standard"
     for key in ("autoscroll", "keep_drafts", "animations", "audit_summary"):
         normalized[key] = bool(normalized.get(key, True))
-    for key in ("temperature", "top_p", "frequency_penalty", "presence_penalty", "max_output_tokens"):
+    for key in (
+        "temperature",
+        "frequency_penalty",
+        "presence_penalty",
+        "max_output_tokens",
+    ):
         try:
             normalized[key] = float(normalized.get(key, 0))
         except (TypeError, ValueError):
             normalized.pop(key, None)
+    normalized.pop("top_p", None)  # 面板已移除该控件；保留原值而非强改为 0
     return normalized
 
 
@@ -575,6 +684,14 @@ async def on_settings_update(settings: dict) -> None:
     service = get_service()
     async with conversation_lock():
         context = await restore_conversation(service)
+        requested_model = str(settings.get("model_catalog") or "").strip()
+        if requested_model and requested_model != context.provider_selection:
+            try:
+                await asyncio.to_thread(
+                    service.select_provider, context, requested_model
+                )
+            except ValueError:
+                pass  # 未知/失效选择保留原模型，后续仍按原参数保存
         await asyncio.to_thread(
             service.set_model_params,
             context,
@@ -586,6 +703,7 @@ async def on_settings_update(settings: dict) -> None:
                 principal, context.model_params
             )
         await persist_backend_history(context)
+        await send_model_catalog(context)
     info = service.provider_info(context)
     try:
         await cl.send_window_message(
@@ -689,7 +807,11 @@ async def schedule_title(
     async def complete():
         try:
             title = await asyncio.to_thread(
-                service.generate_title, selection, question, min(8, timeout)
+                service.generate_title,
+                selection,
+                question,
+                min(8, timeout),
+                principal,
             )
             if (
                 await store.finish_title(thread_id, principal, title)
@@ -702,7 +824,9 @@ async def schedule_title(
                     "first_interaction",
                     {"interaction": title, "thread_id": thread_id},
                 )
-        except Exception as error:  # noqa: BLE001 - optional title failures must not affect chat
+        except (
+            Exception
+        ) as error:  # noqa: BLE001 - optional title failures must not affect chat
             logger.info("Sidebar title skipped error_type=%s", type(error).__name__)
 
     task = asyncio.create_task(complete())
@@ -799,7 +923,9 @@ async def run_turn(
                 cl.context.session,
                 timeout=service.settings.turn_timeout - (time.perf_counter() - started),
             )
-        except Exception as error:  # noqa: BLE001 - optional title failures must not affect chat
+        except (
+            Exception
+        ) as error:  # noqa: BLE001 - optional title failures must not affect chat
             logger.info(
                 "Sidebar title not scheduled error_type=%s", type(error).__name__
             )
@@ -996,13 +1122,20 @@ async def on_message(message: cl.Message) -> None:
     latency_ms = int((time.perf_counter() - started) * 1000)
     delivery_started = time.perf_counter()
     await deliver_response(reply, response.answer)
-    logger.info("Turn timing %s", json.dumps({
-        "thread_id": context_id(), "message_id": message.id,
-        "compute_ms": latency_ms,
-        "delivery_ms": round((time.perf_counter() - delivery_started) * 1000),
-        "regenerations": response.regenerations,
-        "stages": timing_summary(response.call_trace),
-    }, ensure_ascii=False))
+    logger.info(
+        "Turn timing %s",
+        json.dumps(
+            {
+                "thread_id": context_id(),
+                "message_id": message.id,
+                "compute_ms": latency_ms,
+                "delivery_ms": round((time.perf_counter() - delivery_started) * 1000),
+                "regenerations": response.regenerations,
+                "stages": timing_summary(response.call_trace),
+            },
+            ensure_ascii=False,
+        ),
+    )
 
     meta = TutorService.display_metadata(response)
     async with cl.Step(

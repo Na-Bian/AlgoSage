@@ -1,7 +1,12 @@
 /* Thread-local model selector. The browser only sees the server-authorized
-   catalog; provider credentials and authorization remain server-side. */
+   catalog; provider credentials and authorization remain server-side.
+   Users may additionally register their own OpenAI-compatible endpoint
+   (BYOK): the key lives in this browser's localStorage and an in-memory
+   per-account server entry — never in chat history or logs. */
 (function () {
   "use strict";
+
+  var CUSTOM_STORE_KEY = "algosage-custom-providers";
 
   var state = {
     threadId: "",
@@ -17,7 +22,64 @@
   var searchInput = null;
   var listElement = null;
   var statusElement = null;
+  var addDialog = null;
   var query = "";
+
+  function readCustomStore() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(CUSTOM_STORE_KEY) || "[]");
+      return Array.isArray(raw) ? raw.filter(function (item) {
+        return item && item.base_url && item.api_key && item.model;
+      }) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function writeCustomStore(entries) {
+    localStorage.setItem(CUSTOM_STORE_KEY, JSON.stringify(entries));
+  }
+
+  function rememberCustom(entry) {
+    var entries = readCustomStore().filter(function (item) {
+      return !(item.base_url === entry.base_url && item.model === entry.model);
+    });
+    entries.push({ label: entry.label, base_url: entry.base_url, api_key: entry.api_key, model: entry.model });
+    writeCustomStore(entries);
+  }
+
+  function forgetCustomBySelection(selection) {
+    var doomed = null;
+    state.providers.forEach(function (group) {
+      if (group.id !== "custom") return;
+      group.models.forEach(function (model) {
+        if (model.selection === selection) doomed = model;
+      });
+    });
+    if (!doomed) return;
+    writeCustomStore(readCustomStore().filter(function (item) {
+      return item.model !== doomed.model;
+    }));
+  }
+
+  async function reRegisterCustom() {
+    // Re-register this browser's BYOK entries with the in-memory server store
+    // (keys never persist server-side, so a restart needs a silent re-add).
+    var entries = readCustomStore();
+    for (var i = 0; i < entries.length; i += 1) {
+      try {
+        await fetch("/models/custom", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(entries[i]),
+        });
+      } catch (_) { /* 静默：目录刷新后以服务端成功注册的为准 */ }
+    }
+    if (entries.length) {
+      try { await loadCatalog(); } catch (_) {}
+    }
+  }
 
   function currentThreadId() {
     if (state.threadId) return state.threadId;
@@ -180,12 +242,25 @@
         option.setAttribute("aria-selected", String(model.selection === state.currentSelection));
         option.disabled = !model.available || state.switching;
         option.innerHTML = `
-          <span class="eg-model-option-name">${model.model}</span>
+          <span class="eg-model-option-name">${model.model}${group.id === "custom" ? '<em class="eg-model-custom-badge">自定义</em>' : ""}</span>
           <span class="eg-model-option-state">${model.selection === state.currentSelection ? "✓" : model.available ? "" : "不可用"}</span>
         `;
         option.addEventListener("click", function () {
           selectModel(model.selection);
         });
+        if (group.id === "custom") {
+          var remove = document.createElement("span");
+          remove.className = "eg-model-remove";
+          remove.setAttribute("role", "button");
+          remove.title = "删除该自定义模型";
+          remove.textContent = "×";
+          remove.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            removeCustomModel(model.selection);
+          });
+          option.append(remove);
+        }
         listElement.append(option);
       });
     });
@@ -221,6 +296,20 @@
     listElement = document.createElement("div");
     listElement.className = "eg-model-list";
     menu.append(listElement);
+    var addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "eg-model-add";
+    addButton.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+      添加自定义模型
+    `;
+    addButton.addEventListener("click", function () {
+      closeMenu();
+      openAddDialog();
+    });
+    menu.append(addButton);
     statusElement = document.createElement("div");
     statusElement.className = "eg-model-menu-status";
     statusElement.setAttribute("aria-live", "polite");
@@ -250,8 +339,9 @@
     normalizeCatalog(await response.json());
   }
 
-  async function selectModel(selection) {
-    if (state.switching || selection === state.currentSelection) {
+  async function selectModel(selection, options) {
+    var force = Boolean(options && options.force);
+    if (!selection || state.switching || (selection === state.currentSelection && !force)) {
       closeMenu();
       return;
     }
@@ -274,6 +364,7 @@
       if (!response.ok) throw new Error(payload.detail || `切换失败（${response.status}）`);
       state.currentSelection = payload.selection || selection;
       state.currentLabel = payload.label || safeModelLabel(selection);
+      state.switching = false;
       updateButton();
       renderMenu();
       setStatus("模型已切换", false);
@@ -283,6 +374,188 @@
       updateButton();
       renderMenu();
       setStatus(error.message || "切换失败，已保留原模型", true);
+    }
+  }
+
+  async function removeCustomModel(selection) {
+    if (state.switching) return;
+    state.switching = true;
+    renderMenu();
+    setStatus("正在删除…");
+    try {
+      var response = await fetch("/models/custom", {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ selection }),
+      });
+      if (!response.ok) throw new Error(`删除失败（${response.status}）`);
+      forgetCustomBySelection(selection);
+      if (state.currentSelection === selection) {
+        // selectModel refuses to run while a switch is in flight; release the
+        // removal lock so the fallback switch back to a builtin model executes.
+        state.switching = false;
+        await selectModel(defaultSelection(), { force: true });
+      } else {
+        await loadCatalog();
+        setStatus("已删除", false);
+      }
+    } catch (error) {
+      setStatus(error.message || "删除失败", true);
+    } finally {
+      state.switching = false;
+      renderMenu();
+    }
+  }
+
+  function defaultSelection() {
+    var group = state.providers.find(function (item) { return item.id !== "custom"; });
+    return (group && group.models[0] && group.models[0].selection) || "";
+  }
+
+  function closeAddDialog() {
+    if (!addDialog) return;
+    addDialog.remove();
+    addDialog = null;
+  }
+
+  function openAddDialog() {
+    closeAddDialog();
+    addDialog = document.createElement("div");
+    addDialog.className = "eg-add-dialog-backdrop";
+    addDialog.innerHTML = `
+      <div class="eg-add-dialog" role="dialog" aria-label="添加自定义模型">
+        <div class="eg-add-title">添加自定义模型</div>
+        <div class="eg-add-hint">接入任意 OpenAI 兼容接口（如 SiliconFlow / DeepSeek / 本地 vLLM）。密钥只保存在你的浏览器与本服务进程内存中；仅支持参数量 ≤27B 的模型。</div>
+        <label class="eg-add-field">显示名称（可选）<input type="text" data-field="label" placeholder="例如：我的 SiliconFlow" maxlength="40"></label>
+        <label class="eg-add-field">Base URL<input type="text" data-field="base_url" placeholder="https://api.siliconflow.cn/v1"></label>
+        <label class="eg-add-field">API Key<input type="password" data-field="api_key" placeholder="sk-…" autocomplete="off"></label>
+        <div class="eg-add-actions">
+          <button type="button" class="eg-add-secondary" data-action="cancel">取消</button>
+          <button type="button" class="eg-add-primary" data-action="discover">获取模型列表</button>
+        </div>
+        <div class="eg-add-results" hidden></div>
+        <div class="eg-add-status" aria-live="polite"></div>
+      </div>
+    `;
+    document.body.append(addDialog);
+    addDialog.addEventListener("click", function (event) {
+      if (event.target === addDialog) closeAddDialog();
+    });
+    addDialog.querySelector('[data-action="cancel"]').addEventListener("click", closeAddDialog);
+    addDialog.querySelector('[data-action="discover"]').addEventListener("click", function () {
+      discoverInDialog();
+    });
+    var first = addDialog.querySelector('[data-field="label"]');
+    if (first) first.focus();
+  }
+
+  function dialogFields() {
+    var values = {};
+    addDialog.querySelectorAll("[data-field]").forEach(function (input) {
+      values[input.dataset.field] = input.value.trim();
+    });
+    return values;
+  }
+
+  function setDialogStatus(message, isError) {
+    if (!addDialog) return;
+    var node = addDialog.querySelector(".eg-add-status");
+    node.textContent = message || "";
+    node.classList.toggle("eg-model-error", Boolean(isError));
+  }
+
+  async function discoverInDialog() {
+    var fields = dialogFields();
+    if (!fields.base_url || !fields.api_key) {
+      setDialogStatus("请先填写 Base URL 和 API Key", true);
+      return;
+    }
+    setDialogStatus("正在获取模型列表…");
+    try {
+      var response = await fetch("/models/discover", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(fields),
+      });
+      var payload = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(payload.detail || `获取失败（${response.status}）`);
+      renderDiscoveredModels(payload.models || [], fields);
+      setDialogStatus((payload.models || []).length ? "点击要添加的模型" : "该接口未返回任何模型");
+    } catch (error) {
+      setDialogStatus(error.message || "获取模型列表失败", true);
+    }
+  }
+
+  function renderDiscoveredModels(models, fields) {
+    var results = addDialog.querySelector(".eg-add-results");
+    results.hidden = false;
+    results.textContent = "";
+    var allowed = models.filter(function (item) { return item.allowed; });
+    var blocked = models.filter(function (item) { return !item.allowed; });
+    function appendItem(item) {
+      var row = document.createElement("button");
+      row.type = "button";
+      row.className = "eg-add-model" + (item.allowed ? "" : " eg-add-model-blocked");
+      row.disabled = !item.allowed;
+      var sizeText = item.params_b == null ? "参数量未知" : `${item.params_b}B`;
+      row.innerHTML = `
+        <span class="eg-add-model-name">${item.id}</span>
+        <span class="eg-add-model-size">${item.allowed ? sizeText : `${sizeText} · 超出限制`}</span>
+      `;
+      if (item.allowed) {
+        row.addEventListener("click", function () {
+          saveCustomModel(fields, item);
+        });
+      }
+      results.append(row);
+    }
+    allowed.slice(0, 30).forEach(appendItem);
+    blocked.slice(0, 8).forEach(appendItem);
+    if (blocked.length > 8) {
+      var more = document.createElement("div");
+      more.className = "eg-add-more";
+      more.textContent = `另有 ${blocked.length - 8} 个模型因超过 27B 或参数量未知被隐藏`;
+      results.append(more);
+    }
+    if (!allowed.length && !blocked.length) {
+      var empty = document.createElement("div");
+      empty.className = "eg-add-more";
+      empty.textContent = "没有获取到模型";
+      results.append(empty);
+    }
+  }
+
+  async function saveCustomModel(fields, item) {
+    setDialogStatus("正在添加…");
+    try {
+      var response = await fetch("/models/custom", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          label: fields.label,
+          base_url: fields.base_url,
+          api_key: fields.api_key,
+          model: item.id,
+        }),
+      });
+      var payload = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(payload.detail || `添加失败（${response.status}）`);
+      rememberCustom({
+        label: (payload.entry && payload.entry.label) || fields.label,
+        base_url: fields.base_url,
+        api_key: fields.api_key,
+        model: item.id,
+      });
+      closeAddDialog();
+      await loadCatalog();
+      if (payload.entry && payload.entry.selection) {
+        await selectModel(payload.entry.selection, { force: true });
+      }
+    } catch (error) {
+      setDialogStatus(error.message || "添加失败", true);
     }
   }
 
@@ -299,10 +572,17 @@
     if (menu && !menu.contains(event.target) && !button?.contains(event.target)) closeMenu();
   });
   document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape" && menu) {
-      event.stopPropagation();
-      closeMenu();
-      button?.focus();
+    if (event.key === "Escape") {
+      if (addDialog) {
+        event.stopPropagation();
+        closeAddDialog();
+        return;
+      }
+      if (menu) {
+        event.stopPropagation();
+        closeMenu();
+        button?.focus();
+      }
     }
   });
   window.addEventListener("resize", function () {
@@ -322,6 +602,7 @@
     } catch (_) {
       // The server also pushes authorized state after chat initialization.
     }
+    reRegisterCustom();
   }
 
   if (document.readyState === "loading") {
