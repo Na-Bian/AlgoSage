@@ -156,6 +156,27 @@ class ChatStoreTests(unittest.TestCase):
         }
         run(store.close())
 
+    def test_user_app_preferences_are_account_scoped(self):
+        store = ChatDataLayer(str(self.root / "prefs.sqlite3"))
+        run(store.create_user(User(identifier="student:U202120001", display_name="Alice")))
+        self.assertEqual(run(store.load_user_app_preferences("student:U202120001")), {})
+        saved = run(
+            store.save_user_app_preferences(
+                "student:U202120001",
+                {"temperature": 0.25, "font_size": "large", "private": "drop"},
+            )
+        )
+        self.assertEqual(saved["temperature"], 0.25)
+        self.assertEqual(saved["font_size"], "large")
+        self.assertNotIn("private", saved)
+        # A second call merges instead of dropping earlier preferences.
+        run(store.save_user_app_preferences("student:U202120001", {"animations": False}))
+        prefs = run(store.load_user_app_preferences("student:U202120001"))
+        self.assertEqual(prefs["temperature"], 0.25)
+        self.assertEqual(prefs["font_size"], "large")
+        self.assertFalse(prefs["animations"])
+        run(store.close())
+
     def test_backend_history_is_owner_scoped_and_survives_restart(self):
         tmp_path = self.root
         path = str(tmp_path / "chat.sqlite3")

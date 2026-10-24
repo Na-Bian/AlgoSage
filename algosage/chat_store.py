@@ -932,6 +932,57 @@ class ChatDataLayer(BaseDataLayer):
         metadata = _safe_thread_metadata(_decode(row["metadata"], {})) or {}
         return metadata.get("chat_settings", {})
 
+    async def load_user_app_preferences(self, identifier: str) -> dict:
+        with self._lock:
+            user = await self.get_user(identifier)
+        prefs = (user.metadata or {}).get("app_preferences") if user else None
+        return prefs if isinstance(prefs, dict) else {}
+
+    async def save_user_app_preferences(self, identifier: str, preferences: dict) -> dict:
+        if not isinstance(identifier, str) or not identifier.strip():
+            raise ValueError("user identifier is required")
+        if not isinstance(preferences, dict):
+            raise ValueError("preferences must be an object")
+
+        allowed_keys = {
+            "temperature",
+            "top_p",
+            "frequency_penalty",
+            "presence_penalty",
+            "max_output_tokens",
+            "enter_behavior",
+            "autoscroll",
+            "keep_drafts",
+            "animations",
+            "font_size",
+            "audit_summary",
+        }
+        clean = {
+            key: preferences[key]
+            for key in allowed_keys
+            if key in preferences
+            and isinstance(preferences[key], (str, bool, int, float, type(None)))
+        }
+
+        with self._lock:
+            user = await self.get_user(identifier)
+            metadata = dict(user.metadata or {}) if user else {}
+            old = metadata.get("app_preferences")
+            metadata["app_preferences"] = {**old, **clean} if isinstance(old, dict) else clean
+            if user:
+                self._conn.execute(
+                    "UPDATE users SET metadata=? WHERE identifier=?",
+                    (_json(metadata), identifier),
+                )
+            else:
+                self._conn.execute(
+                    "INSERT INTO users(id, identifier, display_name, metadata, created_at) "
+                    "VALUES(?,?,?,?,?)",
+                    (str(uuid4()), identifier, "学员", _json(metadata), _now()),
+                )
+            self._conn.commit()
+        return metadata.get("app_preferences", {})
+
     async def get_favorite_steps(self, user_id: str) -> List[Dict[str, Any]]:
         with self._lock:
             rows = self._conn.execute(

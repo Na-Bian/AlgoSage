@@ -122,8 +122,33 @@
     restoreDraft();
   }
 
+  async function loadServerPreferences() {
+    try {
+      var response = await fetch("/auth/preferences", {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) return;
+      var payload = await response.json();
+      var serverPrefs = payload && payload.preferences;
+      if (!serverPrefs || typeof serverPrefs !== "object") return;
+      var next = Object.assign({}, DEFAULTS);
+      Object.keys(DEFAULTS).forEach(function (key) {
+        if (serverPrefs[key] !== null && typeof serverPrefs[key] !== "undefined") {
+          next[key] = serverPrefs[key];
+        }
+      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      apply(next);
+      refreshAutoscroll();
+    } catch (_) {
+      // Stay in local-preference mode when the endpoint is unavailable.
+    }
+  }
+
   window.addEventListener("algosage-preferences-read", refreshAll);
   refreshAll();
+  loadServerPreferences();
   new MutationObserver(function () { setTimeout(refreshAll, 30); }).observe(document.body, { childList: true, subtree: true });
   window.addEventListener("popstate", refreshAll);
 })();

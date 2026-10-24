@@ -107,10 +107,8 @@ async def restore_conversation(service):
                     service.select_provider, context, service.providers.default
                 )
         if principal:
-            settings = await get_chat_store().load_thread_settings(
-                context_id(), principal
-            )
-            await asyncio.to_thread(service.set_model_params, context, settings)
+            preferences = await get_chat_store().load_user_app_preferences(principal)
+            await asyncio.to_thread(service.set_model_params, context, preferences)
     return context
 
 
@@ -267,11 +265,38 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             raise HTTPException(status_code=404, detail="Feedback not found")
         return {"success": True}
 
+    from algosage.student_auth import _chainlit_router
+
+    preferences_router = _chainlit_router(_chainlit_server_app)
+
+    @preferences_router.get("/auth/preferences", include_in_schema=False)
+    async def read_preferences(current_user: UserParam):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return await get_chat_store().load_user_app_preferences(current_user.identifier)
+
+    @preferences_router.put("/auth/preferences", include_in_schema=False)
+    async def update_preferences(payload: dict, current_user: UserParam):
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Invalid preferences")
+        service = get_service()
+        normalized = service.normalize_model_params(
+            payload, service.providers.resolve(service.providers.default)
+        )
+        saved = await get_chat_store().save_user_app_preferences(
+            current_user.identifier, normalized
+        )
+        return {"success": True, "preferences": saved}
+
+    from algosage.student_auth import _chainlit_router, _move_routes_before_catchall
     from algosage.student_auth import install_profile_routes
 
     from algosage.student_auth import install_student_auth
 
     install_student_auth(_chainlit_server_app, get_student_auth)
+    _move_routes_before_catchall(_chainlit_router(_chainlit_server_app), ("/auth/preferences",))
     install_profile_routes(
         _chainlit_server_app,
         get_student_auth,
@@ -416,6 +441,11 @@ async def on_settings_update(settings: dict) -> None:
             context,
             _normalize_ui_settings(settings),
         )
+        principal = authenticated_principal_id()
+        if principal:
+            await get_chat_store().save_user_app_preferences(
+                principal, context.model_params
+            )
         await persist_backend_history(context)
     info = service.provider_info(context)
     try:
@@ -493,7 +523,6 @@ async def persist_backend_history(context) -> None:
             principal,
             history,
             selection,
-            model_params=dict(context.model_params or {}),
         )
 
 
