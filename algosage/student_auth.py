@@ -321,14 +321,24 @@ def install_profile_routes(
         )
         principal_id = _student_id(current_user)
         if chat_store_factory is not None:
+            identifier = f"student:{principal_id}"
+            previous_user = await chat_store_factory().get_user(identifier)
+            app_preferences = (
+                (previous_user.metadata or {}).get("app_preferences")
+                if previous_user
+                else None
+            )
+            auth_metadata = {
+                "provider": "hust-student",
+                "student_id": account["student_id"],
+                "session_version": int(account["session_version"]),
+                "image": avatar_url,
+            }
+            if isinstance(app_preferences, dict):
+                auth_metadata["app_preferences"] = app_preferences
             await chat_store_factory().update_user_metadata(
-                f"student:{principal_id}",
-                {
-                    "provider": "hust-student",
-                    "student_id": account["student_id"],
-                    "session_version": int(account["session_version"]),
-                    "image": avatar_url,
-                },
+                identifier,
+                auth_metadata,
                 account["nickname"],
             )
         # Re-sign the session so a pre-avatar login cookie cannot keep asking
