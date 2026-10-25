@@ -603,6 +603,12 @@ main .ai-message .message-content ~ div button svg {
   background: hsl(var(--popover));
   color: hsl(var(--popover-foreground));
   box-shadow: 0 18px 50px rgb(2 6 23 / .18);
+  /* 与原生弹窗一致的上浮入场；关闭由 JS 在移除前加 eg-menu-closing。 */
+  animation: eg-surface-in var(--eg-motion-enter) var(--eg-motion-ease) both;
+}
+
+.eg-model-menu.eg-menu-closing {
+  animation: eg-overlay-out var(--eg-motion-exit) var(--eg-motion-ease) both;
 }
 
 .eg-model-menu-header {

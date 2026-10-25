@@ -117,22 +117,34 @@
 
   function closeMenu() {
     if (!menu) return;
-    menu.remove();
+    var closing = menu;
     menu = null;
     searchInput = null;
     listElement = null;
     statusElement = null;
     if (button) button.setAttribute("aria-expanded", "false");
+    // 播放退出动画后再移除；动画不可用时立即清理。
+    var duration = 0;
+    try {
+      duration = parseFloat(getComputedStyle(closing).animationDuration) || 0;
+      closing.classList.add("eg-menu-closing");
+    } catch (_) {}
+    var remove = function () { closing.remove(); };
+    if (duration > 0) setTimeout(remove, duration * 1000 + 30);
+    else remove();
   }
 
   function menuPosition() {
-    if (!button) return;
+    if (!button || !menu) return;
     var rect = button.getBoundingClientRect();
     var width = Math.max(260, Math.min(360, window.innerWidth - 24));
+    var maxHeight = Math.min(360, window.innerHeight - 24);
+    menu.style.maxHeight = `${Math.round(maxHeight)}px`;
     var left = Math.min(Math.max(12, rect.right - width), window.innerWidth - width - 12);
-    var estimatedHeight = Math.min(360, window.innerHeight - 24);
-    var top = rect.top - estimatedHeight - 8;
-    if (top < 12) top = Math.min(rect.bottom + 8, window.innerHeight - estimatedHeight - 12);
+    // 紧贴锚点：优先在按钮上方 8px；上方放不下（含菜单实际高度）则落到下方。
+    var menuHeight = menu.offsetHeight || maxHeight;
+    var top = rect.top - menuHeight - 8;
+    if (top < 12) top = Math.min(rect.bottom + 8, window.innerHeight - menuHeight - 12);
     menu.style.left = `${Math.round(left)}px`;
     menu.style.top = `${Math.round(Math.max(12, top))}px`;
     menu.style.width = `${Math.round(width)}px`;
@@ -248,6 +260,8 @@
     menuPosition();
     button?.setAttribute("aria-expanded", "true");
     renderMenu();
+    // renderMenu 之后列表高度才确定；下一帧按实际高度重新定位。
+    requestAnimationFrame(menuPosition);
     searchInput?.focus();
   }
 
