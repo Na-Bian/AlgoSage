@@ -46,17 +46,26 @@
       var panel = surface();
       if (!confirm || !panel) return;
       // 程序化提交 → 抽屉收起 → 自动重开 → React 补渲染。整条链路的时长
-      // 随负载波动，固定冷却窗（1.6s）在高负载下会提前失效，让渲染回放
-      // （空值→初值）被当成用户编辑，引发面板收起/展开循环。改用确定性
-      // 门闩：提交即进入 pending 状态，抽屉重新出现并稳定 3 个宏任务后
-      // 才解除，期间所有观察到的"变化"一律只刷新基线。
+      // 随负载波动，固定冷却窗会提前失效，让渲染回放（空值→初值）被当成
+      // 用户编辑，引发面板收起/展开循环。改用确定性门闩：提交即进入
+      // pending 状态，抽屉重新出现并稳定后（watchSettle）才解除。
       pendingSettle = true;
       confirm.click();
       // 抽屉卸载是异步的：轮询至其消失后再触发顶栏按钮重新打开。
+      // 用户在周期内点了齿轮（明确要关闭）时轮询必须让位，否则会与
+      // 用户形成"你关我开"的拉锯——这正是连点齿轮时鬼畜的来源。
       var tries = 0;
       window.clearInterval(reopenTimer);
       reopenTimer = window.setInterval(function () {
         if (surface()) return;
+        if (Date.now() - lastGearClickAt < 1200) {
+          // 用户刚刚主动关闭：放弃重开并解除门闩，尊重用户意图。
+          window.clearInterval(reopenTimer);
+          pendingSettle = false;
+          var current = surface();
+          if (current) snapshotCombos(current);
+          return;
+        }
         var trigger = document.getElementById("chat-settings-header-button");
         if (trigger) {
           window.clearInterval(reopenTimer);
@@ -71,19 +80,23 @@
 
   var reopenTimer = null;
   var pendingSettle = false;
+  var lastGearClickAt = 0;
 
-  // 抽屉重开后的渲染稳定检测：连续 3 个宏任务无 DOM 变更即视为稳定。
+  // 抽屉重开后的渲染稳定检测：面板稳定后解除门闩并重拍基线。
+  // 同一面板只保留一条检测链，避免多链互相重置门闩。
+  var settlePanel = null;
   function watchSettle(panel) {
-    var quiet = 0;
+    if (settlePanel === panel) return;
+    settlePanel = panel;
     var check = function () {
       if (!surface() || surface() !== panel) { settleDone(); return; }
-      if (++quiet >= 3) { settleDone(); return; }
       window.setTimeout(check, 120);
     };
-    window.setTimeout(check, 120);
+    window.setTimeout(check, 360);
   }
 
   function settleDone() {
+    settlePanel = null;
     if (!pendingSettle) return;
     pendingSettle = false;
     var panel = surface();
@@ -170,6 +183,19 @@
       footer.classList.add(CLASS);
     }
   }
+
+  // 顶栏齿轮是面板开关的总闸：记录点击时间供重开轮询让位（用户主动关闭
+  // 时轮询不得再拉起面板），并清掉遗留的提交防抖。
+  document.addEventListener(
+    "click",
+    function (event) {
+      var button = event.target.closest && event.target.closest("#chat-settings-header-button");
+      if (!button) return;
+      lastGearClickAt = Date.now();
+      window.clearTimeout(submitTimer);
+    },
+    true
+  );
 
   new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
   if (document.readyState === "loading") {
