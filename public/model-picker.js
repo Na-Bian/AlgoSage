@@ -723,11 +723,9 @@
         });
         confirmButton.disabled = true;
       } else {
+        // 全部成功：收起结果区即可——新模型已出现在上方提供商列表中。
         results.hidden = true;
         results.textContent = "";
-        showResultsNotice(
-          `已添加 ${picked.length} 个模型；在"默认模型"中选择它们并点确认，之后的新对话将默认使用`,
-        );
       }
     });
     results.append(confirmButton);
