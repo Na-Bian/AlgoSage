@@ -964,6 +964,8 @@ main .ai-message .message-content ~ div button svg {
   margin-top: 12px;
   border-top: 1px solid hsl(var(--border));
   padding-top: 8px;
+  color: hsl(var(--muted-foreground));
+  font-size: .78rem;
 }
 
 .eg-add-model {
@@ -1006,19 +1008,6 @@ main .ai-message .message-content ~ div button svg {
   color: hsl(var(--muted-foreground));
   font-size: .74rem;
 }
-
-.eg-add-status {
-  /* 空状态不占位：有提示文字时才展开，避免按钮下方常年空出一截。 */
-  min-height: 0;
-  margin-top: 9px;
-  color: hsl(var(--muted-foreground));
-  font-size: .78rem;
-}
-.eg-add-status:empty {
-  display: none;
-}
-
-.eg-add-status.eg-model-error { color: hsl(var(--destructive)); }
 
 .eg-model-option:disabled .eg-model-option-state { color: hsl(var(--muted-foreground)); }
 

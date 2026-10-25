@@ -425,7 +425,6 @@
           <button type="button" class="eg-add-primary" data-action="discover">获取模型列表</button>
         </div>
         <div class="eg-add-results" hidden></div>
-        <div class="eg-add-status" aria-live="polite"></div>
       </div>
     `;
     document.body.append(addDialog);
@@ -512,14 +511,13 @@
       } else {
         action.addEventListener("click", async function () {
           action.disabled = true;
-          setDialogStatus(options.pending);
           try {
             await options.run();
             renderManagedModels();
-            setDialogStatus(options.done, false);
           } catch (error) {
+            // 失败恢复按钮可用，错误原因放进悬停提示。
             action.disabled = false;
-            setDialogStatus(error.message || options.failed, true);
+            action.title = error.message || options.failed;
           }
         });
       }
@@ -604,20 +602,15 @@
     return values;
   }
 
-  function setDialogStatus(message, isError) {
-    if (!addDialog) return;
-    var node = addDialog.querySelector(".eg-add-status");
-    node.textContent = message || "";
-    node.classList.toggle("eg-model-error", Boolean(isError));
-  }
-
   async function discoverInDialog() {
     var fields = dialogFields();
     if (!fields.base_url || !fields.api_key) {
-      setDialogStatus("请先填写 Base URL 和 API Key", true);
+      showResultsNotice("请先填写 Base URL 和 API Key");
       return;
     }
-    setDialogStatus("正在获取模型列表…");
+    var results = addDialog.querySelector(".eg-add-results");
+    results.hidden = false;
+    results.textContent = "正在获取模型列表…";
     try {
       var response = await fetch("/models/discover", {
         method: "POST",
@@ -628,10 +621,16 @@
       var payload = await response.json().catch(function () { return {}; });
       if (!response.ok) throw new Error(payload.detail || `获取失败（${response.status}）`);
       renderDiscoveredModels(payload.models || [], fields);
-      setDialogStatus((payload.models || []).length ? "点击要添加的模型" : "该接口未返回任何模型");
     } catch (error) {
-      setDialogStatus(error.message || "获取模型列表失败", true);
+      showResultsNotice(error.message || "获取模型列表失败");
     }
+  }
+
+  function showResultsNotice(message) {
+    if (!addDialog) return;
+    var results = addDialog.querySelector(".eg-add-results");
+    results.hidden = false;
+    results.textContent = message;
   }
 
   function renderDiscoveredModels(models, fields) {
@@ -674,7 +673,6 @@
   }
 
   async function saveCustomModel(fields, item) {
-    setDialogStatus("正在添加…");
     try {
       var response = await fetch("/models/custom", {
         method: "POST",
@@ -693,12 +691,9 @@
       // 不自动切换：设置面板里的"模型与 Provider"下拉在确认保存前仍是旧值，
       // 自动切换会被随后的确认用陈旧选择悄悄覆盖。添加后由用户在面板中显式选择。
       renderManagedModels();
-      setDialogStatus(
-        `已添加 ${item.id}；在"默认模型"中选择它并点确认，之后的新对话将默认使用`,
-        false,
-      );
+      showResultsNotice(`已添加 ${item.id}；在"默认模型"中选择它并点确认，之后的新对话将默认使用`);
     } catch (error) {
-      setDialogStatus(error.message || "添加失败", true);
+      showResultsNotice(error.message || "添加失败");
     }
   }
 
