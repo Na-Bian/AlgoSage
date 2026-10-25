@@ -198,6 +198,7 @@
   function visibleProviders() {
     var queryText = query.trim().toLowerCase();
     return state.providers
+      .filter(function (group) { return !group.hidden; })
       .map(function (group) {
         var models = group.models.filter(function (model) {
           return !queryText
@@ -431,7 +432,7 @@
         <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
         <circle cx="12" cy="12" r="3"/>
       </svg>
-      管理自定义模型
+      管理模型提供商
     `;
     entry.addEventListener("click", function (event) {
       event.preventDefault();
@@ -452,14 +453,15 @@
     addDialog = document.createElement("div");
     addDialog.className = "eg-add-dialog-backdrop";
     addDialog.innerHTML = `
-      <div class="eg-add-dialog" role="dialog" aria-label="管理自定义模型">
-        <div class="eg-add-title">管理自定义模型</div>
-        <div class="eg-add-hint">接入任意 OpenAI 兼容接口（如 SiliconFlow / DeepSeek / 本地 vLLM）。密钥只保存在你的浏览器与本服务进程内存中；仅支持参数量 ≤27B 的模型。</div>
+      <div class="eg-add-dialog" role="dialog" aria-label="管理模型提供商">
+        <div class="eg-add-title">管理模型提供商</div>
+        <div class="eg-add-hint">统一管理可用的模型提供商：列表中可移除不再使用的（预置的仅对你隐藏，可随时恢复）；用下方表单以 Base URL + API Key 接入 OpenAI 兼容接口（如 SiliconFlow / DeepSeek / 本地 vLLM），仅支持参数量 ≤27B 的模型，密钥只保存在你的浏览器与本服务进程内存中。</div>
         <div class="eg-add-managed">
-          <div class="eg-add-managed-head">已添加的自定义模型 <span data-managed-count></span></div>
+          <div class="eg-add-managed-head">提供商 <span data-managed-count></span></div>
           <div data-managed-list></div>
         </div>
-        <div class="eg-add-divider">添加新模型</div>
+        <div data-removed-list></div>
+        <div class="eg-add-divider">添加提供商</div>
         <label class="eg-add-field">显示名称（可选）<input type="text" data-field="label" placeholder="例如：我的 SiliconFlow" maxlength="40"></label>
         <label class="eg-add-field">Base URL<input type="text" data-field="base_url" placeholder="https://api.siliconflow.cn/v1"></label>
         <label class="eg-add-field">API Key<input type="password" data-field="api_key" placeholder="sk-…" autocomplete="off"></label>
@@ -493,52 +495,147 @@
     return (group && group.models) || [];
   }
 
+  function presetGroups() {
+    return state.providers.filter(function (item) { return item.id !== "custom"; });
+  }
+
+  async function hidePresetProvider(providerId) {
+    var response = await fetch("/models/preset", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ provider_id: providerId, hidden: true }),
+    });
+    if (!response.ok) {
+      var payload = await response.json().catch(function () { return {}; });
+      throw new Error(payload.detail || `移除失败（${response.status}）`);
+    }
+    // 正在使用的提供商被移除时，先切回默认模型再刷新目录。
+    var stillSelected = state.providers.some(function (group) {
+      return group.id === providerId && group.models.some(function (model) {
+        return model.selection === state.currentSelection;
+      });
+    });
+    if (stillSelected && state.currentSelection !== defaultSelection()) {
+      await selectModel(defaultSelection(), { force: true });
+    }
+    await loadCatalog();
+  }
+
+  async function restorePresetProvider(providerId) {
+    var response = await fetch("/models/preset", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ provider_id: providerId, hidden: false }),
+    });
+    if (!response.ok) {
+      var payload = await response.json().catch(function () { return {}; });
+      throw new Error(payload.detail || `恢复失败（${response.status}）`);
+    }
+    await loadCatalog();
+  }
+
+  async function removeCustomEntries(selections) {
+    for (var i = 0; i < selections.length; i++) {
+      var done = await deleteCustomSelection(selections[i]);
+      if (!done) throw new Error("正在切换模型，请稍后再试");
+    }
+  }
+
+  function managedRow(name, options) {
+    var row = document.createElement("div");
+    row.className = "eg-add-managed-row";
+    var label = document.createElement("span");
+    label.className = "eg-add-managed-name";
+    label.textContent = name;
+    label.title = name;
+    row.append(label);
+    var action = document.createElement("button");
+    action.type = "button";
+    action.className = options.restore
+      ? "eg-add-managed-restore"
+      : "eg-add-managed-remove";
+    action.textContent = options.text;
+    if (options.disabled) {
+      action.disabled = true;
+      action.title = options.title || "";
+    } else {
+      action.addEventListener("click", async function () {
+        action.disabled = true;
+        setDialogStatus(options.pending);
+        try {
+          await options.run();
+          renderManagedModels();
+          setDialogStatus(options.done, false);
+        } catch (error) {
+          action.disabled = false;
+          setDialogStatus(error.message || options.failed, true);
+        }
+      });
+    }
+    row.append(action);
+    return row;
+  }
+
   function renderManagedModels() {
     if (!addDialog) return;
     var count = addDialog.querySelector("[data-managed-count]");
-    if (count) count.textContent = `（${customEntries().length}/8）`;
+    var presets = presetGroups();
+    var customCount = customEntries().length;
+    if (count) count.textContent = `（预置 ${presets.length} · 自定义 ${customCount}/8）`;
     var list = addDialog.querySelector("[data-managed-list]");
-    if (!list) return;
+    var removedList = addDialog.querySelector("[data-removed-list]");
+    if (!list || !removedList) return;
     list.textContent = "";
-    var entries = customEntries();
-    if (!entries.length) {
+    removedList.textContent = "";
+    removedList.hidden = true;
+
+    presets.forEach(function (group) {
+      if (group.hidden) return; // 已移除的显示在下方恢复区
+      var name = `${group.label} · ${group.models.length} 个模型`;
+      if (group.locked) {
+        list.append(managedRow(name, {
+          text: "移除", disabled: true, title: "默认提供商，不可移除",
+          pending: "", done: "", failed: "", run: async function () {},
+        }));
+        return;
+      }
+      list.append(managedRow(name, {
+        text: "移除", pending: "正在移除…", done: "已移除；它不再出现在模型选择里，可随时在下方恢复",
+        failed: "移除失败",
+        run: function () { return hidePresetProvider(group.id); },
+      }));
+    });
+    customEntries().forEach(function (model) {
+      list.append(managedRow(`${model.label || "自定义 API"} · ${model.model}`, {
+        text: "删除", pending: "正在删除…", done: "已删除；若它正被使用，已自动切回默认模型",
+        failed: "删除失败",
+        run: function () { return removeCustomEntries([model.selection]); },
+      }));
+    });
+    if (!presets.length && !customCount) {
       var empty = document.createElement("div");
       empty.className = "eg-add-more";
-      empty.textContent = "还没有自定义模型，用下方表单添加。";
+      empty.textContent = "没有可用的提供商，用下方表单添加。";
       list.append(empty);
-      return;
     }
-    entries.forEach(function (model) {
-      var row = document.createElement("div");
-      row.className = "eg-add-managed-row";
-      var name = document.createElement("span");
-      name.className = "eg-add-managed-name";
-      name.textContent = `${model.label || "自定义 API"} · ${model.model}`;
-      name.title = name.textContent;
-      var remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "eg-add-managed-remove";
-      remove.textContent = "删除";
-      remove.addEventListener("click", async function () {
-        remove.disabled = true;
-        setDialogStatus("正在删除…");
-        try {
-          var done = await deleteCustomSelection(model.selection);
-          if (!done) {
-            remove.disabled = false;
-            setDialogStatus("正在切换模型，请稍后再试", true);
-            return;
-          }
-          renderManagedModels();
-          setDialogStatus("已删除；若它正被使用，已自动切回默认模型", false);
-        } catch (error) {
-          remove.disabled = false;
-          setDialogStatus(error.message || "删除失败", true);
-        }
+
+    var hiddenPresets = presets.filter(function (group) { return group.hidden; });
+    if (hiddenPresets.length) {
+      removedList.hidden = false;
+      var head = document.createElement("div");
+      head.className = "eg-add-managed-head";
+      head.textContent = "已移除的预置提供商";
+      removedList.append(head);
+      hiddenPresets.forEach(function (group) {
+        removedList.append(managedRow(`${group.label} · ${group.models.length} 个模型`, {
+          text: "恢复", restore: true, pending: "正在恢复…", done: "已恢复",
+          failed: "恢复失败",
+          run: function () { return restorePresetProvider(group.id); },
+        }));
       });
-      row.append(name, remove);
-      list.append(row);
-    });
+    }
   }
 
   function dialogFields() {

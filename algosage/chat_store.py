@@ -136,9 +136,7 @@ def _merged_thread_metadata(
         return incoming
     settings = {**saved["chat_settings"], **incoming["chat_settings"]}
     if "provider_selection" not in incoming["chat_settings"]:
-        settings["provider_selection"] = saved["chat_settings"][
-            "provider_selection"
-        ]
+        settings["provider_selection"] = saved["chat_settings"]["provider_selection"]
     return {"chat_settings": settings}
 
 
@@ -314,7 +312,9 @@ class ChatDataLayer(BaseDataLayer):
             self._conn.commit()
         return await self.get_user(user.identifier)
 
-    async def update_user_display_name(self, identifier: str, display_name: str) -> Optional[PersistedUser]:
+    async def update_user_display_name(
+        self, identifier: str, display_name: str
+    ) -> Optional[PersistedUser]:
         clean_name = display_name.strip()[:200]
         if not clean_name:
             raise ValueError("display name cannot be empty")
@@ -402,7 +402,9 @@ class ChatDataLayer(BaseDataLayer):
             ).fetchone()
             thread_id = row["thread_id"] if row else ""
         if not thread_id or int(feedback.value) not in {0, 1}:
-            raise ValueError("feedback must target a valid thread and have value 0 or 1")
+            raise ValueError(
+                "feedback must target a valid thread and have value 0 or 1"
+            )
         with self._lock:
             step = self._conn.execute(
                 "SELECT thread_id FROM steps WHERE id = ?", (feedback.forId,)
@@ -417,16 +419,18 @@ class ChatDataLayer(BaseDataLayer):
                     feedback.forId,
                     thread_id,
                     int(feedback.value),
-                    str(feedback.comment)[:2000] if feedback.comment is not None else None,
+                    (
+                        str(feedback.comment)[:2000]
+                        if feedback.comment is not None
+                        else None
+                    ),
                     _now(),
                 ),
             )
             self._conn.commit()
         return feedback_id
 
-    async def upsert_feedback_for(
-        self, feedback: Feedback, principal_id: str
-    ) -> str:
+    async def upsert_feedback_for(self, feedback: Feedback, principal_id: str) -> str:
         """Create or update feedback after checking the target thread owner."""
         feedback_id = str(feedback.id or uuid4())
         thread_id = str(feedback.threadId or "")
@@ -437,7 +441,9 @@ class ChatDataLayer(BaseDataLayer):
                 ).fetchone()
                 thread_id = row["thread_id"] if row else ""
         if not thread_id or int(feedback.value) not in {0, 1}:
-            raise ValueError("feedback must target a valid thread and have value 0 or 1")
+            raise ValueError(
+                "feedback must target a valid thread and have value 0 or 1"
+            )
         with self._lock:
             row = self._conn.execute(
                 """
@@ -462,7 +468,11 @@ class ChatDataLayer(BaseDataLayer):
                     feedback.forId,
                     thread_id,
                     int(feedback.value),
-                    str(feedback.comment)[:2000] if feedback.comment is not None else None,
+                    (
+                        str(feedback.comment)[:2000]
+                        if feedback.comment is not None
+                        else None
+                    ),
                     _now(),
                 ),
             )
@@ -487,7 +497,9 @@ class ChatDataLayer(BaseDataLayer):
         if not content or len(content) > _MAX_ELEMENT_BYTES:
             raise ValueError("element content exceeds the persistent size limit")
         relative = Path(hashlib.sha256(element_id.encode()).hexdigest())
-        target_dir = self._element_root / hashlib.sha256(thread_id.encode()).hexdigest()[:24]
+        target_dir = (
+            self._element_root / hashlib.sha256(thread_id.encode()).hexdigest()[:24]
+        )
         target_dir.mkdir(parents=True, exist_ok=True)
         target_dir.chmod(0o700)
         target = target_dir / relative.name
@@ -514,10 +526,18 @@ class ChatDataLayer(BaseDataLayer):
                 "size=excluded.size, language=excluded.language, storage_path=excluded.storage_path, "
                 "size_bytes=excluded.size_bytes",
                 (
-                    element_id, thread_id, getattr(element, "for_id", None),
-                    str(element.type), str(element.name)[:200], str(element.mime or "")[:100],
-                    str(element.display or "inline"), getattr(element, "size", None),
-                    getattr(element, "language", None), str(target), len(content), _now(),
+                    element_id,
+                    thread_id,
+                    getattr(element, "for_id", None),
+                    str(element.type),
+                    str(element.name)[:200],
+                    str(element.mime or "")[:100],
+                    str(element.display or "inline"),
+                    getattr(element, "size", None),
+                    getattr(element, "language", None),
+                    str(target),
+                    len(content),
+                    _now(),
                 ),
             )
             self._conn.commit()
@@ -549,7 +569,8 @@ class ChatDataLayer(BaseDataLayer):
             row = self._conn.execute(query, args).fetchone()
             if row:
                 self._conn.execute(
-                    "DELETE FROM elements WHERE id = ?" + (" AND thread_id = ?" if thread_id else ""),
+                    "DELETE FROM elements WHERE id = ?"
+                    + (" AND thread_id = ?" if thread_id else ""),
                     args,
                 )
                 self._conn.commit()
@@ -617,7 +638,9 @@ class ChatDataLayer(BaseDataLayer):
                 "DELETE FROM thread_titles WHERE thread_id = ?", (thread_id,)
             )
             self._conn.execute("DELETE FROM elements WHERE thread_id = ?", (thread_id,))
-            self._conn.execute("DELETE FROM feedbacks WHERE thread_id = ?", (thread_id,))
+            self._conn.execute(
+                "DELETE FROM feedbacks WHERE thread_id = ?", (thread_id,)
+            )
             self._conn.commit()
         for item in element_rows:
             Path(item["storage_path"]).unlink(missing_ok=True)
@@ -638,7 +661,9 @@ class ChatDataLayer(BaseDataLayer):
         for thread_id in thread_ids:
             await self.delete_thread(thread_id)
         with self._lock:
-            self._conn.execute("DELETE FROM users WHERE identifier = ?", (principal_id,))
+            self._conn.execute(
+                "DELETE FROM users WHERE identifier = ?", (principal_id,)
+            )
             self._conn.commit()
         return len(thread_ids)
 
@@ -961,7 +986,9 @@ class ChatDataLayer(BaseDataLayer):
         prefs = (user.metadata or {}).get("app_preferences") if user else None
         return prefs if isinstance(prefs, dict) else {}
 
-    async def save_user_app_preferences(self, identifier: str, preferences: dict) -> dict:
+    async def save_user_app_preferences(
+        self, identifier: str, preferences: dict
+    ) -> dict:
         if not isinstance(identifier, str) or not identifier.strip():
             raise ValueError("user identifier is required")
         if not isinstance(preferences, dict):
@@ -979,19 +1006,29 @@ class ChatDataLayer(BaseDataLayer):
             "animations",
             "font_size",
             "audit_summary",
+            "disabled_providers",
         }
         clean = {
             key: preferences[key]
             for key in allowed_keys
             if key in preferences
-            and isinstance(preferences[key], (str, bool, int, float, type(None)))
+            and (
+                (
+                    key == "disabled_providers"
+                    and isinstance(preferences[key], list)
+                    and all(isinstance(v, str) for v in preferences[key])
+                )
+                or isinstance(preferences[key], (str, bool, int, float, type(None)))
+            )
         }
 
         with self._lock:
             user = await self.get_user(identifier)
             metadata = dict(user.metadata or {}) if user else {}
             old = metadata.get("app_preferences")
-            metadata["app_preferences"] = {**old, **clean} if isinstance(old, dict) else clean
+            metadata["app_preferences"] = (
+                {**old, **clean} if isinstance(old, dict) else clean
+            )
             if user:
                 self._conn.execute(
                     "UPDATE users SET metadata=? WHERE identifier=?",

@@ -794,6 +794,22 @@ main .ai-message .message-content ~ div button svg {
 .eg-add-managed-remove:hover:not(:disabled) { background: hsl(var(--destructive) / .12); }
 .eg-add-managed-remove:disabled { opacity: .55; cursor: not-allowed; }
 
+/* 恢复按钮：中性配色，与删除形成区分。 */
+.eg-add-managed-restore {
+  flex: 0 0 auto;
+  border: 1px solid hsl(var(--primary) / .45);
+  border-radius: 8px;
+  padding: 3px 9px;
+  background: transparent;
+  color: hsl(var(--primary));
+  font: inherit;
+  font-size: .78rem;
+  cursor: pointer;
+}
+
+.eg-add-managed-restore:hover:not(:disabled) { background: hsl(var(--primary) / .12); }
+.eg-add-managed-restore:disabled { opacity: .55; cursor: not-allowed; }
+
 .eg-add-divider {
   display: flex;
   align-items: center;

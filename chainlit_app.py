@@ -124,9 +124,20 @@ def model_selection_lock(thread_id: str) -> asyncio.Lock:
     return lock
 
 
+async def hidden_preset_providers(principal: str | None) -> set[str]:
+    """Provider ids the user removed from their own catalog (preset providers)."""
+    if not principal:
+        return set()
+    preferences = await get_chat_store().load_user_app_preferences(principal)
+    hidden = preferences.get("disabled_providers")
+    return {str(item) for item in hidden} if isinstance(hidden, list) else set()
+
+
 async def send_model_catalog(context) -> None:
     """Push the authorized catalog and thread-local selection to the composer."""
     service = get_service()
+    hidden = await hidden_preset_providers(context.principal_id)
+    default_id = service.providers.default.split("::", 1)[0]
     groups: dict[str, dict] = {}
     for option in service.providers.options():
         group = groups.setdefault(
@@ -135,6 +146,9 @@ async def send_model_catalog(context) -> None:
                 "id": option["id"],
                 "label": option["label"],
                 "available": bool(option["available"]),
+                "source": "preset",
+                "locked": option["id"] == default_id,
+                "hidden": option["id"] in hidden,
                 "models": [],
             },
         )
@@ -153,6 +167,9 @@ async def send_model_catalog(context) -> None:
                     "id": "custom",
                     "label": "自定义 API（我的密钥）",
                     "available": True,
+                    "source": "custom",
+                    "locked": False,
+                    "hidden": False,
                     "models": [],
                 },
             )
@@ -364,7 +381,13 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         if not current_user:
             raise HTTPException(status_code=401, detail="Unauthorized")
         service = get_service()
+        hidden = await hidden_preset_providers(current_user.identifier)
+        default_id = service.providers.default.split("::", 1)[0]
         groups = _catalog_groups(service, service.providers.options())
+        for group in groups:
+            group["source"] = "preset"
+            group["locked"] = group["id"] == default_id
+            group["hidden"] = group["id"] in hidden
         custom = service.list_custom_providers(current_user.identifier)
         if custom:
             groups.append(
@@ -372,6 +395,9 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                     "id": "custom",
                     "label": "自定义 API（我的密钥）",
                     "available": True,
+                    "source": "custom",
+                    "locked": False,
+                    "hidden": False,
                     "models": [
                         {
                             "selection": entry["selection"],
@@ -407,6 +433,37 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             "current_label": f"{current_info['label']} · {current_info['model']}",
             "providers": groups,
         }
+
+    @models_router.post("/models/preset", include_in_schema=False)
+    async def set_preset_provider_visibility(payload: dict, current_user: UserParam):
+        """Remove (hide) or restore a preset provider for the current user only."""
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        provider_id = str((payload or {}).get("provider_id") or "").strip()
+        hidden = bool(payload.get("hidden"))
+        service = get_service()
+        preset_ids = {group["id"] for group in service.providers.options()}
+        default_id = service.providers.default.split("::", 1)[0]
+        if provider_id not in preset_ids:
+            raise HTTPException(status_code=404, detail="Provider not found")
+        if provider_id == default_id:
+            raise HTTPException(status_code=400, detail="默认 Provider 不能移除")
+        preferences = await get_chat_store().load_user_app_preferences(
+            current_user.identifier
+        )
+        removed = {
+            str(item)
+            for item in preferences.get("disabled_providers") or []
+            if isinstance(item, str)
+        }
+        removed.discard(provider_id)
+        if hidden:
+            removed.add(provider_id)
+        preferences["disabled_providers"] = sorted(removed)
+        await get_chat_store().save_user_app_preferences(
+            current_user.identifier, preferences
+        )
+        return {"success": True, "provider_id": provider_id, "hidden": hidden}
 
     @models_router.post("/models/discover", include_in_schema=False)
     async def discover_models(payload: dict, current_user: UserParam):
@@ -518,6 +575,7 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             "/models/select",
             "/models/discover",
             "/models/custom",
+            "/models/preset",
         ),
     )
 
@@ -568,7 +626,12 @@ except ImportError:
 async def send_provider_settings(context) -> None:
     service = get_service()
     options = service.providers.options()
-    items = {f"{o['label']} · {o['model']}": o["selection"] for o in options}
+    hidden = await hidden_preset_providers(context.principal_id)
+    items = {
+        f"{o['label']} · {o['model']}": o["selection"]
+        for o in options
+        if o["id"] not in hidden
+    }
     if context.principal_id:
         for entry in service.list_custom_providers(context.principal_id):
             items[f"{entry['label']} · {entry['model']}"] = entry["selection"]

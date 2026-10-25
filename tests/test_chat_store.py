@@ -158,7 +158,11 @@ class ChatStoreTests(unittest.TestCase):
 
     def test_user_app_preferences_are_account_scoped(self):
         store = ChatDataLayer(str(self.root / "prefs.sqlite3"))
-        run(store.create_user(User(identifier="student:U202120001", display_name="Alice")))
+        run(
+            store.create_user(
+                User(identifier="student:U202120001", display_name="Alice")
+            )
+        )
         self.assertEqual(run(store.load_user_app_preferences("student:U202120001")), {})
         saved = run(
             store.save_user_app_preferences(
@@ -170,11 +174,38 @@ class ChatStoreTests(unittest.TestCase):
         self.assertEqual(saved["font_size"], "large")
         self.assertNotIn("private", saved)
         # A second call merges instead of dropping earlier preferences.
-        run(store.save_user_app_preferences("student:U202120001", {"animations": False}))
+        run(
+            store.save_user_app_preferences("student:U202120001", {"animations": False})
+        )
         prefs = run(store.load_user_app_preferences("student:U202120001"))
         self.assertEqual(prefs["temperature"], 0.25)
         self.assertEqual(prefs["font_size"], "large")
         self.assertFalse(prefs["animations"])
+        run(store.close())
+
+    def test_removed_preset_providers_round_trip(self):
+        store = ChatDataLayer(str(self.root / "prefs-disabled.sqlite3"))
+        run(
+            store.create_user(User(identifier="student:U202120002", display_name="Bob"))
+        )
+        saved = run(
+            store.save_user_app_preferences(
+                "student:U202120002",
+                {"disabled_providers": ["siliconflow", "deepseek"]},
+            )
+        )
+        self.assertEqual(saved["disabled_providers"], ["siliconflow", "deepseek"])
+        # 混入非字符串成员的列表整条拒绝（脏输入不落库），旧值保留；
+        # 同批其它键照常更新。
+        run(
+            store.save_user_app_preferences(
+                "student:U202120002",
+                {"disabled_providers": ["ollama", 7], "font_size": "small"},
+            )
+        )
+        prefs = run(store.load_user_app_preferences("student:U202120002"))
+        self.assertEqual(prefs["disabled_providers"], ["siliconflow", "deepseek"])
+        self.assertEqual(prefs["font_size"], "small")
         run(store.close())
 
     def test_backend_history_is_owner_scoped_and_survives_restart(self):
@@ -225,17 +256,36 @@ class ChatStoreTests(unittest.TestCase):
         store = ChatDataLayer(str(tmp_path / "chat.sqlite3"))
         run(store.create_user(User(identifier="alice", display_name="Alice")))
         run(store.create_user(User(identifier="bob", display_name="Bob")))
-        for owner, thread_id in [("alice", "alice-1"), ("alice", "alice-2"), ("bob", "bob-1")]:
+        for owner, thread_id in [
+            ("alice", "alice-1"),
+            ("alice", "alice-2"),
+            ("bob", "bob-1"),
+        ]:
             run(store.update_thread(thread_id, name=f"{owner} history", user_id=owner))
-            run(store.create_step(step(f"{thread_id}-step", thread_id, "answer", "2026-01-01T00:00:00Z")))
+            run(
+                store.create_step(
+                    step(
+                        f"{thread_id}-step", thread_id, "answer", "2026-01-01T00:00:00Z"
+                    )
+                )
+            )
 
         alice_element = tmp_path / "alice-attachment.txt"
         alice_element.write_text("alice private attachment", encoding="utf-8")
         element = SimpleNamespace(
-            id="alice-element", thread_id="alice-1", for_id="alice-1-step",
-            type="file", name="alice-attachment.txt", mime="text/plain",
-            display="inline", size="small", language=None, path=str(alice_element),
-            url=None, object_key=None, chainlit_key="alice-upload",
+            id="alice-element",
+            thread_id="alice-1",
+            for_id="alice-1-step",
+            type="file",
+            name="alice-attachment.txt",
+            mime="text/plain",
+            display="inline",
+            size="small",
+            language=None,
+            path=str(alice_element),
+            url=None,
+            object_key=None,
+            chainlit_key="alice-upload",
         )
         run(store.create_element(element))
         persisted_attachment = Path(store.get_element_path("alice-1", "alice-element"))
@@ -276,9 +326,19 @@ class ChatStoreTests(unittest.TestCase):
         run(store.update_thread("t1", name="History", user_id="alice"))
         run(store.create_step(step("s1", "t1", "answer", "2026-01-01T00:00:00Z")))
         element = SimpleNamespace(
-            id="e1", thread_id="t1", for_id="s1", type="file", name="notes.pdf",
-            mime="application/pdf", display="inline", size="medium", language=None,
-            path=str(source), url=None, object_key=None, chainlit_key="upload-e1",
+            id="e1",
+            thread_id="t1",
+            for_id="s1",
+            type="file",
+            name="notes.pdf",
+            mime="application/pdf",
+            display="inline",
+            size="medium",
+            language=None,
+            path=str(source),
+            url=None,
+            object_key=None,
+            chainlit_key="upload-e1",
         )
         run(store.create_element(element))
         feedback_id = run(
@@ -310,7 +370,11 @@ class ChatStoreTests(unittest.TestCase):
         store = ChatDataLayer(str(self.root / "chat.sqlite3"))
         run(store.update_thread("alice-thread", user_id="alice"))
         run(store.update_thread("bob-thread", user_id="bob"))
-        run(store.create_step(step("a1", "alice-thread", "answer", "2026-01-01T00:00:00Z")))
+        run(
+            store.create_step(
+                step("a1", "alice-thread", "answer", "2026-01-01T00:00:00Z")
+            )
+        )
 
         feedback_id = run(
             store.upsert_feedback_for(
