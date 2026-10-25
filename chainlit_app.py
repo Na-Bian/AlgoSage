@@ -591,7 +591,7 @@ async def send_provider_settings(context) -> None:
             maximum=2,
             step=0.05,
             initial=float(params.get("temperature", 0.7)),
-            description="控制回答的发散程度：越低越稳定、越高越有创造性，通常 0.3～0.7。",
+            description="控制回答的发散程度：越低越稳定、越高越有创造性。",
         ),
         Slider(
             id="frequency_penalty",
@@ -600,7 +600,7 @@ async def send_provider_settings(context) -> None:
             maximum=2,
             step=0.05,
             initial=float(params.get("frequency_penalty", 0)),
-            description="越高越不容易反复使用相同的词句；调太高可能语句不通顺，一般 0～0.5。",
+            description="越高越不容易反复使用相同的词句。",
         ),
         Slider(
             id="presence_penalty",
@@ -609,7 +609,7 @@ async def send_provider_settings(context) -> None:
             maximum=2,
             step=0.05,
             initial=float(params.get("presence_penalty", 0)),
-            description="越高越倾向于展开新内容、不纠缠旧话题；调太高容易跑题，一般 0～0.5。",
+            description="越高越倾向于展开新内容、不纠缠旧话题。",
         ),
         Slider(
             id="max_output_tokens",
