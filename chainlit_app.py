@@ -160,6 +160,7 @@ async def send_model_catalog(context) -> None:
                 {
                     "selection": entry["selection"],
                     "model": entry["model"],
+                    "label": entry["label"],
                     "available": True,
                 }
             )
@@ -375,6 +376,7 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                         {
                             "selection": entry["selection"],
                             "model": entry["model"],
+                            "label": entry["label"],
                             "available": True,
                         }
                         for entry in custom

@@ -746,6 +746,72 @@ main .ai-message .message-content ~ div button svg {
 
 .eg-settings-add svg { width: 15px; height: 15px; }
 
+/* 管理对话框里的"已添加"列表。 */
+.eg-add-managed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.eg-add-managed-head {
+  font-size: .8rem;
+  font-weight: 650;
+  color: hsl(var(--muted-foreground));
+}
+
+.eg-add-managed-row {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  padding: 5px 6px 5px 10px;
+}
+
+.eg-add-managed-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .84rem;
+}
+
+.eg-add-managed-remove {
+  flex: 0 0 auto;
+  border: 1px solid hsl(var(--destructive) / .4);
+  border-radius: 8px;
+  padding: 3px 9px;
+  background: transparent;
+  color: hsl(var(--destructive));
+  font: inherit;
+  font-size: .78rem;
+  cursor: pointer;
+}
+
+.eg-add-managed-remove:hover:not(:disabled) { background: hsl(var(--destructive) / .12); }
+.eg-add-managed-remove:disabled { opacity: .55; cursor: not-allowed; }
+
+.eg-add-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  color: hsl(var(--muted-foreground));
+  font-size: .78rem;
+  font-weight: 650;
+}
+
+.eg-add-divider::before,
+.eg-add-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: hsl(var(--border));
+}
+
 /* Add-custom-model dialog */
 .eg-add-dialog-backdrop {
   position: fixed;

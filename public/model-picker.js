@@ -363,11 +363,9 @@
     }
   }
 
-  async function removeCustomModel(selection) {
-    if (state.switching) return;
+  async function deleteCustomSelection(selection) {
+    if (state.switching) return false;
     state.switching = true;
-    renderMenu();
-    setStatus("正在删除…");
     try {
       var response = await fetch("/models/custom", {
         method: "DELETE",
@@ -382,15 +380,24 @@
         // removal lock so the fallback switch back to a builtin model executes.
         state.switching = false;
         await selectModel(defaultSelection(), { force: true });
-      } else {
-        await loadCatalog();
-        setStatus("已删除", false);
       }
-    } catch (error) {
-      setStatus(error.message || "删除失败", true);
+      // 两个分支都要刷新目录：管理对话框的列表与回退后的标签都依赖它。
+      await loadCatalog();
+      return true;
     } finally {
       state.switching = false;
       renderMenu();
+    }
+  }
+
+  async function removeCustomModel(selection) {
+    if (state.switching) return;
+    setStatus("正在删除…");
+    try {
+      await deleteCustomSelection(selection);
+      setStatus("已删除", false);
+    } catch (error) {
+      setStatus(error.message || "删除失败", true);
     }
   }
 
@@ -423,7 +430,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path d="M12 5v14M5 12h14"/>
       </svg>
-      添加自定义模型
+      管理自定义模型
     `;
     entry.addEventListener("click", function (event) {
       event.preventDefault();
@@ -444,9 +451,14 @@
     addDialog = document.createElement("div");
     addDialog.className = "eg-add-dialog-backdrop";
     addDialog.innerHTML = `
-      <div class="eg-add-dialog" role="dialog" aria-label="添加自定义模型">
-        <div class="eg-add-title">添加自定义模型</div>
+      <div class="eg-add-dialog" role="dialog" aria-label="管理自定义模型">
+        <div class="eg-add-title">管理自定义模型</div>
         <div class="eg-add-hint">接入任意 OpenAI 兼容接口（如 SiliconFlow / DeepSeek / 本地 vLLM）。密钥只保存在你的浏览器与本服务进程内存中；仅支持参数量 ≤27B 的模型。</div>
+        <div class="eg-add-managed">
+          <div class="eg-add-managed-head">已添加的自定义模型 <span data-managed-count></span></div>
+          <div data-managed-list></div>
+        </div>
+        <div class="eg-add-divider">添加新模型</div>
         <label class="eg-add-field">显示名称（可选）<input type="text" data-field="label" placeholder="例如：我的 SiliconFlow" maxlength="40"></label>
         <label class="eg-add-field">Base URL<input type="text" data-field="base_url" placeholder="https://api.siliconflow.cn/v1"></label>
         <label class="eg-add-field">API Key<input type="password" data-field="api_key" placeholder="sk-…" autocomplete="off"></label>
@@ -466,8 +478,66 @@
     addDialog.querySelector('[data-action="discover"]').addEventListener("click", function () {
       discoverInDialog();
     });
+    renderManagedModels();
+    // 拉一次目录以带上 label；完成后重渲染列表。
+    loadCatalog().then(function () {
+      if (addDialog) renderManagedModels();
+    }).catch(function () {});
     var first = addDialog.querySelector('[data-field="label"]');
     if (first) first.focus();
+  }
+
+  function customEntries() {
+    var group = state.providers.find(function (item) { return item.id === "custom"; });
+    return (group && group.models) || [];
+  }
+
+  function renderManagedModels() {
+    if (!addDialog) return;
+    var count = addDialog.querySelector("[data-managed-count]");
+    if (count) count.textContent = `（${customEntries().length}/8）`;
+    var list = addDialog.querySelector("[data-managed-list]");
+    if (!list) return;
+    list.textContent = "";
+    var entries = customEntries();
+    if (!entries.length) {
+      var empty = document.createElement("div");
+      empty.className = "eg-add-more";
+      empty.textContent = "还没有自定义模型，用下方表单添加。";
+      list.append(empty);
+      return;
+    }
+    entries.forEach(function (model) {
+      var row = document.createElement("div");
+      row.className = "eg-add-managed-row";
+      var name = document.createElement("span");
+      name.className = "eg-add-managed-name";
+      name.textContent = `${model.label || "自定义 API"} · ${model.model}`;
+      name.title = name.textContent;
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "eg-add-managed-remove";
+      remove.textContent = "删除";
+      remove.addEventListener("click", async function () {
+        remove.disabled = true;
+        setDialogStatus("正在删除…");
+        try {
+          var done = await deleteCustomSelection(model.selection);
+          if (!done) {
+            remove.disabled = false;
+            setDialogStatus("正在切换模型，请稍后再试", true);
+            return;
+          }
+          renderManagedModels();
+          setDialogStatus("已删除；若它正被使用，已自动切回默认模型", false);
+        } catch (error) {
+          remove.disabled = false;
+          setDialogStatus(error.message || "删除失败", true);
+        }
+      });
+      row.append(name, remove);
+      list.append(row);
+    });
   }
 
   function dialogFields() {
@@ -572,6 +642,7 @@
       await loadCatalog();
       // 不自动切换：设置面板里的"模型与 Provider"下拉在确认保存前仍是旧值，
       // 自动切换会被随后的确认用陈旧选择悄悄覆盖。添加后由用户在面板中显式选择。
+      renderManagedModels();
       setDialogStatus(
         `已添加 ${item.id}；在"模型与 Provider"中选择它并点确认即可切换`,
         false,
