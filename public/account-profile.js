@@ -276,6 +276,36 @@
     document.querySelectorAll('[role="menu"][data-state="open"]').forEach(addMenuItem);
   }
 
+  /* 鼠标用户关闭弹层后，Radix 会把焦点还给触发按钮（如主题月亮），
+     留下一个无意义的焦点环；键盘 Esc 关闭则保留返回行为以维持无障碍。 */
+  (function suppressPointerFocusReturn() {
+    let lastPointerAt = 0;
+    document.addEventListener("pointerdown", () => { lastPointerAt = Date.now(); }, true);
+    const armCheck = () => {
+      // Esc 关闭弹层后焦点会异步返回（实测 ~300ms）；轮询窗口期内，
+      // 若这是指针交互残留，就把返回到顶栏按钮上的焦点移除。
+      let checks = 0;
+      const timer = setInterval(() => {
+        const active = document.activeElement;
+        if (
+          active instanceof HTMLElement &&
+          active.closest("#theme-toggle, #chat-settings-header-button, #user-nav-button")
+        ) {
+          if (Date.now() - lastPointerAt < 1500) active.blur();
+          clearInterval(timer);
+          return;
+        }
+        if (++checks > 12) clearInterval(timer);
+      }, 60);
+    };
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") armCheck();
+    }, true);
+    document.addEventListener("keyup", (event) => {
+      if (event.key === "Escape") armCheck();
+    }, true);
+  })();
+
   function start() {
     const observer = new MutationObserver(scan);
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-state"] });
