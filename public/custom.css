@@ -137,10 +137,18 @@
   display: none !important;
 }
 
-/* 重命名对话弹窗：原生 label 是 inline + leading-none，与输入框只剩 ~3px 间距。 */
+/* 重命名对话弹窗：原生 label 是 inline + leading-none（与输入框只差 ~3px）
+   且自带 text-right，块级化后需要恢复左对齐并收紧整体留白。 */
 [role="dialog"]:has(input#name) label[for="name"] {
   display: block;
-  margin-bottom: 8px;
+  text-align: left;
+  margin-bottom: 6px;
+}
+
+/* "名称+输入框"与标题区、按钮区的间距过大；统一为更紧凑的节奏。 */
+[role="dialog"]:has(input#name) > div.my-6 {
+  margin-top: 12px;
+  margin-bottom: 16px;
 }
 
 /* 个人信息弹窗沿用应用变量和动效，深浅主题由 CSS 变量自然切换。 */
