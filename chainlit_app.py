@@ -687,7 +687,7 @@ async def send_provider_settings(context) -> None:
             label="默认模型",
             items=items,
             initial_value=await user_default_selection(service, context.principal_id),
-            description="仅限27B以内模型",
+            description="仅支持参数量在27B以内的模型。",
         ),
         Slider(
             id="temperature",
