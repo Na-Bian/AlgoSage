@@ -1,7 +1,9 @@
 /* AlgoSage 设置面板即时保存：
    隐藏 Chainlit 的“确认/取消”footer，控件变更后自动走原生确认提交。
    不复制 Chainlit 的表单逻辑——通过点击真实存在的 #confirm-sidebar 触发。
-   Radix 滑块不派发 DOM change 事件，改观察 thumb 的 aria-valuenow。 */
+   Radix 滑块不派发 DOM change 事件，观察 thumb 的 aria-valuenow；
+   Radix Select 打开下拉也会重建触发器节点，因此对下拉框比对文本内容，
+   只有选中值真正变化（文本改变）才提交。 */
 (function settingsAutosave() {
   "use strict";
 
@@ -9,11 +11,31 @@
   var submitTimer = null;
   var suppressAutoSubmit = false;
   var valueObserver = null;
+  var comboTexts = new WeakMap();
 
   function surface() {
     var title = document.getElementById("chat-settings-sidebar-title");
     if (!title) return null;
     return title.closest('[role="dialog"]') || title.closest("[data-panel]");
+  }
+
+  function snapshotCombos(panel) {
+    panel.querySelectorAll('[role="combobox"]').forEach(function (combo) {
+      comboTexts.set(combo, combo.textContent);
+    });
+  }
+
+  function comboTextChanged(node) {
+    var combo = node && node.closest ? node.closest('[role="combobox"]') : null;
+    if (!combo) return false;
+    var text = combo.textContent;
+    if (!comboTexts.has(combo)) {
+      comboTexts.set(combo, text);
+      return false;
+    }
+    if (comboTexts.get(combo) === text) return false;
+    comboTexts.set(combo, text);
+    return true;
   }
 
   function scheduleSubmit() {
@@ -70,7 +92,7 @@
       },
       true
     );
-    // Radix Slider：值变化只反映在 thumb 的 aria-valuenow 上。
+    snapshotCombos(panel);
     valueObserver = new MutationObserver(function (records) {
       if (suppressAutoSubmit) return;
       for (var i = 0; i < records.length; i++) {
@@ -81,19 +103,14 @@
             return;
           }
         } else if (record.type === "characterData") {
-          // Radix Select 的选中值渲染在 combobox 文本里，不派发 change。
-          if (record.target.parentElement && record.target.parentElement.closest('[role="combobox"]')) {
+          if (comboTextChanged(record.target.parentElement)) {
             scheduleSubmit();
             return;
           }
         } else if (record.type === "childList") {
-          // 有些版本重建 combobox 内容节点而非改文本。
-          var added = record.addedNodes;
-          for (var j = 0; j < added.length; j++) {
-            if (added[j].parentElement && added[j].parentElement.closest('[role="combobox"]')) {
-              scheduleSubmit();
-              return;
-            }
+          if (comboTextChanged(record.target)) {
+            scheduleSubmit();
+            return;
           }
         }
       }
