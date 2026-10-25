@@ -639,6 +639,15 @@
     results.textContent = "";
     var allowed = models.filter(function (item) { return item.allowed; });
     var blocked = models.filter(function (item) { return !item.allowed; });
+    var selected = {};
+    var confirmButton = null;
+    function syncConfirm() {
+      var count = Object.keys(selected).length;
+      if (confirmButton) {
+        confirmButton.disabled = count === 0;
+        confirmButton.textContent = count ? `添加所选（${count}）` : "添加所选";
+      }
+    }
     function appendItem(item) {
       var row = document.createElement("button");
       row.type = "button";
@@ -651,7 +660,14 @@
       `;
       if (item.allowed) {
         row.addEventListener("click", function () {
-          saveCustomModel(fields, item);
+          if (selected[item.id]) {
+            delete selected[item.id];
+            row.classList.remove("eg-add-model-selected");
+          } else {
+            selected[item.id] = item;
+            row.classList.add("eg-add-model-selected");
+          }
+          syncConfirm();
         });
       }
       results.append(row);
@@ -669,32 +685,64 @@
       empty.className = "eg-add-more";
       empty.textContent = "没有获取到模型";
       results.append(empty);
+      return;
     }
+    // 多选确认：逐个注册已选模型，全部成功后刷新列表一次。
+    confirmButton = document.createElement("button");
+    confirmButton.type = "button";
+    confirmButton.className = "eg-add-primary eg-add-confirm";
+    confirmButton.disabled = true;
+    confirmButton.textContent = "添加所选";
+    confirmButton.addEventListener("click", async function () {
+      var picked = Object.keys(selected).map(function (id) { return selected[id]; });
+      if (!picked.length) return;
+      confirmButton.disabled = true;
+      confirmButton.textContent = "正在添加…";
+      var failed = [];
+      for (var i = 0; i < picked.length; i++) {
+        try {
+          await registerCustomModel(fields, picked[i]);
+        } catch (error) {
+          failed.push(`${picked[i].id}（${error.message}）`);
+        }
+      }
+      await loadCatalog();
+      renderManagedModels();
+      selected = {};
+      confirmButton.textContent = "添加所选";
+      if (failed.length) {
+        showResultsNotice(`以下模型添加失败：${failed.join("、")}`);
+        // 清除选择态，保留结果列表让用户重试失败项。
+        [...results.querySelectorAll(".eg-add-model-selected")].forEach(function (row) {
+          row.classList.remove("eg-add-model-selected");
+        });
+        confirmButton.disabled = true;
+      } else {
+        results.hidden = true;
+        results.textContent = "";
+        showResultsNotice(
+          `已添加 ${picked.length} 个模型；在"默认模型"中选择它们并点确认，之后的新对话将默认使用`,
+        );
+      }
+    });
+    results.append(confirmButton);
   }
 
-  async function saveCustomModel(fields, item) {
-    try {
-      var response = await fetch("/models/custom", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          label: fields.label,
-          base_url: fields.base_url,
-          api_key: fields.api_key,
-          model: item.id,
-        }),
-      });
-      var payload = await response.json().catch(function () { return {}; });
-      if (!response.ok) throw new Error(payload.detail || `添加失败（${response.status}）`);
-      await loadCatalog();
-      // 不自动切换：设置面板里的"模型与 Provider"下拉在确认保存前仍是旧值，
-      // 自动切换会被随后的确认用陈旧选择悄悄覆盖。添加后由用户在面板中显式选择。
-      renderManagedModels();
-      showResultsNotice(`已添加 ${item.id}；在"默认模型"中选择它并点确认，之后的新对话将默认使用`);
-    } catch (error) {
-      showResultsNotice(error.message || "添加失败");
-    }
+  async function registerCustomModel(fields, item) {
+    var response = await fetch("/models/custom", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        label: fields.label,
+        base_url: fields.base_url,
+        api_key: fields.api_key,
+        model: item.id,
+      }),
+    });
+    var payload = await response.json().catch(function () { return {}; });
+    if (!response.ok) throw new Error(payload.detail || `添加失败（${response.status}）`);
+    return payload;
   }
 
   window.addEventListener("message", function (event) {
