@@ -1,10 +1,15 @@
 """Per-principal BYOK provider registrations.
 
 Users may bring their own OpenAI-compatible endpoint (Base URL + API Key).
-Entries live only in this process's memory keyed by the trusted principal id:
+Entries are keyed by the trusted principal id:
 
-- API keys are never persisted (not in SQLite, not in chat history) and never
-  returned to any client after registration;
+- The browser never keeps the key: plaintext keys exist only in this process
+  at runtime. Optional persistence mirrors registrations into a managed
+  block of the local .env file with the API key sealed by Fernet
+  authenticated encryption (a one-way hash cannot work here — the key must
+  stay usable to call the upstream endpoint);
+- persisted entries survive restarts; the .env is rewritten atomically and
+  kept owner-private (0600);
 - every entry is still executed through the full audited AlgoSage pipeline
   (classification → graded help policy → output guard), only the model backend
   changes;
@@ -14,8 +19,12 @@ Entries live only in this process's memory keyed by the trusted principal id:
 
 from __future__ import annotations
 
+import logging
+import os
+import re
 import threading
 from collections import OrderedDict
+from pathlib import Path
 
 from .config import Settings
 from .providers import (
@@ -26,19 +35,180 @@ from .providers import (
     validate_public_base_url,
 )
 
+logger = logging.getLogger(__name__)
+
 MAX_CUSTOM_PROVIDERS_PER_USER = 8
 DISCOVERY_MODEL_LIMIT = 200
 CUSTOM_PROVIDER_LABEL = "自定义 API"
 
+_ENV_BLOCK_BEGIN = "# >>> algosage custom providers (auto-managed) >>>"
+_ENV_BLOCK_END = "# <<< algosage custom providers <<<"
+_ENV_SECRET_KEY = "SAGE_CUSTOM_PROVIDER_SECRET"
+_ENV_FIELDS = ("PRINCIPAL", "LABEL", "BASE_URL", "MODEL", "KEY")
+_FORBIDDEN_CHARS = re.compile(r"[\r\n\x00]")
+
+
+def _env_quote(value: str) -> str:
+    """Quote a dotenv value when necessary (spaces, #, quotes, leading/trailing ws)."""
+    if value == "" or re.search(r"[\s#\"']", value) or value != value.strip():
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return value
+
+
+def _env_unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        inner = value[1:-1]
+        return inner.replace('\\"', '"').replace("\\\\", "\\")
+    return value
+
+
+def _extract_managed_block(text: str) -> str | None:
+    begin = text.find(_ENV_BLOCK_BEGIN)
+    end = text.find(_ENV_BLOCK_END)
+    if begin == -1 or end == -1 or end < begin:
+        return None
+    return text[begin : end + len(_ENV_BLOCK_END)]
+
 
 class CustomProviderStore:
-    def __init__(self, base: Settings, fetch_models=None):
+    def __init__(self, base: Settings, fetch_models=None, env_file: str | None = None):
         self._base = base
         # principal_id -> selection -> entry dict (LRU capped per principal)
         self._entries: dict[str, OrderedDict[str, dict]] = {}
         self._lock = threading.RLock()
         # Injectable for tests: fetch_models(base_url, api_key) -> [model_id]
         self._fetch_models = fetch_models or self._default_fetch_models
+        self._env_file = Path(env_file) if env_file else None
+        self._secret: bytes | None = None
+        if self._env_file:
+            self._load_from_env()
+
+    # ------------------------------------------------------------------
+    # .env persistence (managed block)
+    # ------------------------------------------------------------------
+    def _fernet(self):
+        from cryptography.fernet import Fernet
+
+        if self._secret is None:
+            self._secret = Fernet.generate_key()
+        return Fernet(self._secret)
+
+    def _read_env_text(self) -> str:
+        try:
+            return self._env_file.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return ""
+        except OSError as error:
+            logger.warning("custom provider env 读取失败: %s", error)
+            raise
+
+    def _load_from_env(self) -> None:
+        """Restore registrations from the managed .env block (tolerant of corruption)."""
+        from cryptography.fernet import Fernet, InvalidToken
+
+        text = self._read_env_text()
+        block = _extract_managed_block(text)
+        if block is None:
+            return
+        raw: dict[str, dict[str, str]] = {}
+        for line in block.splitlines():
+            if line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            m = re.fullmatch(
+                rf"SAGE_CUSTOM_PROVIDER_(\d+)_({'|'.join(_ENV_FIELDS)})", key
+            )
+            if not m:
+                continue
+            idx, field = m.group(1), m.group(2)
+            raw.setdefault(idx, {})[field] = _env_unquote(value.strip())
+        # Secret lives on its own line inside the block.
+        secret_raw = None
+        for line in block.splitlines():
+            if line.startswith(_ENV_SECRET_KEY + "="):
+                secret_raw = _env_unquote(line.partition("=")[2].strip())
+                break
+        if not secret_raw:
+            logger.info("custom provider 托管区块缺少加密密钥，忽略已有条目")
+            return
+        try:
+            fernet = Fernet(secret_raw.encode("ascii"))
+            self._secret = secret_raw.encode("ascii")
+        except (ValueError, TypeError):
+            logger.info("custom provider 加密密钥格式无效，忽略已有条目")
+            return
+        for idx in sorted(raw):
+            item = raw[idx]
+            if not all(
+                field in item for field in ("PRINCIPAL", "BASE_URL", "MODEL", "KEY")
+            ):
+                continue
+            try:
+                api_key = fernet.decrypt(item["KEY"].encode("ascii")).decode("utf-8")
+            except (InvalidToken, ValueError):
+                logger.info("custom provider 条目解密失败（idx=%s），跳过", idx)
+                continue
+            try:
+                self.register(
+                    item["PRINCIPAL"],
+                    base_url=item["BASE_URL"],
+                    api_key=api_key,
+                    model=item["MODEL"],
+                    label=item.get("LABEL", ""),
+                    _persist=False,
+                )
+            except ValueError:
+                logger.info("custom provider 条目校验失败（idx=%s），跳过", idx)
+
+    def _persist_to_env(self) -> None:
+        """Rewrite the managed block from memory; atomic, owner-private."""
+        from cryptography.fernet import InvalidToken
+
+        fernet = self._fernet()
+        lines = [_ENV_BLOCK_BEGIN, f"{_ENV_SECRET_KEY}={self._secret.decode('ascii')}"]
+        index = 0
+        for principal, bucket in self._entries.items():
+            for entry in bucket.values():
+                index += 1
+                prefix = f"SAGE_CUSTOM_PROVIDER_{index}_"
+                try:
+                    sealed = fernet.encrypt(entry["api_key"].encode("utf-8")).decode(
+                        "ascii"
+                    )
+                except (InvalidToken, ValueError):
+                    logger.warning("custom provider 密钥加密失败，跳过条目")
+                    continue
+                lines.append(f"{prefix}PRINCIPAL={_env_quote(principal)}")
+                lines.append(f"{prefix}LABEL={_env_quote(entry['label'])}")
+                lines.append(f"{prefix}BASE_URL={_env_quote(entry['base_url'])}")
+                lines.append(f"{prefix}MODEL={_env_quote(entry['model'])}")
+                lines.append(f"{prefix}KEY={sealed}")
+        lines.append(_ENV_BLOCK_END)
+
+        text = self._read_env_text()
+        pattern = re.compile(
+            re.escape(_ENV_BLOCK_BEGIN) + r".*?" + re.escape(_ENV_BLOCK_END) + r"\n?",
+            re.DOTALL,
+        )
+        block_text = "\n".join(lines) + "\n"
+        if pattern.search(text):
+            text = pattern.sub(lambda _: block_text, text, count=1)
+        else:
+            text = (
+                text + ("\n" if text and not text.endswith("\n") else "") + block_text
+            )
+        # 同目录临时文件 + 原子替换，保留原权限。
+        tmp = self._env_file.with_name(self._env_file.name + ".algosage-tmp")
+        tmp.write_text(text, encoding="utf-8")
+        try:
+            os.chmod(tmp, 0o600)
+            if self._env_file.exists():
+                os.chmod(self._env_file, 0o600)
+            os.replace(tmp, self._env_file)
+        finally:
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------
     # Registration / listing
@@ -51,12 +221,21 @@ class CustomProviderStore:
         api_key: str,
         model: str,
         label: str = "",
+        _persist: bool = True,
     ) -> dict:
         if not isinstance(principal_id, str) or not principal_id.strip():
             raise ValueError("缺少可信身份，不能注册自定义模型")
         name = (label or "").strip() or CUSTOM_PROVIDER_LABEL
         if len(name) > 40:
             name = name[:40]
+        for field, value in (
+            ("显示名称", name),
+            ("Base URL", base_url),
+            ("API Key", api_key),
+            ("模型 ID", model),
+        ):
+            if isinstance(value, str) and _FORBIDDEN_CHARS.search(value):
+                raise ValueError(f"{field} 不能包含换行或控制字符")
         settings = build_custom_settings(self._base, base_url, api_key, model)
         selection = custom_selection_id(name, settings.base_url, model)
         entry = {
@@ -68,7 +247,7 @@ class CustomProviderStore:
             "available": True,
             "params_b": parse_model_params_b(model),
             "base_url": settings.base_url,
-            # The key deliberately stays inside this process only.
+            # Runtime-only plaintext; on disk this is Fernet-sealed.
             "api_key": api_key,
             "settings": settings,
         }
@@ -78,6 +257,8 @@ class CustomProviderStore:
             bucket[selection] = entry
             while len(bucket) > MAX_CUSTOM_PROVIDERS_PER_USER:
                 bucket.popitem(last=False)
+            if self._env_file and _persist:
+                self._persist_to_env()
         return self._public_entry(entry)
 
     def remove(self, principal_id: str, selection: str) -> bool:
@@ -86,6 +267,8 @@ class CustomProviderStore:
             if not bucket or selection not in bucket:
                 return False
             del bucket[selection]
+            if self._env_file:
+                self._persist_to_env()
             return True
 
     def list_for(self, principal_id: str) -> list[dict]:

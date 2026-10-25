@@ -122,12 +122,15 @@ class TutorService:
         backend: ChatBackend | None = None,
         allow_policy_override: bool | None = None,
         providers: ProviderRegistry | None = None,
+        custom_provider_env_file: str | None = None,
     ):
         self.settings = settings
         self.providers = providers or ProviderRegistry(settings, entries=[])
         from .custom_providers import CustomProviderStore
 
-        self.custom_providers = CustomProviderStore(settings)
+        self.custom_providers = CustomProviderStore(
+            settings, env_file=custom_provider_env_file or None
+        )
         self._provider_tutors = {}
         self._custom_tutors: dict[tuple[str, str], AlgoSageTutor] = {}
         self._provider_lock = threading.RLock()

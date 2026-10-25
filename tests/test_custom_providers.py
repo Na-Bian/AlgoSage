@@ -2,6 +2,7 @@
 
 import os
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from algosage.config import Settings
@@ -205,3 +206,108 @@ class TutorServiceCustomProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CustomProviderPersistenceTests(unittest.TestCase):
+    """Fernet-sealed .env persistence for BYOK entries."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env_path = str(Path(self.tmp.name) / "env")
+        Path(self.env_path).write_text(
+            "LLM_API_KEY=existing\n# comment stays\n", encoding="utf-8"
+        )
+        self.base = Settings(mode="mock")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _store(self):
+        return CustomProviderStore(self.base, env_file=self.env_path)
+
+    def test_register_seals_key_and_preserves_env(self):
+        store = self._store()
+        entry = store.register(
+            "student-a",
+            base_url="https://api.example.com/v1",
+            api_key="sk-plaintext-secret",
+            model="Qwen3-8B",
+            label="我的 端点",
+        )
+        text = Path(self.env_path).read_text(encoding="utf-8")
+        self.assertNotIn("sk-plaintext-secret", text)
+        self.assertIn("gAAAA", text)  # Fernet token
+        self.assertIn("LLM_API_KEY=existing", text)
+        self.assertIn("# comment stays", text)
+        self.assertIn(entry["selection"], store.list_for("student-a")[0]["selection"])
+
+    def test_entries_survive_store_restart(self):
+        store = self._store()
+        entry = store.register(
+            "student-a",
+            base_url="https://api.example.com/v1",
+            api_key="sk-keep",
+            model="Qwen3-8B",
+            label="我的 端点",
+        )
+        revived = self._store()
+        entries = revived.list_for("student-a")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["selection"], entry["selection"])
+        settings = revived.resolve("student-a", entry["selection"])
+        self.assertEqual(settings.api_key, "sk-keep")
+
+    def test_remove_updates_env_and_restart(self):
+        store = self._store()
+        entry = store.register(
+            "student-a",
+            base_url="https://api.example.com/v1",
+            api_key="sk-x",
+            model="Qwen3-8B",
+        )
+        self.assertTrue(store.remove("student-a", entry["selection"]))
+        revived = self._store()
+        self.assertEqual(revived.list_for("student-a"), [])
+        text = Path(self.env_path).read_text(encoding="utf-8")
+        self.assertNotIn("api.example.com", text)
+
+    def test_corrupt_or_foreign_secret_skips_entries(self):
+        store = self._store()
+        store.register(
+            "student-a",
+            base_url="https://api.example.com/v1",
+            api_key="sk-x",
+            model="Qwen3-8B",
+        )
+        text = Path(self.env_path).read_text(encoding="utf-8")
+        # 篡改托管区块的加密密钥 → 重启后条目被跳过而非崩溃。
+        text = text.replace(
+            "SAGE_CUSTOM_PROVIDER_SECRET=", "SAGE_CUSTOM_PROVIDER_SECRET=X", 1
+        )
+        Path(self.env_path).write_text(text, encoding="utf-8")
+        revived = self._store()
+        self.assertEqual(revived.list_for("student-a"), [])
+
+    def test_newline_in_fields_rejected(self):
+        store = self._store()
+        with self.assertRaises(ValueError):
+            store.register(
+                "student-a",
+                base_url="https://api.example.com/v1\nEVIL=1",
+                api_key="sk",
+                model="Qwen3-8B",
+            )
+
+    def test_memory_only_default_writes_nothing(self):
+        store = CustomProviderStore(self.base)
+        store.register(
+            "student-a",
+            base_url="https://api.example.com/v1",
+            api_key="sk",
+            model="Qwen3-8B",
+        )
+        text = Path(self.env_path).read_text(encoding="utf-8")
+        self.assertNotIn("SAGE_CUSTOM_PROVIDER", text)

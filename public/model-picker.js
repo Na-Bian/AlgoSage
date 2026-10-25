@@ -1,12 +1,11 @@
 /* Thread-local model selector. The browser only sees the server-authorized
    catalog; provider credentials and authorization remain server-side.
    Users may additionally register their own OpenAI-compatible endpoint
-   (BYOK): the key lives in this browser's localStorage and an in-memory
-   per-account server entry — never in chat history or logs. */
+   (BYOK): the key never stays in the browser — after registration the
+   server keeps it (runtime memory + Fernet-sealed copy in the local .env
+   managed block) and never echoes it back. */
 (function () {
   "use strict";
-
-  var CUSTOM_STORE_KEY = "algosage-custom-providers";
 
   var state = {
     threadId: "",
@@ -24,62 +23,6 @@
   var statusElement = null;
   var addDialog = null;
   var query = "";
-
-  function readCustomStore() {
-    try {
-      var raw = JSON.parse(localStorage.getItem(CUSTOM_STORE_KEY) || "[]");
-      return Array.isArray(raw) ? raw.filter(function (item) {
-        return item && item.base_url && item.api_key && item.model;
-      }) : [];
-    } catch (_) {
-      return [];
-    }
-  }
-
-  function writeCustomStore(entries) {
-    localStorage.setItem(CUSTOM_STORE_KEY, JSON.stringify(entries));
-  }
-
-  function rememberCustom(entry) {
-    var entries = readCustomStore().filter(function (item) {
-      return !(item.base_url === entry.base_url && item.model === entry.model);
-    });
-    entries.push({ label: entry.label, base_url: entry.base_url, api_key: entry.api_key, model: entry.model });
-    writeCustomStore(entries);
-  }
-
-  function forgetCustomBySelection(selection) {
-    var doomed = null;
-    state.providers.forEach(function (group) {
-      if (group.id !== "custom") return;
-      group.models.forEach(function (model) {
-        if (model.selection === selection) doomed = model;
-      });
-    });
-    if (!doomed) return;
-    writeCustomStore(readCustomStore().filter(function (item) {
-      return item.model !== doomed.model;
-    }));
-  }
-
-  async function reRegisterCustom() {
-    // Re-register this browser's BYOK entries with the in-memory server store
-    // (keys never persist server-side, so a restart needs a silent re-add).
-    var entries = readCustomStore();
-    for (var i = 0; i < entries.length; i += 1) {
-      try {
-        await fetch("/models/custom", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify(entries[i]),
-        });
-      } catch (_) { /* 静默：目录刷新后以服务端成功注册的为准 */ }
-    }
-    if (entries.length) {
-      try { await loadCatalog(); } catch (_) {}
-    }
-  }
 
   function currentThreadId() {
     if (state.threadId) return state.threadId;
@@ -375,7 +318,6 @@
         body: JSON.stringify({ selection }),
       });
       if (!response.ok) throw new Error(`删除失败（${response.status}）`);
-      forgetCustomBySelection(selection);
       if (state.currentSelection === selection) {
         // selectModel refuses to run while a switch is in flight; release the
         // removal lock so the fallback switch back to a builtin model executes.
@@ -455,7 +397,6 @@
     addDialog.innerHTML = `
       <div class="eg-add-dialog" role="dialog" aria-label="管理模型提供商">
         <div class="eg-add-title">管理模型提供商</div>
-        <div class="eg-add-hint">统一管理可用的模型提供商：列表中可移除不再使用的（预置的仅对你隐藏，可随时恢复）；用下方表单以 Base URL + API Key 接入 OpenAI 兼容接口（如 SiliconFlow / DeepSeek / 本地 vLLM），仅支持参数量 ≤27B 的模型，密钥只保存在你的浏览器与本服务进程内存中。</div>
         <div class="eg-add-managed">
           <div class="eg-add-managed-head">提供商 <span data-managed-count></span></div>
           <div data-managed-list></div>
@@ -735,12 +676,6 @@
       });
       var payload = await response.json().catch(function () { return {}; });
       if (!response.ok) throw new Error(payload.detail || `添加失败（${response.status}）`);
-      rememberCustom({
-        label: (payload.entry && payload.entry.label) || fields.label,
-        base_url: fields.base_url,
-        api_key: fields.api_key,
-        model: item.id,
-      });
       await loadCatalog();
       // 不自动切换：设置面板里的"模型与 Provider"下拉在确认保存前仍是旧值，
       // 自动切换会被随后的确认用陈旧选择悄悄覆盖。添加后由用户在面板中显式选择。
@@ -798,7 +733,6 @@
     } catch (_) {
       // The server also pushes authorized state after chat initialization.
     }
-    reRegisterCustom();
   }
 
   if (document.readyState === "loading") {

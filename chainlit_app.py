@@ -296,7 +296,13 @@ def get_service() -> TutorService:
     global _service
     if _service is None:
         settings = Settings.from_env()
-        _service = TutorService(settings, providers=ProviderRegistry(settings))
+        # 自定义 Provider 持久化到本地 .env（空值 = 仅内存，供测试隔离）。
+        custom_env = runtime_path("SAGE_CUSTOM_PROVIDERS_ENV_FILE", ".env")
+        _service = TutorService(
+            settings,
+            providers=ProviderRegistry(settings),
+            custom_provider_env_file=custom_env or None,
+        )
         logger.info(
             "TutorService 已初始化 mode=%s model=%s exam_mode=%s allow_policy_override=%s",
             settings.mode,
