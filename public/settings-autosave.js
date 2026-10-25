@@ -117,7 +117,10 @@
       true
     );
     snapshotCombos(panel);
-    if (pendingSettle) watchSettle(panel);
+    // 面板挂载后 React 仍会补渲染一至两帧；挂载后 150ms 内观察到的差异
+    // 一律视为渲染回放，只刷新基线（等待期用同一个门闩标志）。
+    pendingSettle = true;
+    watchSettle(panel);
     valueObserver = new MutationObserver(function (records) {
       var pending = false;
       for (var i = 0; i < records.length; i++) {
@@ -153,7 +156,14 @@
   function scan() {
     var panel = surface();
     if (!panel) return;
-    if (panel.dataset.egAutosave !== "armed") armAutosave(panel);
+    if (panel.dataset.egAutosave !== "armed") {
+      // 延迟一帧再挂监听和快照：面板刚挂载时 React 还没填值，立刻快照会
+      // 把之后的补渲染（空→初值）误判为用户编辑（如点过下拉后重开面板）。
+      panel.dataset.egAutosave = "arming";
+      requestAnimationFrame(function () {
+        if (surface() === panel) armAutosave(panel);
+      });
+    }
     var confirm = document.getElementById("confirm-sidebar");
     var footer = confirm && confirm.parentElement;
     if (footer && !footer.classList.contains(CLASS)) {
