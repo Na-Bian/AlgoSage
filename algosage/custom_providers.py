@@ -37,7 +37,6 @@ from .providers import (
 
 logger = logging.getLogger(__name__)
 
-MAX_CUSTOM_PROVIDERS_PER_USER = 8
 DISCOVERY_MODEL_LIMIT = 200
 CUSTOM_PROVIDER_LABEL = "自定义 API"
 
@@ -255,8 +254,6 @@ class CustomProviderStore:
             bucket = self._entries.setdefault(principal_id, OrderedDict())
             bucket.pop(selection, None)
             bucket[selection] = entry
-            while len(bucket) > MAX_CUSTOM_PROVIDERS_PER_USER:
-                bucket.popitem(last=False)
             if self._env_file and _persist:
                 self._persist_to_env()
         return self._public_entry(entry)

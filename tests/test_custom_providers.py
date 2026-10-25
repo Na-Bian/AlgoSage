@@ -106,7 +106,8 @@ class CustomProviderStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.resolve("u2", entry["selection"])
 
-    def test_remove_and_cap(self):
+    def test_remove_and_no_registration_cap(self):
+        # 不再限制用户可添加的自定义提供商数量。
         for index in range(10):
             self.store.register(
                 "u1",
@@ -114,7 +115,7 @@ class CustomProviderStoreTests(unittest.TestCase):
                 api_key="sk",
                 model="Qwen3-8B",
             )
-        self.assertEqual(len(self.store.list_for("u1")), 8)
+        self.assertEqual(len(self.store.list_for("u1")), 10)
         entry = self.register_sample()
         self.assertTrue(self.store.remove("u1", entry["selection"]))
         self.assertFalse(self.store.remove("u1", entry["selection"]))

@@ -533,9 +533,9 @@
   function renderManagedModels() {
     if (!addDialog) return;
     var count = addDialog.querySelector("[data-managed-count]");
+    if (count) count.remove();
     var presets = presetGroups();
     var customCount = customEntries().length;
-    if (count) count.textContent = `（预置 ${presets.length} · 自定义 ${customCount}/8）`;
     var list = addDialog.querySelector("[data-managed-list]");
     var removedList = addDialog.querySelector("[data-removed-list]");
     if (!list || !removedList) return;
