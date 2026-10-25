@@ -582,7 +582,7 @@ async def send_provider_settings(context) -> None:
             label="模型与 Provider",
             items=items,
             initial_value=context.provider_selection,
-            description="可在此快速切换；用下方入口以 Base URL + API Key 添加自定义模型（≤27B），聊天输入框旁的模型菜单也可随时切换。",
+            description="仅限27B以内模型",
         ),
         Slider(
             id="temperature",
