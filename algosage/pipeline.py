@@ -290,10 +290,14 @@ class AlgoSageTutor:
         evidence = []
         regenerations = 0
         generated = None
+        # 能力感知透传：模型不支持思考/联网时即使用户开了开关也不传参数。
+        from .providers import infer_model_capabilities
+
+        model_caps = infer_model_capabilities(self.settings.model)
         extra_overrides = {}
-        if request.deep_think:
+        if request.deep_think and model_caps["thinking"]:
             extra_overrides["enable_thinking"] = True
-        if request.web_search:
+        if request.web_search and model_caps["web_search"]:
             extra_overrides["enable_search"] = True
         for attempt in range(attempts):
             try:

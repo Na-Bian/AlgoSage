@@ -31,6 +31,7 @@ from .providers import (
     build_custom_settings,
     custom_model_max_b,
     custom_selection_id,
+    infer_model_capabilities,
     parse_model_params_b,
     validate_public_base_url,
 )
@@ -43,7 +44,7 @@ CUSTOM_PROVIDER_LABEL = "自定义 API"
 _ENV_BLOCK_BEGIN = "# >>> algosage custom providers (auto-managed) >>>"
 _ENV_BLOCK_END = "# <<< algosage custom providers <<<"
 _ENV_SECRET_KEY = "SAGE_CUSTOM_PROVIDER_SECRET"
-_ENV_FIELDS = ("PRINCIPAL", "LABEL", "BASE_URL", "MODEL", "KEY")
+_ENV_FIELDS = ("PRINCIPAL", "LABEL", "BASE_URL", "MODEL", "KEY", "CAPABILITIES")
 _FORBIDDEN_CHARS = re.compile(r"[\r\n\x00]")
 
 
@@ -182,6 +183,11 @@ class CustomProviderStore:
                 lines.append(f"{prefix}LABEL={_env_quote(entry['label'])}")
                 lines.append(f"{prefix}BASE_URL={_env_quote(entry['base_url'])}")
                 lines.append(f"{prefix}MODEL={_env_quote(entry['model'])}")
+                caps = entry.get("capabilities") or {}
+                tags = ",".join(
+                    name for name, on in sorted(caps.items()) if on
+                )
+                lines.append(f"{prefix}CAPABILITIES={_env_quote(tags)}")
                 lines.append(f"{prefix}KEY={sealed}")
         lines.append(_ENV_BLOCK_END)
 
@@ -237,6 +243,7 @@ class CustomProviderStore:
                 raise ValueError(f"{field} 不能包含换行或控制字符")
         settings = build_custom_settings(self._base, base_url, api_key, model)
         selection = custom_selection_id(name, settings.base_url, model)
+        capabilities = infer_model_capabilities(model)
         entry = {
             "id": "custom",
             "label": name,
@@ -245,6 +252,7 @@ class CustomProviderStore:
             "mode": "api",
             "available": True,
             "params_b": parse_model_params_b(model),
+            "capabilities": capabilities,
             "base_url": settings.base_url,
             # Runtime-only plaintext; on disk this is Fernet-sealed.
             "api_key": api_key,
@@ -303,6 +311,8 @@ class CustomProviderStore:
             "mode": "api",
             "available": True,
             "params_b": entry["params_b"],
+            "capabilities": entry.get("capabilities")
+            or infer_model_capabilities(entry["model"]),
         }
 
     # ------------------------------------------------------------------
@@ -316,11 +326,17 @@ class CustomProviderStore:
         models = []
         for model_id in self._fetch_models(url, api_key)[:DISCOVERY_MODEL_LIMIT]:
             params_b = parse_model_params_b(model_id)
+            capabilities = infer_model_capabilities(model_id)
             models.append(
                 {
                     "id": model_id,
                     "params_b": params_b,
-                    "allowed": params_b is not None and params_b <= limit_b,
+                    "allowed": (
+                        params_b is not None
+                        and params_b <= limit_b
+                        and capabilities["is_chat"]
+                    ),
+                    "capabilities": capabilities,
                 }
             )
         models.sort(

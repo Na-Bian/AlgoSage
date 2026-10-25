@@ -30,6 +30,21 @@
     return match ? decodeURIComponent(match[1]) : "";
   }
 
+  function shortModelName(modelId) {
+    // 去掉组织前缀（Qwen/Qwen3-8B → Qwen3-8B）。
+    return String(modelId || "").split("/").pop().trim();
+  }
+
+  function modelCapabilities(selection) {
+    var found = null;
+    state.providers.forEach(function (group) {
+      group.models.forEach(function (model) {
+        if (model.selection === selection) found = model;
+      });
+    });
+    return (found && found.capabilities) || null;
+  }
+
   function safeModelLabel(selection) {
     var provider = state.providers.find(function (group) {
       return group.models.some(function (model) {
@@ -40,7 +55,7 @@
     var model = provider.models.find(function (item) {
       return item.selection === selection;
     });
-    return model ? model.model : selection;
+    return model ? shortModelName(model.model) : selection;
   }
 
   function normalizeCatalog(data) {
@@ -81,6 +96,10 @@
     } else if (button) {
       button.classList.remove("eg-model-none");
     }
+    var caps = modelCapabilities(state.currentSelection);
+    window.dispatchEvent(
+      new CustomEvent("eg-model-changed", { detail: { capabilities: caps } })
+    );
   }
 
   function updateButton() {
@@ -235,8 +254,17 @@
         option.setAttribute("role", "option");
         option.setAttribute("aria-selected", String(model.selection === state.currentSelection));
         option.disabled = !model.available || state.switching;
+        var caps = model.capabilities || {};
+        var capTags = [];
+        if (caps.thinking) capTags.push("思考");
+        if (caps.multimodal) capTags.push("多模态");
+        if (caps.web_search) capTags.push("联网");
+        var capHtml = capTags.length
+          ? `<span class="eg-model-caps">${capTags.join(" · ")}</span>`
+          : "";
+        var displayName = model.short_name || shortModelName(model.model);
         option.innerHTML = `
-          <span class="eg-model-option-name">${model.model}${group.id === "custom" ? '<em class="eg-model-custom-badge">自定义</em>' : ""}</span>
+          <span class="eg-model-option-name">${displayName}${group.id === "custom" ? '<em class="eg-model-custom-badge">自定义</em>' : ""}${capHtml}</span>
           <span class="eg-model-option-state">${model.selection === state.currentSelection ? "✓" : model.available ? "" : "不可用"}</span>
         `;
         option.addEventListener("click", function () {
@@ -600,7 +628,17 @@
       }]));
     });
     customEntries().forEach(function (model) {
-      list.append(managedRow(`${model.label || "自定义 API"} · ${model.model}`, [{
+      var caps = model.capabilities || {};
+      var capTags = [];
+      if (caps.thinking) capTags.push("思考");
+      if (caps.multimodal) capTags.push("多模态");
+      if (caps.web_search) capTags.push("联网");
+      var name =
+        (model.label && model.label !== "自定义 API"
+          ? model.label + " · "
+          : "") + shortModelName(model.model) +
+        (capTags.length ? " · " + capTags.join("/") : "");
+      list.append(managedRow(name, [{
         text: "删除", pending: "正在删除…", done: "已删除；若它正被使用，已自动切回默认模型",
         failed: "删除失败",
         run: function () { return removeCustomEntries([model.selection]); },
@@ -697,10 +735,23 @@
       row.type = "button";
       row.className = "eg-add-model" + (item.allowed ? "" : " eg-add-model-blocked");
       row.disabled = !item.allowed;
+      var caps = item.capabilities || {};
+      var capTags = [];
+      if (caps.thinking) capTags.push("思考");
+      if (caps.multimodal) capTags.push("多模态");
+      if (caps.web_search) capTags.push("联网");
+      var capHtml = capTags.length
+        ? `<span class="eg-add-model-caps">${capTags.join(" · ")}</span>`
+        : "";
       var sizeText = item.params_b == null ? "参数量未知" : `${item.params_b}B`;
+      var blockReason = !caps.is_chat
+        ? "非对话模型"
+        : item.params_b == null
+          ? "参数量未知"
+          : `${sizeText} · 超出限制`;
       row.innerHTML = `
-        <span class="eg-add-model-name">${item.id}</span>
-        <span class="eg-add-model-size">${item.allowed ? sizeText : `${sizeText} · 超出限制`}</span>
+        <span class="eg-add-model-name">${shortModelName(item.id)}${capHtml}</span>
+        <span class="eg-add-model-size">${item.allowed ? sizeText : blockReason}</span>
       `;
       if (item.allowed) {
         row.addEventListener("click", function () {

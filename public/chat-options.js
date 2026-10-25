@@ -5,7 +5,7 @@
   "use strict";
 
   var OPTIONS = [
-    { key: "deep_think", label: "深度思考", icon: "brain" },
+    { key: "deep_think", label: "思考模式", icon: "brain" },
     { key: "web_search", label: "联网搜索", icon: "globe" },
   ];
   var state = { deep_think: false, web_search: false };
@@ -91,6 +91,23 @@
     childList: true,
     subtree: true,
   });
+
+  // 能力感知显隐：当前模型不支持思考/联网时隐藏对应 pill。
+  window.addEventListener(
+    "eg-model-changed",
+    function (event) {
+      var caps = (event.detail && event.detail.capabilities) || {};
+      var wrap = pillsContainer();
+      if (!wrap) return;
+      wrap.querySelectorAll(".eg-option-pill").forEach(function (pill) {
+        var key = pill.dataset.option;
+        var supported =
+          key === "deep_think" ? !!caps.thinking : !!caps.web_search;
+        pill.style.display = supported ? "" : "none";
+      });
+    },
+    false
+  );
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       pillsContainer();

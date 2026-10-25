@@ -633,10 +633,24 @@ body.eg-no-models #chat-submit {
   border-radius: 16px;
   background: hsl(var(--popover));
   color: hsl(var(--popover-foreground));
-  box-shadow: var(--eg-shadow-3);
+  box-shadow: var(--eg-shadow-2);
   /* 与原生弹窗一致的上浮入场；关闭由 JS 在移除前加 eg-menu-closing。 */
   animation: eg-surface-in var(--eg-motion-enter) var(--eg-motion-ease) both;
 }
+
+/* 模型能力标签（思考 · 多模态 · 联网）。 */
+.eg-model-caps,
+.eg-add-model-caps {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: hsl(var(--primary) / .1);
+  color: hsl(var(--primary) / .9);
+  font-size: .68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.eg-add-model-caps { margin-left: 6px; }
 
 .eg-model-menu.eg-menu-closing {
   animation: eg-overlay-out var(--eg-motion-exit) var(--eg-motion-ease) both;

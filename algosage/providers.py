@@ -91,6 +91,72 @@ def build_custom_settings(
     return replace(base, mode="api", api_key=api_key, base_url=url, model=model)
 
 
+_NON_CHAT_MARKERS = ("embedding", "reranker", "asr", "tts", "audio", "voice", "speech")
+_VISION_MARKERS = ("vl", "omni", "vision", "internvl")
+_THINKING_PATTERNS = (
+    "qwen3",
+    "deepseek-r1",
+    "glm-z1",
+    "qwq",
+    "thinking",
+    "reasoner",
+)
+
+
+def short_model_name(model_id: str) -> str:
+    """展示用短名：去掉组织前缀（如 Qwen/Qwen3-8B → Qwen3-8B）。"""
+    return model_id.rsplit("/", 1)[-1].strip()
+
+
+def _marker_hit(model_id: str, markers: tuple[str, ...]) -> bool:
+    lowered = model_id.lower()
+    return any(marker in lowered for marker in markers)
+
+
+def is_chat_model(model_id: str) -> bool:
+    """按命名规则排除非对话模型（Embedding/Reranker/语音类不可作为聊天后端）。"""
+    return not _marker_hit(model_id, _NON_CHAT_MARKERS)
+
+
+def infer_model_capabilities(model_id: str) -> dict[str, bool]:
+    """Heuristic capability flags from the model id.
+
+    上游 /models 接口不返回能力字段，只能依据命名规则推断：
+    - 思考：Qwen3 系列、DeepSeek-R1、GLM-Z1、QwQ、名字含 thinking/reasoner；
+    - 多模态：名字含 VL / Omni / Vision；
+    - 联网搜索：OpenAI 兼容推理服务（如 SiliconFlow）对文本对话模型统一
+      支持 enable_search 参数，非对话模型一律不支持。
+    """
+    chat = is_chat_model(model_id)
+    if not chat:
+        return {
+            "is_chat": False,
+            "thinking": False,
+            "multimodal": False,
+            "web_search": False,
+        }
+    lowered = model_id.lower()
+    multimodal = _marker_hit(model_id, _VISION_MARKERS)
+    thinking = (
+        (
+            "qwen3" in lowered
+            and not multimodal
+            and "thinking" not in lowered
+        )
+        or "deepseek-r1" in lowered
+        or "glm-z1" in lowered
+        or "qwq" in lowered
+        or "thinking" in lowered
+        or "reasoner" in lowered
+    )
+    return {
+        "is_chat": True,
+        "thinking": thinking,
+        "multimodal": multimodal,
+        "web_search": True,
+    }
+
+
 def custom_selection_id(label: str, base_url: str, model: str) -> str:
     digest = hashlib.sha1(
         f"{label}|{base_url}|{model}".encode("utf-8", "ignore")

@@ -28,7 +28,7 @@ from chainlit.input_widget import Select, Slider, Switch
 
 from algosage.config import Settings
 from algosage.service import TutorService, HISTORY_TURNS_KEPT
-from algosage.providers import ProviderRegistry
+from algosage.providers import ProviderRegistry, short_model_name
 from algosage.invocation import streaming_transport, timing_summary
 from algosage.runtime_paths import runtime_path
 from algosage.attachments import prepare_attachment_elements
@@ -203,6 +203,7 @@ async def send_model_catalog(context) -> None:
             {
                 "selection": option["selection"],
                 "model": option["model"],
+                "short_name": short_model_name(option["model"]),
                 "available": bool(option["available"]),
             }
         )
@@ -225,6 +226,7 @@ async def send_model_catalog(context) -> None:
                     "selection": entry["selection"],
                     "model": entry["model"],
                     "label": entry["label"],
+                    "capabilities": entry.get("capabilities") or {},
                     "available": True,
                 }
             )
@@ -243,7 +245,7 @@ async def send_model_catalog(context) -> None:
                 "thread_id": context_id(),
                 "current_selection": context.provider_selection,
                 "current_label": (
-                    f"{info['label']} · {info['model']}"
+                    short_model_name(info["model"])
                     if info.get("model")
                     else info["label"]
                 ),
@@ -489,6 +491,8 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                             "selection": entry["selection"],
                             "model": entry["model"],
                             "label": entry["label"],
+                            "short_name": short_model_name(entry["model"]),
+                            "capabilities": entry.get("capabilities") or {},
                             "available": True,
                         }
                         for entry in custom
@@ -512,13 +516,24 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             current_info = service.providers.info(current)
             current_available = True
         except ValueError:
-            current_info = {"label": "未配置模型", "model": ""}
-            current_available = False
-        current_label = (
-            f"{current_info['label']} · {current_info['model']}"
-            if current_info.get("model")
-            else current_info["label"]
-        )
+            # 自定义模型不在预置注册表里，从用户条目解析展示名。
+            entry = next(
+                (
+                    e
+                    for e in service.list_custom_providers(current_user.identifier)
+                    if e["selection"] == current
+                ),
+                None,
+            )
+            if entry:
+                current_info = {"label": entry["label"], "model": entry["model"]}
+                current_available = True
+            else:
+                current_info = {"label": "未配置模型", "model": ""}
+                current_available = False
+        current_label = short_model_name(current_info["model"])
+        if current_info.get("model") is None:
+            current_label = current_info["label"]
         return {
             "default_selection": await user_default_selection(
                 service, current_user.identifier
@@ -762,14 +777,18 @@ async def send_provider_settings(context) -> None:
     service = get_service()
     options = service.providers.options()
     hidden = await hidden_preset_providers(context.principal_id)
-    items = {
-        f"{o['label']} · {o['model']}": o["selection"]
-        for o in options
-        if o["id"] not in hidden
-    }
+    items: dict[str, str] = {}
+    for o in options:
+        if o["id"] in hidden:
+            continue
+        short = short_model_name(o["model"])
+        label = short if list(items).count(short) < 1 else f"{short}（{o['label']}）"
+        items[label] = o["selection"]
     if context.principal_id:
         for entry in service.list_custom_providers(context.principal_id):
-            items[f"{entry['label']} · {entry['model']}"] = entry["selection"]
+            short = short_model_name(entry["model"])
+            label = short if short not in items else f"{short}（{entry['label']}）"
+            items[label] = entry["selection"]
     try:
         provider = service._resolve_selection_settings(
             context, context.provider_selection
