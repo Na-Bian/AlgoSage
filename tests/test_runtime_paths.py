@@ -10,17 +10,30 @@ class RuntimePathTests(unittest.TestCase):
         from algosage.runtime_paths import runtime_path
 
         with tempfile.TemporaryDirectory() as root:
-            with patch.dict(os.environ, {"CHAINLIT_APP_ROOT": root, "SAGE_CHAT_FILE": "data/chats.db"}):
-                self.assertEqual(runtime_path("SAGE_CHAT_FILE", ".algosage/chats.sqlite3"),
-                                 str(Path(root).resolve() / "data/chats.db"))
-                self.assertEqual(runtime_path("SAGE_AUTH_SECRET_FILE", ".algosage/auth.secret"),
-                                 str(Path(root).resolve() / ".algosage/auth.secret"))
+            with patch.dict(
+                os.environ,
+                {"CHAINLIT_APP_ROOT": root, "SAGE_CHAT_FILE": "data/chats.db"},
+            ):
+                self.assertEqual(
+                    runtime_path("SAGE_CHAT_FILE", ".algosage/chats.sqlite3"),
+                    str(Path(root).resolve() / "data/chats.db"),
+                )
+                self.assertEqual(
+                    runtime_path("SAGE_AUTH_SECRET_FILE", ".algosage/auth.secret"),
+                    str(Path(root).resolve() / ".algosage/auth.secret"),
+                )
 
     def test_explicit_absolute_path_and_disabled_state_are_preserved(self):
         from algosage.runtime_paths import runtime_path
 
-        with patch.dict(os.environ, {"SAGE_CHAT_FILE": "/tmp/explicit/chats.db", "SAGE_STATE_FILE": ""}):
-            self.assertEqual(runtime_path("SAGE_CHAT_FILE", "default"), str(Path("/tmp/explicit/chats.db").resolve()))
+        with patch.dict(
+            os.environ,
+            {"SAGE_CHAT_FILE": "/tmp/explicit/chats.db", "SAGE_STATE_FILE": ""},
+        ):
+            self.assertEqual(
+                runtime_path("SAGE_CHAT_FILE", "default"),
+                str(Path("/tmp/explicit/chats.db").resolve()),
+            )
             self.assertEqual(runtime_path("SAGE_STATE_FILE", "default"), "")
         with patch.dict(os.environ, {"SAGE_CHAT_FILE": ":memory:"}):
             self.assertEqual(runtime_path("SAGE_CHAT_FILE", "default"), ":memory:")
@@ -32,8 +45,16 @@ class RuntimePathTests(unittest.TestCase):
             legacy = Path(root) / ".examguard"
             legacy.mkdir()
             (legacy / "chats.sqlite3").write_bytes(b"legacy")
-            with patch.dict(os.environ, {"CHAINLIT_APP_ROOT": root, "SAGE_CHAT_FILE": ".algosage/chats.sqlite3"}):
-                migrated = Path(runtime_path("SAGE_CHAT_FILE", ".algosage/chats.sqlite3"))
+            with patch.dict(
+                os.environ,
+                {
+                    "CHAINLIT_APP_ROOT": root,
+                    "SAGE_CHAT_FILE": ".algosage/chats.sqlite3",
+                },
+            ):
+                migrated = Path(
+                    runtime_path("SAGE_CHAT_FILE", ".algosage/chats.sqlite3")
+                )
                 self.assertEqual(migrated.read_bytes(), b"legacy")
                 self.assertTrue(migrated.exists())
                 self.assertFalse(legacy.exists())
@@ -57,7 +78,11 @@ class RuntimePathTests(unittest.TestCase):
                     type(
                         "User",
                         (),
-                        {"identifier": "alice", "display_name": "Alice", "metadata": {}},
+                        {
+                            "identifier": "alice",
+                            "display_name": "Alice",
+                            "metadata": {},
+                        },
                     )()
                 )
                 await store.close()

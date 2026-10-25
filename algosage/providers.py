@@ -99,17 +99,13 @@ def custom_selection_id(label: str, base_url: str, model: str) -> str:
 
 
 class ProviderRegistry:
+    """Server-configured providers. 无兜底：操作员未配置 providers.json 时
+    用户目录为空，由前端禁用发送并引导用户添加自己的提供商。"""
+
     def __init__(self, base: Settings, entries: list[dict] | None = None):
         self.base = base
         self._settings: dict[str, Settings] = {}
         self._options: list[dict] = []
-        default = {
-            "id": "default",
-            "label": "默认 Provider",
-            "mode": base.mode,
-            "models": [base.model],
-        }
-        self._add(default, default=True)
         if entries is None:
             path = runtime_path("SAGE_PROVIDERS_FILE", ".algosage/providers.json")
             if path and Path(path).is_file():
@@ -124,7 +120,7 @@ class ProviderRegistry:
                 raise ValueError("providers 必须是至多 32 项的列表")
             for entry in entries:
                 self._add(entry)
-        self.default = self._options[0]["selection"]
+        self.default = self._options[0]["selection"] if self._options else ""
 
     def _add(self, entry, default=False):
         allowed = {

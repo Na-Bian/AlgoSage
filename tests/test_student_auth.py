@@ -148,16 +148,26 @@ class StudentAuthTests(unittest.TestCase):
         self.auth.confirm_registration(
             student_id="U202113566", code=code_from(self.sender.messages[0])
         )
-        run(self.auth.request_password_reset_code(student_id="U202113566", ip="127.0.0.1"))
+        run(
+            self.auth.request_password_reset_code(
+                student_id="U202113566", ip="127.0.0.1"
+            )
+        )
         reset_code = code_from(self.sender.messages[-1])
         self.auth.confirm_password_reset(
             student_id="U202113566",
             code=reset_code,
             new_password="another-long-passphrase",
         )
-        self.assertIsNotNone(self.auth.authenticate("U202113566", "another-long-passphrase"))
+        self.assertIsNotNone(
+            self.auth.authenticate("U202113566", "another-long-passphrase")
+        )
         self.sender.messages.clear()
-        run(self.auth.request_password_reset_code(student_id="U202119999", ip="127.0.0.1"))
+        run(
+            self.auth.request_password_reset_code(
+                student_id="U202119999", ip="127.0.0.1"
+            )
+        )
         self.assertEqual(self.sender.messages, [])
         self.auth.store.close()
 
@@ -222,9 +232,7 @@ class StudentAuthRoutesTests(unittest.TestCase):
             },
         )
         self.assertEqual(reset_confirmed.status_code, 200)
-        self.assertIsNotNone(
-            auth.authenticate("U202113566", "another-long-passphrase")
-        )
+        self.assertIsNotNone(auth.authenticate("U202113566", "another-long-passphrase"))
 
         unknown = client.post(
             "/auth/hust/password-reset/request-code",
@@ -254,7 +262,8 @@ class StudentProfileRouteTests(unittest.TestCase):
             student_id="U202113566", code=code_from(self.sender.messages[0])
         )
         secret = mock.patch.dict(
-            "os.environ", {"CHAINLIT_AUTH_SECRET": "profile-route-secret-value-32-chars"}
+            "os.environ",
+            {"CHAINLIT_AUTH_SECRET": "profile-route-secret-value-32-chars"},
         )
         secret.start()
         self.addCleanup(secret.stop)
@@ -291,9 +300,7 @@ class StudentProfileRouteTests(unittest.TestCase):
         self.assertEqual(profile.json()["student_id"], "U202113566")
         self.assertEqual(profile.json()["email"], "U202113566@hust.edu.cn")
 
-        renamed = client.patch(
-            "/auth/hust/profile", json={"nickname": "新昵称"}
-        )
+        renamed = client.patch("/auth/hust/profile", json={"nickname": "新昵称"})
         self.assertEqual(renamed.status_code, 200)
         self.assertEqual(renamed.json()["nickname"], "新昵称")
         self.assertEqual(
@@ -333,7 +340,8 @@ class ProfileRouteTests(unittest.TestCase):
         self.sender = FakeEmailSender()
         self.auth = service(self.root, self.sender)
         secret = mock.patch.dict(
-            "os.environ", {"CHAINLIT_AUTH_SECRET": "profile-route-secret-value-32-chars"}
+            "os.environ",
+            {"CHAINLIT_AUTH_SECRET": "profile-route-secret-value-32-chars"},
         )
         secret.start()
         self.addCleanup(secret.stop)
@@ -368,9 +376,7 @@ class ProfileRouteTests(unittest.TestCase):
         )
         self.client = TestClient(self.app)
         current = SimpleNamespace(identifier="student:U202113566")
-        self.app.dependency_overrides[
-            self.current_user_dependency()
-        ] = lambda: current
+        self.app.dependency_overrides[self.current_user_dependency()] = lambda: current
         self.addCleanup(self.app.dependency_overrides.clear)
 
     def current_user_dependency(self):
@@ -389,9 +395,7 @@ class ProfileRouteTests(unittest.TestCase):
         persisted_user = run(self.chat_store.get_user("student:U202113566"))
         self.assertEqual(persisted_user.metadata.get("image"), "")
 
-        renamed = self.client.patch(
-            "/auth/profile", json={"nickname": "界面验收同学"}
-        )
+        renamed = self.client.patch("/auth/profile", json={"nickname": "界面验收同学"})
         self.assertEqual(renamed.status_code, 200)
         self.assertEqual(renamed.json()["nickname"], "界面验收同学")
 
@@ -421,7 +425,9 @@ class ProfileRouteTests(unittest.TestCase):
         from chainlit.user import User
         from algosage.session_guard import RiskState
 
-        authenticated = self.client.patch("/auth/profile", json={"nickname": "验收同学"})
+        authenticated = self.client.patch(
+            "/auth/profile", json={"nickname": "验收同学"}
+        )
         self.assertEqual(authenticated.status_code, 200)
         security = self.client.get("/profile/security")
         self.assertEqual(security.status_code, 200)
@@ -434,9 +440,7 @@ class ProfileRouteTests(unittest.TestCase):
             json={"current_password": "correct-horse-battery", "confirmation": "删除"},
         )
         self.assertEqual(bad_confirmation.status_code, 400)
-        self.assertEqual(
-            self.auth.store.get_account("U202113566")["status"], "active"
-        )
+        self.assertEqual(self.auth.store.get_account("U202113566")["status"], "active")
 
         run(
             self.chat_store.create_user(
@@ -474,13 +478,14 @@ class ProfileRouteTests(unittest.TestCase):
             json={"current_password": "wrong-password", "confirmation": "注销账号"},
         )
         self.assertEqual(wrong_password.status_code, 423)
-        self.assertEqual(
-            self.auth.store.get_account("U202113566")["status"], "active"
-        )
+        self.assertEqual(self.auth.store.get_account("U202113566")["status"], "active")
 
         closed = self.client.post(
             "/auth/profile/close",
-            json={"current_password": "correct-horse-battery", "confirmation": "注销账号"},
+            json={
+                "current_password": "correct-horse-battery",
+                "confirmation": "注销账号",
+            },
         )
         self.assertEqual(closed.status_code, 200)
         self.assertEqual(closed.json()["redirect_url"], "/login")
@@ -488,9 +493,7 @@ class ProfileRouteTests(unittest.TestCase):
         self.assertEqual(account["status"], "closed")
         self.assertIsNone(self.auth.authenticate("U202113566", "correct-horse-battery"))
         self.assertIsNone(run(self.chat_store.get_thread("personal-thread")))
-        self.assertIsNone(
-            run(self.chat_store.get_user("student:U202113566"))
-        )
+        self.assertIsNone(run(self.chat_store.get_user("student:U202113566")))
         import sqlite3
 
         with sqlite3.connect(self.root / "auth.sqlite3") as database:
@@ -545,7 +548,10 @@ class ProfileRouteTests(unittest.TestCase):
         app.dependency_overrides[self.current_user_dependency()] = lambda: current
         closed = client.post(
             "/auth/profile/close",
-            json={"current_password": "correct-horse-battery", "confirmation": "注销账号"},
+            json={
+                "current_password": "correct-horse-battery",
+                "confirmation": "注销账号",
+            },
         )
         self.assertEqual(closed.status_code, 200)
         with state_store._database() as database:
@@ -597,7 +603,11 @@ class ProfileRouteTests(unittest.TestCase):
             self.assertEqual(settings.classifier_mode, "hybrid")
 
     def test_custom_auth_pages_replace_chainlit_login(self):
-        for path, mode in [("/login", "login"), ("/register", "register"), ("/forgot-password", "reset")]:
+        for path, mode in [
+            ("/login", "login"),
+            ("/register", "register"),
+            ("/forgot-password", "reset"),
+        ]:
             self.app.dependency_overrides[self.current_user_dependency()] = lambda: None
             response = self.client.get(path, follow_redirects=False)
             self.assertEqual(response.status_code, 200)
@@ -607,8 +617,14 @@ class ProfileRouteTests(unittest.TestCase):
             self.assertIn("/public/brand-logo.png", response.text)
             self.assertNotIn('class="eg-auth-tabs"', response.text)
             if path == "/login":
-                self.assertIn('id="login-feedback" class="login-feedback" data-visible="false"', response.text)
-                self.assertIn('id="forgot-link" class="forgot-link" href="/forgot-password" hidden', response.text)
+                self.assertIn(
+                    'id="login-feedback" class="login-feedback" data-visible="false"',
+                    response.text,
+                )
+                self.assertIn(
+                    'id="forgot-link" class="forgot-link" href="/forgot-password" hidden',
+                    response.text,
+                )
                 self.assertIn(">登录 AlgoSage</h1>", response.text)
             if path == "/register":
                 self.assertIn(">注册 AlgoSage</h1>", response.text)

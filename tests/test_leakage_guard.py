@@ -328,9 +328,7 @@ class LayeredGuardTests(unittest.TestCase):
             ),
             settings,
         )
-        result = LayeredOutputGuard(
-            RuleLeakageScreener(), judge, quality
-        ).review(
+        result = LayeredOutputGuard(RuleLeakageScreener(), judge, quality).review(
             "O(n) 是渐近上界，表示函数增长不会超过线性函数；"
             "它并不单独等同于最坏情况，具体含义取决于所分析的成本函数。",
             decision_of(Intent.KNOWLEDGE, 1),
@@ -352,9 +350,7 @@ class LayeredGuardTests(unittest.TestCase):
             settings,
         )
         quality = LLMAnswerQualityReviewer(BrokenQuality(), settings)
-        result = LayeredOutputGuard(
-            RuleLeakageScreener(), judge, quality
-        ).review(
+        result = LayeredOutputGuard(RuleLeakageScreener(), judge, quality).review(
             "O(n) 是渐近上界，描述增长速度不超过线性函数；"
             "它并不单独等同于最坏情况，具体含义取决于所分析的成本函数。",
             decision_of(Intent.KNOWLEDGE, 1),

@@ -14,18 +14,24 @@ class RuntimeSecurityTests(unittest.TestCase):
         app.get("/health")(lambda: {"status": "ok"})
         with mock.patch.dict(
             os.environ,
-            {"SAGE_ALLOWED_ORIGINS": "https://algosage.example,https://www.algosage.example"},
+            {
+                "SAGE_ALLOWED_ORIGINS": "https://algosage.example,https://www.algosage.example"
+            },
         ):
             install_origin_guard(app)
 
         client = TestClient(app)
         self.assertEqual(client.get("/health").status_code, 200)
         self.assertEqual(
-            client.get("/health", headers={"Origin": "https://evil.example"}).status_code,
+            client.get(
+                "/health", headers={"Origin": "https://evil.example"}
+            ).status_code,
             403,
         )
         self.assertEqual(
-            client.get("/health", headers={"Origin": "https://algosage.example"}).status_code,
+            client.get(
+                "/health", headers={"Origin": "https://algosage.example"}
+            ).status_code,
             200,
         )
 
@@ -40,15 +46,21 @@ class RuntimeSecurityTests(unittest.TestCase):
             install_origin_guard(app)
         client = TestClient(app)
         self.assertEqual(
-            client.get("/health", headers={"Origin": "http://localhost:8000"}).status_code,
+            client.get(
+                "/health", headers={"Origin": "http://localhost:8000"}
+            ).status_code,
             200,
         )
         self.assertEqual(
-            client.get("/health", headers={"Origin": "http://127.0.0.1:8000"}).status_code,
+            client.get(
+                "/health", headers={"Origin": "http://127.0.0.1:8000"}
+            ).status_code,
             200,
         )
         self.assertEqual(
-            client.get("/health", headers={"Origin": "https://algosage.example"}).status_code,
+            client.get(
+                "/health", headers={"Origin": "https://algosage.example"}
+            ).status_code,
             403,
         )
 

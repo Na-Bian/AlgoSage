@@ -42,7 +42,9 @@ class ModelSettingsTests(unittest.TestCase):
 
     def test_generation_sampling_is_sent_to_openai_compatible_backend(self):
         backend = OpenAICompatibleBackend.__new__(OpenAICompatibleBackend)
-        backend.settings = Settings(api_key="test-key", extra_body={"enable_thinking": False})
+        backend.settings = Settings(
+            api_key="test-key", extra_body={"enable_thinking": False}
+        )
         backend.client = completion = SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
             usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
@@ -50,7 +52,9 @@ class ModelSettingsTests(unittest.TestCase):
         )
         backend.client = SimpleNamespace(
             chat=SimpleNamespace(
-                completions=SimpleNamespace(create=unittest.mock.Mock(return_value=completion))
+                completions=SimpleNamespace(
+                    create=unittest.mock.Mock(return_value=completion)
+                )
             )
         )
         sampling = {
@@ -80,8 +84,12 @@ class ModelSettingsTests(unittest.TestCase):
                 return LLMResult("answer", "model", 1, 1)
 
         backend = Backend()
-        tutor = AlgoSageTutor(backend, Settings(max_output_tokens=64, output_guard="rules"))
-        tutor.respond(TutorRequest(question="解释复杂度"), generation_options={"temperature": 0.2})
+        tutor = AlgoSageTutor(
+            backend, Settings(max_output_tokens=64, output_guard="rules")
+        )
+        tutor.respond(
+            TutorRequest(question="解释复杂度"), generation_options={"temperature": 0.2}
+        )
         self.assertEqual(backend.options["sampling"]["temperature"], 0.2)
 
 

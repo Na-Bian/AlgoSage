@@ -583,6 +583,35 @@ main .ai-message .message-content ~ div button svg {
   box-shadow: var(--chat-focus-ring, 0 0 0 3px rgb(91 135 247 / .18));
 }
 
+/* 无任何提供商：模型按钮呈警示态，发送被拦截并给出引导。 */
+.eg-model-button.eg-model-none,
+.eg-model-button.eg-model-none:hover {
+  border-color: hsl(var(--destructive) / .5);
+  background: hsl(var(--card) / .72);
+  color: hsl(var(--destructive));
+}
+body.eg-no-models #chat-submit {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.eg-no-model-toast {
+  position: fixed;
+  z-index: 1350;
+  left: 50%;
+  bottom: 132px;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border: 1px solid hsl(var(--destructive) / .45);
+  border-radius: 12px;
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font-size: .84rem;
+  line-height: 1.5;
+  box-shadow: var(--eg-shadow-2);
+  animation: eg-surface-in var(--eg-motion-enter) var(--eg-motion-ease) both;
+}
+
 .eg-model-button svg { width: 17px; height: 17px; flex: 0 0 auto; }
 .eg-model-button .eg-model-chevron { width: 15px; height: 15px; }
 .eg-model-button .eg-model-name {

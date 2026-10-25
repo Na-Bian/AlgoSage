@@ -5,6 +5,7 @@ from pathlib import Path
 
 from algosage.chat_store import ChatDataLayer
 from algosage.config import Settings
+from algosage.providers import ProviderRegistry
 from algosage.schemas import LLMResult
 
 
@@ -221,7 +222,16 @@ class TitleSchedulingTests(unittest.IsolatedAsyncioTestCase):
                     return LLMResult("KMP 前缀函数", "controlled", 12, 6)
                 return LLMResult("前缀函数是字符串的一种概念。", "controlled", 12, 6)
 
-        service = TutorService(Settings(), backend=Backend())
+        service = TutorService(
+            Settings(),
+            backend=Backend(),
+            providers=ProviderRegistry(
+                Settings(),
+                entries=[
+                    {"id": "mock", "label": "Mock", "mode": "mock", "models": ["m"]}
+                ],
+            ),
+        )
         context = service.new_context("t", principal_id="alice")
         response = service.chat(context, self.history[0]["content"], user_msg_id="m1")
         emitter = SimpleNamespace(emit=AsyncMock())

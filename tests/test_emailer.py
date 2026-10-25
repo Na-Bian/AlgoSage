@@ -120,10 +120,13 @@ class SMTPEmailerTests(unittest.TestCase):
 
     def test_environment_supports_new_and_legacy_prefixes(self):
         with tempfile.TemporaryDirectory() as root:
-            with patch.dict(os.environ, {
-                "SAGE_EMAIL_SENDER": "outbox",
-                "SAGE_EMAIL_OUTBOX_DIR": str(Path(root) / "new"),
-            }):
+            with patch.dict(
+                os.environ,
+                {
+                    "SAGE_EMAIL_SENDER": "outbox",
+                    "SAGE_EMAIL_OUTBOX_DIR": str(Path(root) / "new"),
+                },
+            ):
                 sender = email_sender_from_env()
                 self.assertEqual(type(sender).__name__, "OutboxEmailSender")
 
@@ -156,6 +159,7 @@ class SMTPEmailerTests(unittest.TestCase):
 
 def asyncio_run(coro):
     import asyncio
+
     return asyncio.run(coro)
 
 

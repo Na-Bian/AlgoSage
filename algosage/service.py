@@ -524,7 +524,13 @@ class TutorService:
         return self.custom_providers.discover(base_url, api_key)
 
     def set_model_params(self, context: ServiceContext, params: dict) -> None:
-        settings = self._resolve_selection_settings(context, context.provider_selection)
+        try:
+            settings = self._resolve_selection_settings(
+                context, context.provider_selection
+            )
+        except ValueError:
+            # 未选择模型（无任何提供商）：采样控件基于服务端基础参数。
+            settings = self.settings
         context.model_params = normalize_model_params(params, settings)
 
     def normalize_model_params(self, params: dict, settings: Settings) -> dict:

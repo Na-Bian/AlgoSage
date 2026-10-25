@@ -104,21 +104,23 @@ async def restore_conversation(service):
             try:
                 await asyncio.to_thread(service.select_provider, context, selection)
             except ValueError:
-                await asyncio.to_thread(
-                    service.select_provider,
-                    context,
-                    await user_default_selection(service, principal),
-                )
+                await _select_account_default(service, context, principal)
         else:
-            # 新会话以账号级“默认模型”起步。
-            await asyncio.to_thread(
-                service.select_provider,
-                context,
-                await user_default_selection(service, principal),
-            )
+            # 新会话以账号级“默认模型”起步；无任何提供商时保持未选择。
+            await _select_account_default(service, context, principal)
         preferences = await get_chat_store().load_user_app_preferences(principal)
         await asyncio.to_thread(service.set_model_params, context, preferences)
     return context
+
+
+async def _select_account_default(service, context, principal) -> None:
+    """Apply the account default when one exists; else leave the context
+    unselected (provider_selection="") so发送被引导而非报错。"""
+    target = await user_default_selection(service, principal)
+    if not target:
+        context.provider_selection = ""
+        return
+    await asyncio.to_thread(service.select_provider, context, target)
 
 
 _model_selection_locks: dict[str, asyncio.Lock] = {}
@@ -153,10 +155,11 @@ async def hidden_preset_providers(principal: str | None) -> set[str]:
 
 
 async def user_default_selection(service, principal: str | None) -> str:
-    """The account-level default model for new chats; falls back to the server default.
+    """The account-level default model for new chats.
 
-    A stored default that no longer resolves (custom entry deleted, provider
-    hidden) silently falls back so new chats always start on a working model.
+    服务端不兜底：没有存储的账号默认、或它已失效（条目删除/提供商移除）时
+    返回 providers.default —— 操作员未配置 providers.json 时它是空串，
+    上层据此禁用发送并引导用户先添加提供商。
     """
     fallback = service.providers.default
     if not principal:
@@ -225,14 +228,25 @@ async def send_model_catalog(context) -> None:
                     "available": True,
                 }
             )
-    info = service.provider_info(context)
+    try:
+        info = (
+            service.provider_info(context)
+            if context.provider_selection
+            else {"label": "未配置模型", "model": ""}
+        )
+    except ValueError:
+        info = {"label": "未配置模型", "model": ""}
     try:
         await cl.send_window_message(
             {
                 "type": "algosage-model-state",
                 "thread_id": context_id(),
                 "current_selection": context.provider_selection,
-                "current_label": f"{info['label']} · {info['model']}",
+                "current_label": (
+                    f"{info['label']} · {info['model']}"
+                    if info.get("model")
+                    else info["label"]
+                ),
                 "default_selection": await user_default_selection(
                     service, context.principal_id
                 ),
@@ -491,20 +505,27 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                 raise HTTPException(
                     status_code=403, detail="Thread owner mismatch"
                 ) from error
-        current = current or service.providers.default
+        current = current or await user_default_selection(
+            service, current_user.identifier
+        )
         try:
             current_info = service.providers.info(current)
             current_available = True
         except ValueError:
-            current_info = {"label": current, "model": current}
+            current_info = {"label": "未配置模型", "model": ""}
             current_available = False
+        current_label = (
+            f"{current_info['label']} · {current_info['model']}"
+            if current_info.get("model")
+            else current_info["label"]
+        )
         return {
             "default_selection": await user_default_selection(
                 service, current_user.identifier
             ),
             "current_selection": current,
             "current_available": current_available,
-            "current_label": f"{current_info['label']} · {current_info['model']}",
+            "current_label": current_label,
             "providers": groups,
         }
 
@@ -727,82 +748,96 @@ async def send_provider_settings(context) -> None:
     if context.principal_id:
         for entry in service.list_custom_providers(context.principal_id):
             items[f"{entry['label']} · {entry['model']}"] = entry["selection"]
-    provider = service._resolve_selection_settings(context, context.provider_selection)
+    try:
+        provider = service._resolve_selection_settings(
+            context, context.provider_selection
+        )
+    except ValueError:
+        # 无可用提供商：采样控件仍基于服务端基础参数渲染。
+        provider = service.settings
     params = service.normalize_model_params(context.model_params or {}, provider)
     max_output = min(
         int(params.get("max_output_tokens", provider.max_output_tokens)),
         provider.max_output_tokens,
     )
-    widgets = [
-        Select(
-            id="model_catalog",
-            label="默认模型",
-            items=items,
-            initial_value=await user_default_selection(service, context.principal_id),
-            description="仅支持参数量在27B以内的模型。",
-        ),
-        Slider(
-            id="temperature",
-            label="Temperature（创造性）",
-            minimum=0,
-            maximum=2,
-            step=0.05,
-            initial=float(params.get("temperature", 0.7)),
-            description="控制回答的发散程度：越低越稳定、越高越有创造性。",
-        ),
-        Slider(
-            id="frequency_penalty",
-            label="Frequency Penalty（减少重复）",
-            minimum=0,
-            maximum=2,
-            step=0.05,
-            initial=float(params.get("frequency_penalty", 0)),
-            description="越高越不容易反复使用相同的词句。",
-        ),
-        Slider(
-            id="presence_penalty",
-            label="Presence Penalty（引入新话题）",
-            minimum=0,
-            maximum=2,
-            step=0.05,
-            initial=float(params.get("presence_penalty", 0)),
-            description="越高越倾向于展开新内容、不纠缠旧话题。",
-        ),
-        Slider(
-            id="max_output_tokens",
-            label="最大输出长度（Token）",
-            minimum=128,
-            maximum=provider.max_output_tokens,
-            step=128,
-            initial=max_output,
-        ),
-        Switch(
-            id="autoscroll",
-            label="回复时自动滚动",
-            initial=bool(params.get("autoscroll", True)),
-        ),
-        Switch(
-            id="keep_drafts",
-            label="切换会话时保留草稿",
-            initial=bool(params.get("keep_drafts", True)),
-        ),
-        Switch(
-            id="animations",
-            label="启用界面动画",
-            initial=bool(params.get("animations", True)),
-        ),
-        Switch(
-            id="audit_summary",
-            label="显示安全摘要",
-            initial=bool(params.get("audit_summary", True)),
-        ),
-        Select(
-            id="font_size",
-            label="字体大小",
-            initial_value=str(params.get("font_size", "standard")),
-            items={"小号": "small", "标准": "standard", "大号": "large"},
-        ),
-    ]
+    widgets = []
+    if items:
+        widgets.append(
+            Select(
+                id="model_catalog",
+                label="默认模型",
+                items=items,
+                initial_value=await user_default_selection(
+                    service, context.principal_id
+                ),
+                description="仅支持参数量在27B以内的模型。",
+            )
+        )
+    widgets.extend(
+        [
+            Slider(
+                id="temperature",
+                label="Temperature（创造性）",
+                minimum=0,
+                maximum=2,
+                step=0.05,
+                initial=float(params.get("temperature", 0.7)),
+                description="控制回答的发散程度：越低越稳定、越高越有创造性。",
+            ),
+            Slider(
+                id="frequency_penalty",
+                label="Frequency Penalty（减少重复）",
+                minimum=0,
+                maximum=2,
+                step=0.05,
+                initial=float(params.get("frequency_penalty", 0)),
+                description="越高越不容易反复使用相同的词句。",
+            ),
+            Slider(
+                id="presence_penalty",
+                label="Presence Penalty（引入新话题）",
+                minimum=0,
+                maximum=2,
+                step=0.05,
+                initial=float(params.get("presence_penalty", 0)),
+                description="越高越倾向于展开新内容、不纠缠旧话题。",
+            ),
+            Slider(
+                id="max_output_tokens",
+                label="最大输出长度（Token）",
+                minimum=128,
+                maximum=provider.max_output_tokens,
+                step=128,
+                initial=max_output,
+            ),
+            Switch(
+                id="autoscroll",
+                label="回复时自动滚动",
+                initial=bool(params.get("autoscroll", True)),
+            ),
+            Switch(
+                id="keep_drafts",
+                label="切换会话时保留草稿",
+                initial=bool(params.get("keep_drafts", True)),
+            ),
+            Switch(
+                id="animations",
+                label="启用界面动画",
+                initial=bool(params.get("animations", True)),
+            ),
+            Switch(
+                id="audit_summary",
+                label="显示安全摘要",
+                initial=bool(params.get("audit_summary", True)),
+            ),
+            Select(
+                id="font_size",
+                label="字体大小",
+                initial_value=str(params.get("font_size", "standard")),
+                items={"小号": "small", "标准": "standard", "大号": "large"},
+            ),
+        ]
+    )
     platform = _client_platform()
     if platform != "mobile":  # 移动端虚拟键盘无修饰键，不展示该设置
         widgets.append(
@@ -1083,6 +1118,18 @@ async def run_turn(
     async with conversation_lock():
         # Every window reloads the latest private transcript before generating.
         context = await restore_conversation(service)
+        if not context.provider_selection:
+            # 无任何可用提供商：不调用模型，直接引导添加。
+            await cl.Message(
+                content=(
+                    "尚未添加模型提供商，暂时无法回答。\n\n"
+                    "请点击右上角 ⚙ **设置** →「管理模型提供商」，"
+                    "用 Base URL + API Key 添加你的模型（支持参数量 ≤27B 的 "
+                    "OpenAI 兼容接口，如 SiliconFlow / DeepSeek / 本地 vLLM），"
+                    "添加后在「默认模型」中选择并确认即可开始对话。"
+                )
+            ).send()
+            return
         mapping = _msg_turn_map()
         if edit_turn is None:
             edit_turn = mapping.get(msg_id)  # 命中即编辑重发

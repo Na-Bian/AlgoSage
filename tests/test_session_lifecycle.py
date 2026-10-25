@@ -301,7 +301,10 @@ class SettingsBoundaryTests(unittest.TestCase):
             mock.patch.dict("os.environ", {}, clear=True),
         ):
             cfg = Settings.from_env()
-        self.assertEqual(cfg.state_path, str(Path(__file__).resolve().parent.parent / ".algosage/state.sqlite3"))
+        self.assertEqual(
+            cfg.state_path,
+            str(Path(__file__).resolve().parent.parent / ".algosage/state.sqlite3"),
+        )
         self.assertEqual(cfg.exam_id, "demo")
         self.assertEqual(cfg.question_id, "")
 

@@ -208,7 +208,9 @@ class ChainlitAppModuleTests(unittest.TestCase):
         self.assertFalse(service.allow_policy_override)
         widgets = fake_cl.ChatSettings.call_args.args[0]
         widget_ids = [widget.id for widget in widgets]
-        self.assertIn("model_catalog", widget_ids)
+        # 无预置 providers.json 且无自定义条目时不渲染"默认模型"控件
+        # （前端据此禁用发送并引导添加）。
+        self.assertNotIn("model_catalog", widget_ids)
         self.assertIn("temperature", widget_ids)
         # 学生界面不得出现考试/练习模式开关；采样控制与 Temperature 二选一，仅保留后者
         self.assertNotIn("provider_selection", widget_ids)

@@ -326,7 +326,13 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
         store = ChatDataLayer(":memory:")
         await store.create_user(User(identifier="p"))
         backend = Backend()
-        svc = TutorService(Settings(), backend=backend)
+        from algosage.providers import ProviderRegistry
+
+        registry = ProviderRegistry(
+            Settings(),
+            entries=[{"id": "mock", "label": "Mock", "mode": "mock", "models": ["m"]}],
+        )
+        svc = TutorService(Settings(), backend=backend, providers=registry)
         fake = SimpleNamespace(
             context=SimpleNamespace(
                 session=SimpleNamespace(id="socket", thread_id="thread")

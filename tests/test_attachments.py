@@ -47,7 +47,9 @@ class AttachmentPreparationTests(unittest.TestCase):
             self.assertEqual(image.kind, "image")
             self.assertTrue(image.image_data_url.startswith("data:image/"))
             encoded = image.image_data_url.split(",", 1)[1]
-            with Image.open(__import__("io").BytesIO(base64.b64decode(encoded))) as rendered:
+            with Image.open(
+                __import__("io").BytesIO(base64.b64decode(encoded))
+            ) as rendered:
                 self.assertLessEqual(max(rendered.size), 1600)
 
     def test_unsupported_extension_is_rejected(self):
@@ -168,9 +170,7 @@ class AttachmentPipelineTests(unittest.TestCase):
                 return LLMResult("这是概念解释。", "vision-test", 1, 1)
 
         backend = RecordingBackend()
-        tutor = AlgoSageTutor(
-            backend, Settings(mode="mock", exam_mode=False)
-        )
+        tutor = AlgoSageTutor(backend, Settings(mode="mock", exam_mode=False))
         request = TutorRequest(
             "请说明图中展示的数据结构。",
             exam_mode=False,
@@ -189,9 +189,7 @@ class AttachmentPipelineTests(unittest.TestCase):
         self.assertIsInstance(content, list)
         self.assertEqual(content[0]["type"], "text")
         self.assertEqual(content[1]["type"], "image_url")
-        self.assertEqual(
-            content[1]["image_url"]["url"], "data:image/png;base64,AAAA"
-        )
+        self.assertEqual(content[1]["image_url"]["url"], "data:image/png;base64,AAAA")
 
     def test_attachment_instruction_override_keeps_deterministic_gate(self):
         class NeverCalled:
@@ -268,9 +266,7 @@ class AttachmentPipelineTests(unittest.TestCase):
                 ),
             ),
         )
-        self.assertEqual(
-            context.history[0]["images"][0]["name"], "tree.png"
-        )
+        self.assertEqual(context.history[0]["images"][0]["name"], "tree.png")
         self.assertIn("看图解释", context.history[0]["content"])
 
     def test_chat_store_persists_bounded_images_for_follow_up(self):
@@ -307,9 +303,7 @@ class AttachmentPipelineTests(unittest.TestCase):
                 "default",
             )
         )
-        history, _ = asyncio.run(
-            store.load_backend_history("thread-image", "student")
-        )
+        history, _ = asyncio.run(store.load_backend_history("thread-image", "student"))
         self.assertEqual(history[0]["images"][0]["name"], "tree.png")
         self.assertEqual(len(history[0]["images"]), 1)
 

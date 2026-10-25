@@ -51,6 +51,7 @@
     state.providers = Array.isArray(data.providers) ? data.providers : [];
     state.loaded = true;
     updateButton();
+    syncNoModelState();
     renderMenu();
   }
 
@@ -62,17 +63,40 @@
     state.providers = Array.isArray(data.providers) ? state.providers : state.providers;
     state.loaded = state.providers.length > 0 || state.loaded;
     updateButton();
+    syncNoModelState();
     renderMenu();
+  }
+
+  function hasUsableModels() {
+    return state.providers.some(function (group) {
+      return !group.hidden && group.models.length > 0;
+    });
+  }
+
+  function syncNoModelState() {
+    var none = state.loaded && !hasUsableModels();
+    document.body.classList.toggle("eg-no-models", none);
+    if (none && button) {
+      button.classList.add("eg-model-none");
+    } else if (button) {
+      button.classList.remove("eg-model-none");
+    }
   }
 
   function updateButton() {
     if (!button) return;
+    var none = state.loaded && !hasUsableModels();
     var label = button.querySelector(".eg-model-name");
     if (label) {
-      label.textContent = state.currentLabel || state.currentSelection || "选择模型";
-      button.title = state.currentLabel || "选择模型";
+      label.textContent = none
+        ? "未配置模型"
+        : state.currentLabel || state.currentSelection || "选择模型";
+      button.title = none ? "尚未添加模型提供商，点击添加" : state.currentLabel || "选择模型";
     }
-    button.setAttribute("aria-label", `当前模型：${state.currentLabel || "选择模型"}`);
+    button.setAttribute(
+      "aria-label",
+      none ? "未配置模型：点击添加" : `当前模型：${state.currentLabel || "选择模型"}`
+    );
     button.classList.toggle("eg-model-loading", Boolean(state.loading));
     button.disabled = Boolean(state.switching);
   }
@@ -171,11 +195,25 @@
     if (!menu || !listElement) return;
     var groups = visibleProviders();
     listElement.textContent = "";
-    if (!state.providers.length) {
+    if (!state.providers.length || !hasUsableModels()) {
       var empty = document.createElement("div");
       empty.className = "eg-model-menu-empty";
-      empty.textContent = "暂无可用模型";
+      empty.textContent = "尚未添加模型提供商：添加你的 API 后即可开始对话。";
       listElement.append(empty);
+      var addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "eg-model-add";
+      addBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        添加模型提供商
+      `;
+      addBtn.addEventListener("click", function () {
+        closeMenu();
+        openAddDialog();
+      });
+      listElement.append(addBtn);
       return;
     }
     if (!groups.length) {
@@ -553,13 +591,8 @@
     removedList.hidden = true;
 
     presets.forEach(function (group) {
-      if (group.hidden) return; // 已移除的显示在下方恢复区
-      if (group.locked) {
-        list.append(managedRow(group.label, [{
-          text: "移除", disabled: true, title: "默认提供商，不可移除",
-        }]));
-        return;
-      }
+      // 默认 Provider 是服务端兜底配置，不属于用户可管理的提供商，不展示。
+      if (group.hidden || group.locked) return;
       list.append(managedRow(group.label, [{
         text: "移除", pending: "正在移除…", done: "已移除；它不再出现在模型选择里，可随时在下方恢复",
         failed: "移除失败",
@@ -766,6 +799,33 @@
   document.addEventListener("click", function (event) {
     if (menu && !menu.contains(event.target) && !button?.contains(event.target)) closeMenu();
   });
+  // 无模型时拦截发送（按钮点击 / 输入框 Enter），给出添加引导。
+  function showNoModelGuidance() {
+    var existing = document.querySelector(".eg-no-model-toast");
+    if (existing) existing.remove();
+    var toast = document.createElement("div");
+    toast.className = "eg-no-model-toast";
+    toast.setAttribute("role", "alert");
+    toast.textContent = "尚未添加模型提供商：点击「未配置模型」按钮，添加你的 API 提供商后即可开始对话。";
+    document.body.append(toast);
+    window.setTimeout(function () { toast.remove(); }, 4500);
+  }
+  function interceptSend(event) {
+    if (!document.body.classList.contains("eg-no-models")) return;
+    var submit = event.target.closest && event.target.closest("#chat-submit");
+    var isEnter =
+      event.type === "keydown" &&
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      event.target &&
+      (event.target.id === "chat-input" || event.target.closest?.("#message-composer"));
+    if (!submit && !isEnter) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    showNoModelGuidance();
+  }
+  document.addEventListener("click", interceptSend, true);
+  document.addEventListener("keydown", interceptSend, true);
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape") {
       if (addDialog) {

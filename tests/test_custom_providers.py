@@ -175,10 +175,13 @@ class TutorServiceCustomProviderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.service.select_provider(other, entry["selection"])
 
-    def test_builtin_selection_still_works(self):
+    def test_no_server_fallback_provider(self):
+        # 无 providers.json 时不存在服务端兜底：default 为空、不可选择。
         context = self.service.new_context("s3", principal_id="student-a")
-        self.service.select_provider(context, self.service.providers.default)
-        self.assertEqual(context.provider_selection, self.service.providers.default)
+        self.assertEqual(self.service.providers.default, "")
+        self.assertEqual(context.provider_selection, "")
+        with self.assertRaises(ValueError):
+            self.service.select_provider(context, "")
 
     def test_remove_custom_provider(self):
         entry = self.service.register_custom_provider(

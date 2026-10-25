@@ -1,4 +1,5 @@
 """Latency regressions: overlap reviews without weakening gates or budgets."""
+
 import asyncio
 import threading
 import unittest
@@ -9,9 +10,19 @@ from unittest.mock import AsyncMock, patch
 
 from algosage.config import Settings
 from algosage.invocation import generate, turn_ledger, TurnBudgetExceeded
-from algosage.leakage_guard import LayeredOutputGuard, LLMLeakageJudge, LLMAnswerQualityReviewer
+from algosage.leakage_guard import (
+    LayeredOutputGuard,
+    LLMLeakageJudge,
+    LLMAnswerQualityReviewer,
+)
 from algosage.pipeline import AlgoSageTutor
-from algosage.schemas import AuditResult, Intent, LLMResult, PolicyDecision, TutorRequest
+from algosage.schemas import (
+    AuditResult,
+    Intent,
+    LLMResult,
+    PolicyDecision,
+    TutorRequest,
+)
 
 DRAFT = "稳定排序保留相同键值元素的原相对顺序。" * 6
 DECISION = PolicyDecision(Intent.KNOWLEDGE, 1, "concept")
@@ -31,14 +42,30 @@ class ParallelReviewTests(unittest.TestCase):
         class Judge:
             def review(self, draft, *args):
                 generate(backend, [], stage="judge")
-                return AuditResult(safety_ok, draft if safety_ok else "blocked", "pass" if safety_ok else "judge_leak")
+                return AuditResult(
+                    safety_ok,
+                    draft if safety_ok else "blocked",
+                    "pass" if safety_ok else "judge_leak",
+                )
 
         class Quality:
             def review(self, *args):
                 generate(backend, [], stage="quality")
-                return ({"kind": "factual", "quote": "原相对顺序", "reason": "controlled"},) if quality_issue else ()
+                return (
+                    (
+                        {
+                            "kind": "factual",
+                            "quote": "原相对顺序",
+                            "reason": "controlled",
+                        },
+                    )
+                    if quality_issue
+                    else ()
+                )
 
-        guard = LayeredOutputGuard(judge=Judge(), quality_reviewer=Quality(), parallel_reviews=True)
+        guard = LayeredOutputGuard(
+            judge=Judge(), quality_reviewer=Quality(), parallel_reviews=True
+        )
         with turn_ledger(Settings(max_calls_per_turn=3)) as ledger:
             result = guard.review(DRAFT, DECISION, True)
         return result, ledger
@@ -62,16 +89,25 @@ class ParallelReviewTests(unittest.TestCase):
 
     def test_optional_review_does_not_steal_judge_repair_budget(self):
         class Backend:
-            def __init__(self): self.calls = 0
+            def __init__(self):
+                self.calls = 0
+
             def generate(self, messages):
                 self.calls += 1
-                text = "bad json" if self.calls == 1 else '{"leaked":false,"categories":[],"confidence":0.99,"disclosures":[]}'
+                text = (
+                    "bad json"
+                    if self.calls == 1
+                    else '{"leaked":false,"categories":[],"confidence":0.99,"disclosures":[]}'
+                )
                 return LLMResult(text, "controlled", 2, 1)
 
         backend = Backend()
         settings = Settings(mode="api", max_calls_per_turn=2)
-        guard = LayeredOutputGuard(judge=LLMLeakageJudge(backend, settings),
-            quality_reviewer=LLMAnswerQualityReviewer(backend, settings), parallel_reviews=True)
+        guard = LayeredOutputGuard(
+            judge=LLMLeakageJudge(backend, settings),
+            quality_reviewer=LLMAnswerQualityReviewer(backend, settings),
+            parallel_reviews=True,
+        )
         with turn_ledger(settings) as ledger:
             result = guard.review(DRAFT, DECISION, True)
         self.assertTrue(result.approved, result.reason)
@@ -80,17 +116,26 @@ class ParallelReviewTests(unittest.TestCase):
 
     def test_unknown_safety_never_becomes_quality_approval(self):
         class Unknown:
-            def review(self, *args): return None
+            def review(self, *args):
+                return None
+
         class Quality:
-            def review(self, *args): return ()
-        result = LayeredOutputGuard(judge=Unknown(), quality_reviewer=Quality(), parallel_reviews=True).review(DRAFT, DECISION, True)
+            def review(self, *args):
+                return ()
+
+        result = LayeredOutputGuard(
+            judge=Unknown(), quality_reviewer=Quality(), parallel_reviews=True
+        ).review(DRAFT, DECISION, True)
         self.assertFalse(result.approved)
         self.assertEqual(result.status, "unknown")
 
     def test_three_slots_cover_parallel_quality_and_two_judge_calls(self):
         barrier = threading.Barrier(2)
+
         class Backend:
-            def __init__(self): self.judged = 0
+            def __init__(self):
+                self.judged = 0
+
             def generate(self, messages):
                 if "独立知识点" in messages[0]["content"]:
                     barrier.wait(timeout=2)
@@ -103,25 +148,34 @@ class ParallelReviewTests(unittest.TestCase):
                     else:
                         text = '{"leaked":false,"categories":[],"confidence":0.99,"disclosures":[]}'
                 return LLMResult(text, "controlled", 2, 1)
+
         backend = Backend()
         settings = Settings(mode="api", max_calls_per_turn=3)
-        guard = LayeredOutputGuard(judge=LLMLeakageJudge(backend, settings),
-            quality_reviewer=LLMAnswerQualityReviewer(backend, settings), parallel_reviews=True)
+        guard = LayeredOutputGuard(
+            judge=LLMLeakageJudge(backend, settings),
+            quality_reviewer=LLMAnswerQualityReviewer(backend, settings),
+            parallel_reviews=True,
+        )
         with turn_ledger(settings) as ledger:
             result = guard.review(DRAFT, DECISION, True)
         self.assertTrue(result.approved, result.reason)
-        self.assertCountEqual([c["stage"] for c in ledger.calls], ["judge", "judge", "quality"])
+        self.assertCountEqual(
+            [c["stage"] for c in ledger.calls], ["judge", "judge", "quality"]
+        )
         self.assertEqual(backend.judged, 2)
 
     def test_concurrent_calls_cannot_exceed_shared_budget(self):
         class Backend:
-            def generate(self, messages): return LLMResult("ok", "controlled", 1, 1)
+            def generate(self, messages):
+                return LLMResult("ok", "controlled", 1, 1)
+
         def call():
             try:
                 generate(Backend(), [], stage="quality")
                 return True
             except TurnBudgetExceeded:
                 return False
+
         with turn_ledger(Settings(max_calls_per_turn=1)) as ledger:
             with ThreadPoolExecutor(max_workers=8) as pool:
                 futures = [pool.submit(copy_context().run, call) for _ in range(16)]
@@ -135,9 +189,14 @@ class ResponseBudgetTests(unittest.TestCase):
         class Backend:
             def generate_with_options(self, messages, **options):
                 self.options = options
-                return LLMResult("稳定排序保持相同键值的原相对顺序。", "controlled", 1, 1)
+                return LLMResult(
+                    "稳定排序保持相同键值的原相对顺序。", "controlled", 1, 1
+                )
+
         backend = Backend()
-        AlgoSageTutor(backend, Settings(max_output_tokens=cap)).respond(TutorRequest(question))
+        AlgoSageTutor(backend, Settings(max_output_tokens=cap)).respond(
+            TutorRequest(question)
+        )
         return backend.options["max_output_tokens"]
 
     def test_simple_concept_gets_smaller_generation_budget(self):
@@ -163,21 +222,34 @@ class ResponseBudgetTests(unittest.TestCase):
 class DeliveryLatencyTests(unittest.IsolatedAsyncioTestCase):
     async def test_default_delivery_has_no_artificial_sleeps(self):
         from chainlit_app import deliver_response
+
         reply = SimpleNamespace(stream_token=AsyncMock(), send=AsyncMock())
         text = "已审核的回答" * 100
         with patch("chainlit_app.asyncio.sleep", new_callable=AsyncMock) as sleep:
             await deliver_response(reply, text)
         sleep.assert_not_awaited()
-        self.assertEqual("".join(c.args[0] for c in reply.stream_token.await_args_list), text)
+        self.assertEqual(
+            "".join(c.args[0] for c in reply.stream_token.await_args_list), text
+        )
         reply.send.assert_awaited_once()
 
 
 class TimingPrivacyTests(unittest.TestCase):
     def test_timing_summary_excludes_drafts_prompts_and_judge_output(self):
         from algosage.invocation import timing_summary
-        calls = [{"stage": "judge", "status": "ok", "latency_ms": 8,
-            "start_offset_ms": 3, "input_tokens": 10, "output_tokens": 2,
-            "response_text": "PRIVATE_JUDGE_OUTPUT", "draft": "PRIVATE_DRAFT"}]
+
+        calls = [
+            {
+                "stage": "judge",
+                "status": "ok",
+                "latency_ms": 8,
+                "start_offset_ms": 3,
+                "input_tokens": 10,
+                "output_tokens": 2,
+                "response_text": "PRIVATE_JUDGE_OUTPUT",
+                "draft": "PRIVATE_DRAFT",
+            }
+        ]
         summary = timing_summary(calls)
         self.assertEqual(summary[0]["latency_ms"], 8)
         self.assertNotIn("PRIVATE", str(summary))
