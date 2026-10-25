@@ -137,6 +137,12 @@
   display: none !important;
 }
 
+/* 重命名对话弹窗：原生 label 是 inline + leading-none，与输入框只剩 ~3px 间距。 */
+[role="dialog"]:has(input#name) label[for="name"] {
+  display: block;
+  margin-bottom: 8px;
+}
+
 /* 个人信息弹窗沿用应用变量和动效，深浅主题由 CSS 变量自然切换。 */
 #eg-profile-overlay {
   position: fixed;
