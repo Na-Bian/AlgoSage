@@ -1008,10 +1008,14 @@ main .ai-message .message-content ~ div button svg {
 }
 
 .eg-add-status {
-  min-height: 18px;
+  /* 空状态不占位：有提示文字时才展开，避免按钮下方常年空出一截。 */
+  min-height: 0;
   margin-top: 9px;
   color: hsl(var(--muted-foreground));
   font-size: .78rem;
+}
+.eg-add-status:empty {
+  display: none;
 }
 
 .eg-add-status.eg-model-error { color: hsl(var(--destructive)); }
