@@ -422,14 +422,15 @@
         <label class="eg-add-field">API Key<input type="password" data-field="api_key" placeholder="sk-…" autocomplete="off"></label>
         <div class="eg-add-actions">
           <button type="button" class="eg-add-secondary" data-action="cancel">取消</button>
-          <button type="button" class="eg-add-primary" data-action="discover">获取模型列表</button>
+          <button type="button" class="eg-add-secondary" data-action="discover">获取模型列表</button>
+          <button type="button" class="eg-add-primary" data-action="confirm">确认</button>
         </div>
         <div class="eg-add-results" hidden></div>
       </div>
     `;
     document.body.append(addDialog);
     // 不做"点空白关闭"：填到一半的 Base URL/API Key 不该被一次误点清空。
-    // 关闭只走"取消"按钮或 Esc。
+    // 关闭只走"取消"/"确认"按钮或 Esc。
     addDialog.addEventListener("click", function (event) {
       if (event.target === addDialog) {
         event.preventDefault();
@@ -437,6 +438,12 @@
       }
     });
     addDialog.querySelector('[data-action="cancel"]').addEventListener("click", closeAddDialog);
+    // 确认：关闭对话框，并借一次面板提交让服务端重发"默认模型"列表
+    // （提供商增删发生在 HTTP 路由里，服务端无法从那里推送 ChatSettings）。
+    addDialog.querySelector('[data-action="confirm"]').addEventListener("click", function () {
+      closeAddDialog();
+      if (window.AlgoSageSettingsAutoSave) window.AlgoSageSettingsAutoSave.refresh();
+    });
     addDialog.querySelector('[data-action="discover"]').addEventListener("click", function () {
       discoverInDialog();
     });

@@ -224,4 +224,9 @@
   window.addEventListener("mousedown", swallowOverlayClose, true);
   window.addEventListener("click", swallowOverlayClose, true);
 
+  // 管理模型提供商对话框的"确认"：面板里其它控件变更都由即时保存提交，
+  // 但提供商增删发生在 HTTP 路由里（服务端无法从那里推送 ChatSettings），
+  // 需要借一次面板提交让服务端重发"默认模型"列表。
+  window.AlgoSageSettingsAutoSave = { refresh: scheduleSubmit };
+
 })();
