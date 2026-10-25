@@ -122,6 +122,15 @@
   font-weight: 700;
 }
 
+/* 注入的"个人信息"菜单项不在 Radix 菜单集合里，收不到 data-highlighted；
+   这里补齐与原生菜单项一致的悬停/键盘焦点高亮。 */
+[role="menuitem"]#eg-profile-menu-item:hover,
+[role="menuitem"]#eg-profile-menu-item:focus-visible {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+  outline: none;
+}
+
 /* 个人信息弹窗沿用应用变量和动效，深浅主题由 CSS 变量自然切换。 */
 #eg-profile-overlay {
   position: fixed;
