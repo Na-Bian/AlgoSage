@@ -531,6 +531,8 @@ main .ai-message .message-content ~ div button svg {
 
 :root :is([role="dialog"], [role="menu"], [role="listbox"])[data-state="open"] {
   animation: eg-surface-in var(--eg-motion-enter) var(--eg-motion-ease) both;
+  /* 悬浮层阴影：Radix 菜单、下拉弹层与居中对话框统一浮起。 */
+  box-shadow: var(--eg-shadow-2);
 }
 :root :is([role="dialog"], [role="menu"], [role="listbox"])[data-state="closed"] {
   animation: eg-surface-out var(--eg-motion-exit) var(--eg-motion-ease) both;
@@ -602,7 +604,7 @@ main .ai-message .message-content ~ div button svg {
   border-radius: 16px;
   background: hsl(var(--popover));
   color: hsl(var(--popover-foreground));
-  box-shadow: 0 18px 50px rgb(2 6 23 / .18);
+  box-shadow: var(--eg-shadow-3);
   /* 与原生弹窗一致的上浮入场；关闭由 JS 在移除前加 eg-menu-closing。 */
   animation: eg-surface-in var(--eg-motion-enter) var(--eg-motion-ease) both;
 }
@@ -884,7 +886,7 @@ main .ai-message .message-content ~ div button svg {
   border-radius: 16px;
   padding: 18px 18px 14px;
   background: hsl(var(--background));
-  box-shadow: 0 24px 70px hsl(0 0% 0% / .28);
+  box-shadow: var(--eg-shadow-3);
   overflow-y: auto;
   /* 与原生弹窗一致的上浮入场动画。 */
   animation: eg-surface-in var(--eg-motion-enter) var(--eg-motion-ease) both;
@@ -1146,6 +1148,37 @@ body.eg-sidebar-restoring :is(
 }
 
 /* 设置面板与主区一起展开；关闭由 JS 等待原生操作前的退出动画。 */
+/* ---------- 分层阴影体系 ----------
+   控件层（--eg-shadow-1）：输入框、下拉框、开关、小按钮。
+   悬浮层（--eg-shadow-2）：模型菜单、头像菜单、下拉弹层、设置抽屉。
+   模态层（--eg-shadow-3）：居中对话框、管理提供商弹窗。 */
+
+/* 控件层：设置面板与聊天内的下拉框、输入框。 */
+:root [data-panel] input,
+:root [data-panel] [role="combobox"],
+:root [data-panel] button[role="switch"],
+#message-composer [role="combobox"] {
+  box-shadow: var(--eg-shadow-1);
+  transition: box-shadow var(--eg-motion-fast) var(--eg-motion-ease),
+    border-color var(--eg-motion-fast) var(--eg-motion-ease);
+}
+:root [data-panel] input:focus,
+:root [data-panel] [role="combobox"]:focus,
+:root [data-panel] [role="combobox"][aria-expanded="true"],
+#message-composer [role="combobox"]:focus,
+#message-composer [role="combobox"][aria-expanded="true"] {
+  box-shadow: var(--chat-focus-ring), var(--eg-shadow-1);
+}
+
+/* 模型选择按钮与发送键：轻微浮起。 */
+.eg-model-button {
+  box-shadow: var(--eg-shadow-1);
+}
+.eg-model-button:hover,
+.eg-model-button:focus-visible {
+  box-shadow: var(--eg-shadow-2);
+}
+
 :root [data-panel]:has(#chat-settings-sidebar-title) {
   min-width: 0;
   transform: none;
@@ -1154,6 +1187,17 @@ body.eg-sidebar-restoring :is(
 }
 @starting-style {
   :root [data-panel]:has(#chat-settings-sidebar-title) { flex-grow: 0 !important; }
+}
+/* 抽屉阴影：宽面板朝主区一侧投；窄视口 dialog 模式用模态层阴影。 */
+:root [data-panel]:has(#chat-settings-sidebar-title) {
+  box-shadow: -18px 0 48px hsl(0 0% 0% / .07);
+}
+:root.dark [data-panel]:has(#chat-settings-sidebar-title) {
+  box-shadow: -18px 0 48px rgb(0 0 0 / .34);
+}
+:root [data-panel][role="dialog"]:has(#chat-settings-sidebar-title),
+:root [role="dialog"][data-state="open"]:has(#chat-settings-sidebar-title) {
+  box-shadow: var(--eg-shadow-3);
 }
 /* 窄视口下抽屉可被拖得很窄；按钮行允许换行，避免"确认"被裁切。 */
 :root [data-panel]:has(#chat-settings-sidebar-title) .flex.gap-2.border-t {
@@ -1249,6 +1293,10 @@ body.eg-chat-shell main div.flex.flex-col.flex-grow.overflow-y-auto:has(div[id^=
   --chat-card-shadow: 0 12px 38px rgba(42, 52, 100, .055);
   --chat-primary-gradient: linear-gradient(105deg, #3786f8 0%, #5a65f3 55%, #7945ee 100%);
   --chat-focus-ring: 0 0 0 3px rgba(91, 135, 247, .14);
+  /* 分层阴影：控件(1) / 悬浮面板(2) / 模态弹窗(3)，深浅主题各配一套。 */
+  --eg-shadow-1: 0 1px 2px rgba(42, 52, 100, .06), 0 2px 8px rgba(42, 52, 100, .05);
+  --eg-shadow-2: 0 4px 14px rgba(42, 52, 100, .08), 0 12px 32px rgba(42, 52, 100, .09);
+  --eg-shadow-3: 0 8px 24px rgba(42, 52, 100, .1), 0 28px 70px rgba(42, 52, 100, .14);
 }
 
 :root.dark {
@@ -1257,6 +1305,10 @@ body.eg-chat-shell main div.flex.flex-col.flex-grow.overflow-y-auto:has(div[id^=
   --chat-card-shadow: 0 24px 68px rgba(0, 0, 0, .28);
   --chat-primary-gradient: linear-gradient(105deg, #3388ff 0%, #5264f5 50%, #7b3ef2 100%);
   --chat-focus-ring: 0 0 0 3px rgba(91, 135, 247, .16);
+  /* 深色下阴影要更重、更收敛，靠边界亮线补层次。 */
+  --eg-shadow-1: 0 1px 2px rgba(0, 0, 0, .4), 0 2px 8px rgba(0, 0, 0, .3);
+  --eg-shadow-2: 0 4px 14px rgba(0, 0, 0, .42), 0 14px 36px rgba(0, 0, 0, .4);
+  --eg-shadow-3: 0 8px 24px rgba(0, 0, 0, .45), 0 32px 80px rgba(0, 0, 0, .5);
 }
 
 /* Ambient canvas: the opaque sidebar and cards sit above this atmosphere. */
