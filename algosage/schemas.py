@@ -43,6 +43,9 @@ class TutorRequest:
     question_id: str = ""
     # 由前端经服务端解析后的附件；文档文本与图片数据均视为不可信输入。
     attachments: tuple[AttachmentPayload, ...] = ()
+    # 每次会话的生成选项（用户在输入区切换）：思考模式与联网搜索透传。
+    deep_think: bool = False
+    web_search: bool = False
 
     @property
     def attachment_text(self) -> str:
@@ -78,6 +81,8 @@ class LLMResult:
     model: str
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    # 上游思考模型返回的推理过程（OpenAI 兼容 reasoning_content）；默认空。
+    reasoning: str = ""
 
 
 @dataclass(frozen=True)
@@ -124,3 +129,5 @@ class TutorResponse:
     # Developer-side evidence only; never include these fields in student metadata.
     call_trace: tuple[dict, ...] = ()
     audit_attempts: tuple[dict, ...] = ()
+    # 思考模型的推理过程；考试学习保护模式下不返回（防止推理泄漏答案）。
+    reasoning: str = ""

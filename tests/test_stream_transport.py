@@ -64,7 +64,11 @@ class StreamingTransportTests(unittest.TestCase):
             [{"role": "user", "content": "question"}], max_output_tokens=10, timeout=2
         )
 
-        self.assertEqual(result, LLMResult("visible answer", "stream-model", 3, 2))
+        # reasoning_content 增量也被收集（思考模型支持）。
+        self.assertEqual(
+            result,
+            LLMResult("visible answer", "stream-model", 3, 2, reasoning="hidden"),
+        )
         self.assertTrue(stream.closed)
         kwargs = backend.client.chat.completions.create.call_args.kwargs
         self.assertTrue(kwargs["stream"])

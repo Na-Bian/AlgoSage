@@ -36,9 +36,7 @@ class TurnLedger:
 _current: ContextVar[TurnLedger | None] = ContextVar(
     "algosage_turn_ledger", default=None
 )
-_streaming: ContextVar[bool] = ContextVar(
-    "algosage_streaming_transport", default=False
-)
+_streaming: ContextVar[bool] = ContextVar("algosage_streaming_transport", default=False)
 
 
 @contextmanager
@@ -74,11 +72,25 @@ def remaining_call_budget():
 
 def timing_summary(calls):
     """Only counters and durations may enter ordinary performance logs."""
-    fields = {"stage", "status", "start_offset_ms", "latency_ms", "input_tokens", "output_tokens"}
+    fields = {
+        "stage",
+        "status",
+        "start_offset_ms",
+        "latency_ms",
+        "input_tokens",
+        "output_tokens",
+    }
     return [{key: call[key] for key in fields if key in call} for call in calls]
 
 
-def generate(backend, messages, stage="generation", max_output_tokens=None, sampling=None):
+def generate(
+    backend,
+    messages,
+    stage="generation",
+    max_output_tokens=None,
+    sampling=None,
+    extra_body_overrides=None,
+):
     ledger = _current.get()
     remaining = None
     started = time.monotonic()
@@ -108,6 +120,7 @@ def generate(backend, messages, stage="generation", max_output_tokens=None, samp
                 max_output_tokens=max_output_tokens,
                 timeout=remaining,
                 sampling=sampling,
+                extra_body_overrides=extra_body_overrides,
             )
         elif hasattr(backend, "generate_with_options"):
             result = backend.generate_with_options(
@@ -115,6 +128,7 @@ def generate(backend, messages, stage="generation", max_output_tokens=None, samp
                 max_output_tokens=max_output_tokens,
                 timeout=remaining,
                 sampling=sampling,
+                extra_body_overrides=extra_body_overrides,
             )
         else:
             result = backend.generate(messages)

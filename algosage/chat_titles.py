@@ -55,9 +55,11 @@ def extractive_fallback(source: str) -> str | None:
     )
     for clause in re.split(r"[，。！？；\n,!?;]", text):
         clause = re.sub(r"的(?:含义|定义|概念)$", "", clause.strip())
-        candidate = "".join(
-            c for c in clause if c.isalnum() or c in " _-+/·().（）"
-        ).strip()[:24].strip()
+        candidate = (
+            "".join(c for c in clause if c.isalnum() or c in " _-+/·().（）")
+            .strip()[:24]
+            .strip()
+        )
         if valid_title(candidate, source):
             return candidate
     return None
@@ -94,7 +96,9 @@ def generate_title(backend, settings, question: str, timeout: float = 8) -> str 
                 return title
             logger.info("Title outcome=extractive_fallback reason=invalid_candidate")
             return extractive_fallback(source)
-        except Exception as error:  # noqa: BLE001 - optional title failures must not affect chat
+        except (
+            Exception
+        ) as error:  # noqa: BLE001 - optional title failures must not affect chat
             logger.info("Title generation skipped error_type=%s", type(error).__name__)
             logger.info("Title outcome=extractive_fallback reason=provider_error")
             return extractive_fallback(source)

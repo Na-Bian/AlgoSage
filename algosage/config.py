@@ -74,7 +74,11 @@ class Settings:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
-        for name in ("max_input_chars", "daily_requests_per_student", "global_daily_requests"):
+        for name in (
+            "max_input_chars",
+            "daily_requests_per_student",
+            "global_daily_requests",
+        ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
@@ -99,7 +103,9 @@ class Settings:
         token_parameter = os.environ.get("LLM_TOKEN_PARAMETER", "max_tokens")
         if token_parameter not in {"max_tokens", "max_completion_tokens"}:
             raise ValueError("Unsupported LLM_TOKEN_PARAMETER")
-        classifier_mode = os.environ.get("SAGE_CLASSIFIER_MODE", "regex").lower().strip()
+        classifier_mode = (
+            os.environ.get("SAGE_CLASSIFIER_MODE", "regex").lower().strip()
+        )
         if classifier_mode not in {"regex", "hybrid"}:
             raise ValueError("SAGE_CLASSIFIER_MODE must be regex or hybrid")
         output_guard = os.environ.get("SAGE_OUTPUT_GUARD", "rules").lower().strip()
@@ -135,9 +141,7 @@ class Settings:
             extra_body=extra_body,
             question_id=os.environ.get("SAGE_QUESTION_ID", "").strip(),
             exam_id=os.environ.get("SAGE_EXAM_ID", "demo").strip(),
-            state_path=runtime_path(
-                "SAGE_STATE_FILE", ".algosage/state.sqlite3"
-            ),
+            state_path=runtime_path("SAGE_STATE_FILE", ".algosage/state.sqlite3"),
             max_calls_per_turn=int(os.environ.get("SAGE_MAX_CALLS_PER_TURN", "9")),
             max_input_chars=int(os.environ.get("SAGE_MAX_INPUT_CHARS", "20000")),
             daily_requests_per_student=int(

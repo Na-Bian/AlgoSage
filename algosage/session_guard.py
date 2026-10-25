@@ -15,7 +15,12 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .leakage_guard import code_block_line_counts, has_proof_completion, has_transition, has_pseudocode_declaration
+from .leakage_guard import (
+    code_block_line_counts,
+    has_proof_completion,
+    has_transition,
+    has_pseudocode_declaration,
+)
 from .schemas import AuditResult, Classification, Intent, PolicyDecision, TutorRequest
 from .content_analysis import (
     novel_text,
@@ -259,7 +264,9 @@ class SessionGuard:
 
     def _recent_states(self):
         # Activity is serialized, so key order after persistence is irrelevant.
-        return sorted(self._states.items(), key=lambda pair: pair[1].last_active, reverse=True)
+        return sorted(
+            self._states.items(), key=lambda pair: pair[1].last_active, reverse=True
+        )
 
     # ------------------------------------------------------------------
     # 题目定位（关联规则见模块 docstring）
@@ -272,7 +279,12 @@ class SessionGuard:
         kw = extract_keywords(request.question)
         # Explicit anaphora must not reset a problem merely because its next
         # request is labeled 'knowledge'. Distinct named topics still separate.
-        followup = bool(re.search(r"接着|继续|刚才|前面|上述|这道题|该题|那(?:么)?[，,]?.{0,8}(?:状态|边界|初始化|循环|转移)", request.question))
+        followup = bool(
+            re.search(
+                r"接着|继续|刚才|前面|上述|这道题|该题|那(?:么)?[，,]?.{0,8}(?:状态|边界|初始化|循环|转移)",
+                request.question,
+            )
+        )
         if followup and not kw:
             for key, state in self._recent_states():
                 if not key.startswith("qid:"):
@@ -342,7 +354,9 @@ class SessionGuard:
         policy: PolicyDecision,
     ):
         state = self._locate(request, classification.intent)
-        state.last_active = max((s.last_active for s in self._states.values()), default=0) + 1
+        state.last_active = (
+            max((s.last_active for s in self._states.values()), default=0) + 1
+        )
         cap = self._cap_for(state.risk_score, classification.intent)
         if cap is None or not policy.max_help_level:
             return state, None
@@ -374,11 +388,18 @@ class SessionGuard:
         """Check the final candidate before any disclosure is committed or delivered."""
         text = novel_text(audit.output, request.existing_code, keep_refusals=True)
         disclosures = set(
-            detect_disclosures(audit.output, classification.intent, policy.max_help_level, request.existing_code)
+            detect_disclosures(
+                audit.output,
+                classification.intent,
+                policy.max_help_level,
+                request.existing_code,
+            )
         ) | set(audit.disclosures)
         combined = set(state.disclosed_elements) | disclosures
         reason = None
-        semantic_reason = core_budget_reason(disclosures, state.disclosed_elements, policy.max_help_level)
+        semantic_reason = core_budget_reason(
+            disclosures, state.disclosed_elements, policy.max_help_level
+        )
         if semantic_reason:
             reason = semantic_reason
         if {"algorithm_choice", "state_definition", "transition"}.issubset(
@@ -450,7 +471,8 @@ class SessionGuard:
                 classification.intent,
                 policy.max_help_level,
                 request.existing_code,
-            ) + list(audit.disclosures)
+            )
+            + list(audit.disclosures)
             if audit.approved and audit.reason != "policy_denial"
             else []
         )
@@ -488,7 +510,9 @@ class SessionGuard:
             )[:8]
             # Keep the complete approved prose, including refusals followed by
             # content; a missed static signal must not hide history from Judge.
-            disclosed_text = novel_text(audit.output, request.existing_code, keep_refusals=True)
+            disclosed_text = novel_text(
+                audit.output, request.existing_code, keep_refusals=True
+            )
             if disclosed_text and disclosed_text not in state.disclosure_texts:
                 state.disclosure_texts.append(disclosed_text)
         state.turns += 1

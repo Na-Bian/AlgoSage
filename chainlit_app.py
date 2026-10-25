@@ -715,6 +715,27 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         )
         return {"success": True, "preferences": saved}
 
+    @preferences_router.post("/chat/options", include_in_schema=False)
+    async def set_chat_options(payload: dict, current_user: UserParam):
+        """输入区的生成选项（深度思考 / 联网搜索）：账号级即时保存。"""
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        allowed = {"deep_think", "web_search"}
+        preferences = await get_chat_store().load_user_app_preferences(
+            current_user.identifier
+        )
+        changed = {}
+        for key in sorted(allowed):
+            if isinstance(payload, dict) and key in payload:
+                preferences[key] = bool(payload[key])
+                changed[key] = preferences[key]
+        if not changed:
+            raise HTTPException(status_code=400, detail="No options provided")
+        await get_chat_store().save_user_app_preferences(
+            current_user.identifier, preferences
+        )
+        return {"success": True, "options": changed}
+
     from algosage.student_auth import _chainlit_router, _move_routes_before_catchall
     from algosage.student_auth import install_profile_routes
 
@@ -722,7 +743,8 @@ try:  # pragma: no cover - exercised through the running Chainlit server
 
     install_student_auth(_chainlit_server_app, get_student_auth)
     _move_routes_before_catchall(
-        _chainlit_router(_chainlit_server_app), ("/auth/preferences",)
+        _chainlit_router(_chainlit_server_app),
+        ("/auth/preferences", "/chat/options"),
     )
     install_profile_routes(
         _chainlit_server_app,
@@ -894,6 +916,11 @@ def _normalize_ui_settings(settings: dict, current: dict | None = None) -> dict:
     elif "font_size" in current:
         normalized["font_size"] = current["font_size"]
     for key in ("autoscroll", "keep_drafts", "animations", "audit_summary"):
+        if key in normalized or key in current:
+            normalized[key] = bool(
+                normalized[key] if key in normalized else current[key]
+            )
+    for key in ("deep_think", "web_search"):
         if key in normalized or key in current:
             normalized[key] = bool(
                 normalized[key] if key in normalized else current[key]
@@ -1233,10 +1260,9 @@ def prepare_message_inputs(
 def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
     """把白名单元数据渲染为前端审计面板（纯函数，便于测试）。
 
-    展示密度由 SAGE_UI_DETAIL 控制（默认 brief 学生视图；full 供研究/调试用）：
-    - brief：一行摘要——意图 · 帮助等级 · 审核结论 ·（会话累计风险非零时）；
-    - full：完整表格（分类方法/置信度/风险标记/审核层/重生成/Token/耗时等）。
-    任何模式都不含系统提示词、API Key 或用户原始输入。
+    展示密度默认 full（完整审计明细开放给学生查看）；设置 SAGE_UI_DETAIL=brief
+    可收紧为一行摘要（研究对照用）。任何模式都不含系统提示词、API Key 或
+    用户原始输入。
     """
     badge = _LEVEL_BADGES.get(meta.get("help_level"), f"L{meta.get('help_level')}")
     if meta.get("audit_reason") == "policy_denial":
@@ -1249,7 +1275,7 @@ def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
         verdict = f"⛔ 已拦截（{meta.get('audit_reason')}）"
     session_risk = meta.get("session_risk")
 
-    if os.environ.get("SAGE_UI_DETAIL", "brief").strip().lower() != "full":
+    if os.environ.get("SAGE_UI_DETAIL", "full").strip().lower() == "brief":
         parts = [f"意图 `{meta.get('intent')}`", badge, verdict]
         if session_risk is not None and float(session_risk) > 0:
             parts.append(f"会话累计风险 {float(session_risk):.2f}")
@@ -1376,6 +1402,13 @@ async def on_message(message: cl.Message) -> None:
 
     latency_ms = int((time.perf_counter() - started) * 1000)
     delivery_started = time.perf_counter()
+    # 思考模型的推理过程：宽松演示模式下以独立可折叠 Step 展示
+    # （前端默认折叠）；学习保护模式下 pipeline 不返回 reasoning，
+    # 防止推理内容泄漏题解。
+    reasoning = (getattr(response, "reasoning", "") or "").strip()
+    if reasoning:
+        async with cl.Step(name="model-reasoning", type="run", icon="brain") as step:
+            step.output = reasoning
     await deliver_response(reply, response.answer)
     logger.info(
         "Turn timing %s",

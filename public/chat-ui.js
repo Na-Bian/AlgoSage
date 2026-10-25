@@ -21,6 +21,7 @@
   const STEP_LABELS = {
     "generation-safety-review": "生成与安全审核",
     "security-audit-policy": "安全审计与策略",
+    "model-reasoning": "思考过程",
   };
 
   function translateStepLabels() {
@@ -35,6 +36,35 @@
           node.textContent = node.textContent.replace(safeName, label);
         }
       });
+      // 思考过程默认折叠：点击标题展开/收起。
+      if (safeName === "model-reasoning") {
+        const container = button.parentElement;
+        if (container && !container.dataset.egReasoningCollapse) {
+          container.dataset.egReasoningCollapse = "collapsed";
+          container.classList.add("eg-reasoning-step");
+          const apply = () => {
+            const collapsed =
+              container.dataset.egReasoningCollapse === "collapsed";
+            let body = container.nextElementSibling;
+            if (body && !body.classList.contains("eg-reasoning-body")) {
+              body.classList.add("eg-reasoning-body");
+            }
+            while (body) {
+              body.style.display = collapsed ? "none" : "";
+              body = body.nextElementSibling;
+              if (!body || body.querySelector?.('button[id^="step-"]')) break;
+            }
+          };
+          apply();
+          button.addEventListener("click", () => {
+            container.dataset.egReasoningCollapse =
+              container.dataset.egReasoningCollapse === "collapsed"
+                ? "open"
+                : "collapsed";
+            apply();
+          });
+        }
+      }
     });
   }
 

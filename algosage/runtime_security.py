@@ -55,5 +55,7 @@ def install_origin_guard(app) -> None:
         if origin and _normalise_origin(origin) not in allowed:
             from fastapi.responses import JSONResponse
 
-            return JSONResponse({"detail": "Cross-origin request rejected"}, status_code=403)
+            return JSONResponse(
+                {"detail": "Cross-origin request rejected"}, status_code=403
+            )
         return await call_next(request)

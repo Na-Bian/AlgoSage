@@ -202,7 +202,9 @@ def _extract_pdf(path: Path) -> str:
     except AttachmentError:
         raise
     except Exception as error:
-        raise AttachmentError("PDF 解析失败；文件可能损坏、加密或格式不受支持") from error
+        raise AttachmentError(
+            "PDF 解析失败；文件可能损坏、加密或格式不受支持"
+        ) from error
 
 
 def _extract_docx(path: Path) -> str:
@@ -379,7 +381,9 @@ def _image_data_url(path: Path) -> tuple[str, str]:
     except AttachmentError:
         raise
     except (UnidentifiedImageError, OSError, ValueError) as error:
-        raise AttachmentError("图片无法读取，请上传有效的 PNG、JPEG 或 WebP 文件") from error
+        raise AttachmentError(
+            "图片无法读取，请上传有效的 PNG、JPEG 或 WebP 文件"
+        ) from error
     except Exception as error:
         raise AttachmentError("图片处理失败；可能是图片过大或已损坏") from error
 
@@ -458,7 +462,9 @@ def prepare_attachment_elements(elements: Iterable[object]) -> PreparedAttachmen
         prepared.append(
             AttachmentPayload(
                 name=name,
-                mime=mime or mimetypes.guess_type(name)[0] or "application/octet-stream",
+                mime=mime
+                or mimetypes.guess_type(name)[0]
+                or "application/octet-stream",
                 kind="document",
                 text=text,
                 size_bytes=size,

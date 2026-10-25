@@ -103,7 +103,8 @@ class MultimodalReviewTests(unittest.TestCase):
         response = tutor(backend).respond(
             TutorRequest("请看图片", attachments=(image(ATTACK),))
         )
-        self.assertEqual(response.audit.reason, "policy_denial")
+        # 越狱意图在生成前拦截（任意模式），reason 独立于考试策略拒答。
+        self.assertEqual(response.audit.reason, "jailbreak_denied")
         self.assertEqual([stage for stage, _ in backend.calls], ["classification"])
 
     def test_all_stages_receive_current_image_in_parallel_and_serial_modes(self):

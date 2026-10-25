@@ -41,7 +41,9 @@ def mask_existing_code(answer: str, existing_code: str) -> str:
     return text
 
 
-def novel_text(answer: str, existing_code: str = "", *, keep_refusals: bool = False) -> str:
+def novel_text(
+    answer: str, existing_code: str = "", *, keep_refusals: bool = False
+) -> str:
     text = answer
     for pattern in _supplied_line_patterns(existing_code):
         text = re.sub(pattern, " [学生原有内容] ", text)

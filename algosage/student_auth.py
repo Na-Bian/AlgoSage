@@ -68,9 +68,9 @@ class AuthConfig:
     def from_env(cls) -> "AuthConfig":
         return cls(
             mode="hust",
-            email_domain=os.environ.get(
-                "SAGE_STUDENT_EMAIL_DOMAIN", "hust.edu.cn"
-            ).strip().lower(),
+            email_domain=os.environ.get("SAGE_STUDENT_EMAIL_DOMAIN", "hust.edu.cn")
+            .strip()
+            .lower(),
             student_id_pattern=os.environ.get(
                 "SAGE_STUDENT_ID_PATTERN", cls.student_id_pattern
             ),
@@ -84,10 +84,14 @@ class AuthConfig:
                 os.environ.get("SAGE_AUTH_CODE_MAX_ATTEMPTS", cls.code_max_attempts)
             ),
             resend_interval_seconds=int(
-                os.environ.get("SAGE_AUTH_CODE_RESEND_SECONDS", cls.resend_interval_seconds)
+                os.environ.get(
+                    "SAGE_AUTH_CODE_RESEND_SECONDS", cls.resend_interval_seconds
+                )
             ),
             account_hourly_limit=int(
-                os.environ.get("SAGE_AUTH_HOURLY_ACCOUNT_LIMIT", cls.account_hourly_limit)
+                os.environ.get(
+                    "SAGE_AUTH_HOURLY_ACCOUNT_LIMIT", cls.account_hourly_limit
+                )
             ),
             ip_hourly_limit=int(
                 os.environ.get("SAGE_AUTH_HOURLY_IP_LIMIT", cls.ip_hourly_limit)
@@ -192,9 +196,15 @@ def install_profile_routes(
     from fastapi import HTTPException, Request, Response
     from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-    profile_html_path = Path(__file__).resolve().parent.parent / "public" / "profile-page.html"
-    security_html_path = Path(__file__).resolve().parent.parent / "public" / "security-page.html"
-    auth_html_path = Path(__file__).resolve().parent.parent / "public" / "auth-page.html"
+    profile_html_path = (
+        Path(__file__).resolve().parent.parent / "public" / "profile-page.html"
+    )
+    security_html_path = (
+        Path(__file__).resolve().parent.parent / "public" / "security-page.html"
+    )
+    auth_html_path = (
+        Path(__file__).resolve().parent.parent / "public" / "auth-page.html"
+    )
 
     def student_auth():
         return student_auth_factory()
@@ -299,7 +309,9 @@ def install_profile_routes(
             raise HTTPException(status_code=403, detail="Cross-origin request rejected")
         content = await request.body()
         try:
-            account = student_auth().update_avatar(student_id=student_id, content=content)
+            account = student_auth().update_avatar(
+                student_id=student_id, content=content
+            )
         except AuthValidationError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         except PermissionError as error:
@@ -417,7 +429,9 @@ def install_profile_routes(
         payload = _profile_payload(account)
         return _issue_profile_cookie(request, account, payload)
 
-    auth_html_path = Path(__file__).resolve().parent.parent / "public" / "auth-page.html"
+    auth_html_path = (
+        Path(__file__).resolve().parent.parent / "public" / "auth-page.html"
+    )
 
     def auth_page(mode: str):
         html = auth_html_path.read_text(encoding="utf-8")
@@ -433,8 +447,10 @@ def install_profile_routes(
         }
         return HTMLResponse(
             html.replace('data-view="login"', f'data-view="{mode}"')
-                .replace('>登录 AlgoSage</h1>', f'>{titles[mode]}</h1>')
-                .replace('<title>登录 · AlgoSage</title>', f'<title>{page_title[mode]}</title>')
+            .replace(">登录 AlgoSage</h1>", f">{titles[mode]}</h1>")
+            .replace(
+                "<title>登录 · AlgoSage</title>", f"<title>{page_title[mode]}</title>"
+            )
         )
 
     @router.get("/login", include_in_schema=False)
@@ -455,10 +471,17 @@ def install_profile_routes(
             return RedirectResponse(url="/", status_code=303)
         return auth_page("reset")
 
-    _move_routes_before_catchall(router, ("/auth/profile", "/auth/avatar", "/profile", "/login", "/register", "/forgot-password"))
-
-
-
+    _move_routes_before_catchall(
+        router,
+        (
+            "/auth/profile",
+            "/auth/avatar",
+            "/profile",
+            "/login",
+            "/register",
+            "/forgot-password",
+        ),
+    )
 
 
 def _now() -> datetime:
@@ -488,8 +511,7 @@ class StudentAuthStore:
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._conn.executescript(
-            """
+        self._conn.executescript("""
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS student_accounts (
                 student_id TEXT PRIMARY KEY,
@@ -521,12 +543,13 @@ class StudentAuthStore:
                 ON verification_codes(purpose, student_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_auth_codes_ip_time
                 ON verification_codes(ip_hash, created_at DESC);
-            """
-        )
+            """)
         self._conn.commit()
         columns = {
             row["name"]
-            for row in self._conn.execute("PRAGMA table_info(student_accounts)").fetchall()
+            for row in self._conn.execute(
+                "PRAGMA table_info(student_accounts)"
+            ).fetchall()
         }
         migrations = {
             "avatar_mime": "ALTER TABLE student_accounts ADD COLUMN avatar_mime TEXT",
@@ -589,7 +612,15 @@ class StudentAuthStore:
                 self._conn.execute(
                     "INSERT INTO student_accounts(student_id,nickname,email,password_hash,status,email_verified_at,created_at,updated_at) "
                     "VALUES(?,?,?,?, 'active', ?, ?, ?)",
-                    (student_id, nickname, email, password_hash, created, created, created),
+                    (
+                        student_id,
+                        nickname,
+                        email,
+                        password_hash,
+                        created,
+                        created,
+                        created,
+                    ),
                 )
                 self._conn.commit()
             except sqlite3.IntegrityError as error:
@@ -660,7 +691,11 @@ class StudentAuthStore:
                 "SELECT attempts, consumed_at, code_hash, expires_at FROM verification_codes WHERE id=?",
                 (row["id"],),
             ).fetchone()
-            if current is None or current["consumed_at"] or _is_expired(current["expires_at"]):
+            if (
+                current is None
+                or current["consumed_at"]
+                or _is_expired(current["expires_at"])
+            ):
                 return False
             if int(current["attempts"]) >= max_attempts:
                 return False
@@ -717,12 +752,15 @@ class StudentAuthStore:
             self._conn.commit()
         return cursor.rowcount > 0
 
-    def mark_login_failure(self, student_id: str, max_attempts: int, lock_seconds: int) -> int:
+    def mark_login_failure(
+        self, student_id: str, max_attempts: int, lock_seconds: int
+    ) -> int:
         now = _now()
         locked_until = _iso(now + timedelta(seconds=lock_seconds))
         with self._lock:
             row = self._conn.execute(
-                "SELECT failed_login_count FROM student_accounts WHERE student_id=?", (student_id,)
+                "SELECT failed_login_count FROM student_accounts WHERE student_id=?",
+                (student_id,),
             ).fetchone()
             if row is None:
                 return 0
@@ -777,13 +815,18 @@ class StudentAuthService:
         if len(password) < self.config.password_min_length:
             raise AuthValidationError(f"密码至少 {self.config.password_min_length} 位")
         lower_password = password.casefold()
-        if student_id.casefold() in lower_password or nickname.casefold() in lower_password:
+        if (
+            student_id.casefold() in lower_password
+            or nickname.casefold() in lower_password
+        ):
             raise AuthValidationError("密码不能包含学号或昵称")
 
     def _check_send_limits(self, purpose: str, student_id: str, ip: str) -> None:
         now = _now()
         latest = self.store.latest_code(
-            purpose, student_id, now - timedelta(seconds=self.config.resend_interval_seconds)
+            purpose,
+            student_id,
+            now - timedelta(seconds=self.config.resend_interval_seconds),
         )
         if latest:
             raise AuthRateLimitError("发送太频繁，请稍后再试")
@@ -863,17 +906,23 @@ class StudentAuthService:
             extra={"nickname": nickname, "password_hash": password_hash},
         )
 
-    def confirm_registration(self, *, student_id: str, code: str) -> AuthenticatedStudent:
+    def confirm_registration(
+        self, *, student_id: str, code: str
+    ) -> AuthenticatedStudent:
         clean_student_id = self._validate_student_id(student_id)
         account = self.store.get_account(clean_student_id)
         if account:
             raise AuthCodeError("验证码无效或已过期")
         row = self.store.latest_code(
-            "register", clean_student_id, _now() - timedelta(seconds=self.config.code_ttl_seconds * 2)
+            "register",
+            clean_student_id,
+            _now() - timedelta(seconds=self.config.code_ttl_seconds * 2),
         )
         if not row:
             raise AuthCodeError("验证码无效或已过期")
-        if not self.store.consume_code(row, self._code_hash(code), self.config.code_max_attempts):
+        if not self.store.consume_code(
+            row, self._code_hash(code), self.config.code_max_attempts
+        ):
             raise AuthCodeError("验证码无效或已过期")
         extra = json.loads(row["extra_json"] or "{}")
         nickname = str(extra.get("nickname", "")).strip()
@@ -931,17 +980,23 @@ class StudentAuthService:
         )
         if not row:
             raise AuthCodeError("验证码无效或已过期")
-        if not self.store.consume_code(row, self._code_hash(code), self.config.code_max_attempts):
+        if not self.store.consume_code(
+            row, self._code_hash(code), self.config.code_max_attempts
+        ):
             raise AuthCodeError("验证码无效或已过期")
         self.store.update_password(clean_student_id, self._hasher.hash(new_password))
 
-    def authenticate(self, student_id: str, password: str) -> AuthenticatedStudent | None:
+    def authenticate(
+        self, student_id: str, password: str
+    ) -> AuthenticatedStudent | None:
         clean_student_id = student_id.strip().upper()
         account = self.store.get_account(clean_student_id)
         if not account:
             # Keep missing and incorrect passwords on a similar hashing path.
             try:
-                self._hasher.verify("$argon2id$v=19$m=65536,t=2,p=1$c29tZXNhbHQ$invalid", password)
+                self._hasher.verify(
+                    "$argon2id$v=19$m=65536,t=2,p=1$c29tZXNhbHQ$invalid", password
+                )
             except Exception:
                 pass
             return None
@@ -1097,22 +1152,26 @@ def _chainlit_router(app: Any):
 
 def _move_routes_before_catchall(router: Any, prefixes: tuple[str, ...]) -> None:
     owned = [
-        (index, route) for index, route in enumerate(router.routes)
+        (index, route)
+        for index, route in enumerate(router.routes)
         if getattr(route, "path", "").startswith(prefixes)
     ]
     if not owned:
         return
     owned_indices = {index for index, route in owned}
     routes = [route for index, route in owned]
-    remaining = [route for index, route in enumerate(router.routes) if index not in owned_indices]
+    remaining = [
+        route for index, route in enumerate(router.routes) if index not in owned_indices
+    ]
     catchall_index = next(
-        (index for index, route in enumerate(remaining)
-         if getattr(route, "path", "") == "/{full_path:path}"),
+        (
+            index
+            for index, route in enumerate(remaining)
+            if getattr(route, "path", "") == "/{full_path:path}"
+        ),
         len(remaining),
     )
     router.routes[:] = remaining[:catchall_index] + routes + remaining[catchall_index:]
-
-
 
 
 def install_student_auth(app: Any, service_factory) -> None:
@@ -1125,6 +1184,7 @@ def install_student_auth(app: Any, service_factory) -> None:
 
     from fastapi import HTTPException
     from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+
     def service():
         return service_factory()
 
@@ -1271,7 +1331,16 @@ def install_student_auth(app: Any, service_factory) -> None:
     async def invalidate_reset_sessions(request: Request, call_next):
         path = request.url.path
         if path.startswith(
-            ("/auth/hust", "/login", "/register", "/forgot-password", "/logout", "/assets", "/public", "/favicon")
+            (
+                "/auth/hust",
+                "/login",
+                "/register",
+                "/forgot-password",
+                "/logout",
+                "/assets",
+                "/public",
+                "/favicon",
+            )
         ):
             return await call_next(request)
         from chainlit.auth import decode_jwt, get_token_from_cookies
@@ -1306,9 +1375,7 @@ def install_student_auth(app: Any, service_factory) -> None:
             return await call_next(request)
         account = service().store.get_account(identifier.removeprefix("student:"))
         expected = int((account or {}).get("session_version", -1))
-        actual = int(
-            (getattr(user, "metadata", None) or {}).get("session_version", -2)
-        )
+        actual = int((getattr(user, "metadata", None) or {}).get("session_version", -2))
         if not account or account.get("status") != "active" or actual != expected:
             from fastapi.responses import RedirectResponse
 
@@ -1320,5 +1387,13 @@ def install_student_auth(app: Any, service_factory) -> None:
 
     _move_routes_before_catchall(
         router,
-        ("/auth/hust/", "/auth/profile", "/auth/profile/close", "/profile/security", "/login", "/register", "/forgot-password"),
+        (
+            "/auth/hust/",
+            "/auth/profile",
+            "/auth/profile/close",
+            "/profile/security",
+            "/login",
+            "/register",
+            "/forgot-password",
+        ),
     )

@@ -1949,3 +1949,54 @@ main div:has(> #messages) { overflow: visible; }
   }
   #message-composer { min-height: 104px !important; }
 }
+
+/* ---------- 输入区生成选项（深度思考 / 联网搜索） ---------- */
+.eg-option-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eg-option-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: .78rem;
+  cursor: pointer;
+  transition: color var(--eg-motion-fast) var(--eg-motion-ease),
+    border-color var(--eg-motion-fast) var(--eg-motion-ease),
+    background-color var(--eg-motion-fast) var(--eg-motion-ease),
+    box-shadow var(--eg-motion-fast) var(--eg-motion-ease);
+}
+
+.eg-option-pill svg { width: 14px; height: 14px; }
+
+.eg-option-pill:hover {
+  border-color: hsl(var(--primary) / .5);
+  color: hsl(var(--foreground));
+}
+
+.eg-option-pill-on,
+.eg-option-pill-on:hover {
+  border-color: hsl(var(--primary) / .6);
+  background: hsl(var(--primary) / .1);
+  color: hsl(var(--primary));
+  box-shadow: var(--eg-shadow-1);
+}
+
+/* ---------- 思考过程 Step：默认折叠、弱化样式 ---------- */
+.eg-reasoning-step button[id^="step-"] { opacity: .78; }
+.eg-reasoning-body {
+  opacity: .72;
+  font-size: .88em;
+  border-left: 2px solid hsl(var(--border));
+  padding-left: 12px;
+  margin: 4px 0 8px;
+}

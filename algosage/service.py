@@ -106,6 +106,9 @@ def normalize_model_params(
             font_size if font_size in {"small", "standard", "large"} else "standard"
         ),
         "audit_summary": optional_bool("audit_summary", True),
+        # 输入区生成选项（深度思考 / 联网搜索）：随账号偏好保存并透传生成请求。
+        "deep_think": optional_bool("deep_think", False),
+        "web_search": optional_bool("web_search", False),
     }
 
 
@@ -450,6 +453,8 @@ class TutorService:
             exam_mode=context.exam_mode,
             question_id=question_id,
             attachments=tuple(attachments),
+            deep_think=bool(context.model_params.get("deep_think")),
+            web_search=bool(context.model_params.get("web_search")),
         )
         return self._selected_tutor(context).respond(
             request,

@@ -66,6 +66,7 @@ class OpenAICompatibleBackend:
         max_output_tokens=None,
         timeout=None,
         sampling=None,
+        extra_body_overrides=None,
     ) -> LLMResult:
         kwargs = {
             "model": self.settings.model,
@@ -79,19 +80,32 @@ class OpenAICompatibleBackend:
             ),
         }
         if isinstance(sampling, dict):
-            for key in ("temperature", "top_p", "frequency_penalty", "presence_penalty"):
+            for key in (
+                "temperature",
+                "top_p",
+                "frequency_penalty",
+                "presence_penalty",
+            ):
                 if key in sampling:
                     kwargs[key] = sampling[key]
-        if self.settings.extra_body:
-            kwargs["extra_body"] = dict(self.settings.extra_body)
+        extra = dict(self.settings.extra_body)
+        if isinstance(extra_body_overrides, dict):
+            extra.update(extra_body_overrides)
+        if extra:
+            kwargs["extra_body"] = extra
         completion = self.client.chat.completions.create(**kwargs)
-        content = completion.choices[0].message.content or ""
+        message = completion.choices[0].message
+        content = message.content or ""
+        reasoning = getattr(message, "reasoning_content", None) or getattr(
+            message, "reasoning", None
+        )
         usage = completion.usage
         return LLMResult(
             text=content,
             model=completion.model or self.settings.model,
             input_tokens=getattr(usage, "prompt_tokens", None),
             output_tokens=getattr(usage, "completion_tokens", None),
+            reasoning=str(reasoning) if isinstance(reasoning, str) else "",
         )
 
     def generate_stream_with_options(
@@ -101,6 +115,7 @@ class OpenAICompatibleBackend:
         max_output_tokens=None,
         timeout=None,
         sampling=None,
+        extra_body_overrides=None,
     ) -> LLMResult:
         effective_timeout = (
             min(self.settings.timeout, timeout)
@@ -118,15 +133,24 @@ class OpenAICompatibleBackend:
             "stream_options": {"include_usage": True},
         }
         if isinstance(sampling, dict):
-            for key in ("temperature", "top_p", "frequency_penalty", "presence_penalty"):
+            for key in (
+                "temperature",
+                "top_p",
+                "frequency_penalty",
+                "presence_penalty",
+            ):
                 if key in sampling:
                     kwargs[key] = sampling[key]
-        if self.settings.extra_body:
-            kwargs["extra_body"] = dict(self.settings.extra_body)
+        extra = dict(self.settings.extra_body)
+        if isinstance(extra_body_overrides, dict):
+            extra.update(extra_body_overrides)
+        if extra:
+            kwargs["extra_body"] = extra
 
         deadline = time.monotonic() + effective_timeout
         stream = self.client.chat.completions.create(**kwargs)
         parts = []
+        reasoning_parts = []
         finish_reason = None
         usage = None
         model = self.settings.model
@@ -150,6 +174,11 @@ class OpenAICompatibleBackend:
                         accumulated_chars += len(content)
                         if accumulated_chars > char_cap:
                             raise ValueError("流式响应超过允许的累积长度")
+                    reasoning_delta = getattr(
+                        delta, "reasoning_content", None
+                    ) or getattr(delta, "reasoning", None)
+                    if isinstance(reasoning_delta, str):
+                        reasoning_parts.append(reasoning_delta)
             if time.monotonic() > deadline:
                 raise TimeoutError("流式响应超过本轮截止时间")
             if finish_reason != "stop":
@@ -160,6 +189,7 @@ class OpenAICompatibleBackend:
                 model=model,
                 input_tokens=getattr(usage, "prompt_tokens", None),
                 output_tokens=getattr(usage, "completion_tokens", None),
+                reasoning="".join(reasoning_parts),
             )
         finally:
             close = getattr(stream, "close", None)

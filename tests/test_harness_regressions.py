@@ -318,7 +318,8 @@ class RunnerRegressions(unittest.TestCase):
             None,
         )
         self.assertTrue(record["approved"])
-        self.assertEqual(record["audit_reason"], "policy_denial")
+        # 越狱在生成前置拦截（任意模式），reason 与 exam 策略拒答区分。
+        self.assertEqual(record["audit_reason"], "jailbreak_denied")
         self.assertEqual(record["call_trace"], [])
         self.assertEqual(record["input_tokens"], 0)
         runner._attach_evaluation(
