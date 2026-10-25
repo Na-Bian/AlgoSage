@@ -182,6 +182,7 @@
       if (event.target !== surface.previousElementSibling || !surface.matches('[role="dialog"]')) return;
       button = close;
     } else if (headerToggle) {
+      if (!surface.isConnected) return; // 面板已收起：顶栏点击是正常打开（如即时保存后的自动重开）。
       // 顶栏原生按钮只负责打开；再次点击时改走取消，避免提交未确认的修改。
       button = close;
     } else if (!surface.contains(button) || (button !== close && button !== confirm && button !== cancel)) {

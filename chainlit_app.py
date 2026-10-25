@@ -789,25 +789,37 @@ def _client_platform() -> str:
 
 
 def _normalize_ui_settings(settings: dict, current: dict | None = None) -> dict:
+    """Merge a settings payload onto the current params.
+
+    即时保存会让单控件变更以不完整载荷提交；缺失键一律继承现值，
+    只有显式提供的键才参与校验与覆盖。
+    """
+    current = current or {}
     normalized = dict(settings)
     if "enter_behavior" in normalized:
         if normalized["enter_behavior"] not in {"enter", "ctrl_enter"}:
             normalized["enter_behavior"] = "enter"
-    elif current and "enter_behavior" in current:
-        # 移动端面板不展示发送快捷键；保存其余设置时保留既有偏好。
+    elif "enter_behavior" in current:
         normalized["enter_behavior"] = current["enter_behavior"]
-    if normalized.get("font_size") not in {"small", "standard", "large"}:
-        normalized["font_size"] = "standard"
+    if "font_size" in normalized:
+        if normalized["font_size"] not in {"small", "standard", "large"}:
+            normalized["font_size"] = "standard"
+    elif "font_size" in current:
+        normalized["font_size"] = current["font_size"]
     for key in ("autoscroll", "keep_drafts", "animations", "audit_summary"):
-        normalized[key] = bool(normalized.get(key, True))
+        if key in normalized or key in current:
+            normalized[key] = bool(
+                normalized[key] if key in normalized else current[key]
+            )
     for key in (
         "temperature",
         "frequency_penalty",
         "presence_penalty",
         "max_output_tokens",
     ):
+        source = normalized.get(key, current.get(key))
         try:
-            normalized[key] = float(normalized.get(key, 0))
+            normalized[key] = float(source)
         except (TypeError, ValueError):
             normalized.pop(key, None)
     normalized.pop("top_p", None)  # 面板已移除该控件；保留原值而非强改为 0

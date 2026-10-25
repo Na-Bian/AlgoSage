@@ -1124,6 +1124,12 @@ body.eg-sidebar-restoring :is(
 :root [data-panel]:has(#chat-settings-sidebar-title) .flex.gap-2.border-t {
   flex-wrap: wrap;
 }
+
+/* 即时保存：隐藏确认/取消按钮行（提交改由 settings-autosave.js 自动触发）。 */
+:root [data-panel]:has(#chat-settings-sidebar-title) .flex.gap-2.border-t.eg-autosave,
+[role="dialog"]:has(#chat-settings-sidebar-title) .flex.gap-2.border-t.eg-autosave {
+  display: none !important;
+}
 :root [data-panel-group]:has([data-resize-handle-state="drag"]) > [data-panel] {
   transition: none;
 }

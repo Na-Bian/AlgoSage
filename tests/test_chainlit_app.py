@@ -264,6 +264,30 @@ class ChainlitAppModuleTests(unittest.TestCase):
         )
         self.assertEqual(invalid["enter_behavior"], "enter")
 
+    def test_partial_settings_payload_inherits_current_values(self):
+        # 即时保存会提交单控件载荷：缺失键继承现值，显式键正常覆盖。
+        current = {
+            "temperature": 0.4,
+            "frequency_penalty": 0.2,
+            "presence_penalty": 0.1,
+            "max_output_tokens": 1024,
+            "enter_behavior": "ctrl_enter",
+            "autoscroll": False,
+            "keep_drafts": True,
+            "animations": True,
+            "font_size": "large",
+            "audit_summary": True,
+        }
+        partial = self.module._normalize_ui_settings(
+            {"temperature": 1.1}, current=current
+        )
+        self.assertEqual(partial["temperature"], 1.1)
+        self.assertEqual(partial["frequency_penalty"], 0.2)
+        self.assertEqual(partial["max_output_tokens"], 1024)
+        self.assertEqual(partial["enter_behavior"], "ctrl_enter")
+        self.assertFalse(partial["autoscroll"])
+        self.assertEqual(partial["font_size"], "large")
+
     def test_preset_provider_visibility_is_user_scoped(self):
         from fastapi.testclient import TestClient
         from chainlit.server import app, get_current_user
