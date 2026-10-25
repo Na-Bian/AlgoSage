@@ -133,13 +133,23 @@ def model_selection_lock(thread_id: str) -> asyncio.Lock:
     return lock
 
 
-async def hidden_preset_providers(principal: str | None) -> set[str]:
-    """Provider ids the user removed from their own catalog (preset providers)."""
+async def preset_removal_state(principal: str | None) -> tuple[set[str], set[str]]:
+    """Preset provider ids the user removed: (hidden-restorable, permanently-deleted)."""
     if not principal:
-        return set()
+        return set(), set()
     preferences = await get_chat_store().load_user_app_preferences(principal)
-    hidden = preferences.get("disabled_providers")
-    return {str(item) for item in hidden} if isinstance(hidden, list) else set()
+
+    def as_ids(key: str) -> set[str]:
+        value = preferences.get(key)
+        return {str(item) for item in value} if isinstance(value, list) else set()
+
+    return as_ids("disabled_providers"), as_ids("deleted_providers")
+
+
+async def hidden_preset_providers(principal: str | None) -> set[str]:
+    """Provider ids invisible in the user's catalog (removed either way)."""
+    hidden, purged = await preset_removal_state(principal)
+    return hidden | purged
 
 
 async def user_default_selection(service, principal: str | None) -> str:
@@ -160,11 +170,7 @@ async def user_default_selection(service, principal: str | None) -> str:
     except ValueError:
         return fallback
     if not stored.startswith("custom:"):
-        hidden = preferences.get("disabled_providers")
-        hidden_ids = (
-            {str(item) for item in hidden} if isinstance(hidden, list) else set()
-        )
-        if stored.split("::", 1)[0] in hidden_ids:
+        if stored.split("::", 1)[0] in await hidden_preset_providers(principal):
             return fallback
     return stored
 
@@ -172,10 +178,12 @@ async def user_default_selection(service, principal: str | None) -> str:
 async def send_model_catalog(context) -> None:
     """Push the authorized catalog and thread-local selection to the composer."""
     service = get_service()
-    hidden = await hidden_preset_providers(context.principal_id)
+    hidden, purged = await preset_removal_state(context.principal_id)
     default_id = service.providers.default.split("::", 1)[0]
     groups: dict[str, dict] = {}
     for option in service.providers.options():
+        if option["id"] in purged:
+            continue  # 彻底删除的预置提供商不再出现在任何列表
         group = groups.setdefault(
             option["id"],
             {
@@ -419,9 +427,10 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         if not current_user:
             raise HTTPException(status_code=401, detail="Unauthorized")
         service = get_service()
-        hidden = await hidden_preset_providers(current_user.identifier)
+        hidden, purged = await preset_removal_state(current_user.identifier)
         default_id = service.providers.default.split("::", 1)[0]
         groups = _catalog_groups(service, service.providers.options())
+        groups = [group for group in groups if group["id"] not in purged]
         for group in groups:
             group["source"] = "preset"
             group["locked"] = group["id"] == default_id
@@ -476,11 +485,16 @@ try:  # pragma: no cover - exercised through the running Chainlit server
 
     @models_router.post("/models/preset", include_in_schema=False)
     async def set_preset_provider_visibility(payload: dict, current_user: UserParam):
-        """Remove (hide) or restore a preset provider for the current user only."""
+        """Hide / restore / permanently delete a preset provider for this user only."""
         if not current_user:
             raise HTTPException(status_code=401, detail="Unauthorized")
         provider_id = str((payload or {}).get("provider_id") or "").strip()
-        hidden = bool(payload.get("hidden"))
+        # 兼容旧载荷 {"hidden": bool}；新载荷用 action 表达三种状态。
+        action = str((payload or {}).get("action") or "").strip().lower()
+        if not action:
+            action = "hide" if payload.get("hidden") else "restore"
+        if action not in {"hide", "restore", "delete"}:
+            raise HTTPException(status_code=400, detail="Unknown action")
         service = get_service()
         preset_ids = {group["id"] for group in service.providers.options()}
         default_id = service.providers.default.split("::", 1)[0]
@@ -491,19 +505,29 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         preferences = await get_chat_store().load_user_app_preferences(
             current_user.identifier
         )
-        removed = {
-            str(item)
-            for item in preferences.get("disabled_providers") or []
-            if isinstance(item, str)
-        }
-        removed.discard(provider_id)
-        if hidden:
-            removed.add(provider_id)
-        preferences["disabled_providers"] = sorted(removed)
+
+        def as_ids(key: str) -> set[str]:
+            value = preferences.get(key)
+            return {str(item) for item in value} if isinstance(value, list) else set()
+
+        hidden = as_ids("disabled_providers")
+        purged = as_ids("deleted_providers")
+        hidden.discard(provider_id)
+        purged.discard(provider_id)
+        if action == "hide":
+            hidden.add(provider_id)
+        elif action == "delete":
+            purged.add(provider_id)
+        preferences["disabled_providers"] = sorted(hidden)
+        preferences["deleted_providers"] = sorted(purged)
         await get_chat_store().save_user_app_preferences(
             current_user.identifier, preferences
         )
-        return {"success": True, "provider_id": provider_id, "hidden": hidden}
+        return {
+            "success": True,
+            "provider_id": provider_id,
+            "action": action,
+        }
 
     @models_router.post("/models/discover", include_in_schema=False)
     async def discover_models(payload: dict, current_user: UserParam):
@@ -841,13 +865,18 @@ async def on_settings_update(settings: dict) -> None:
                     requested_model,
                     principal,
                 )
+                if not requested_model.startswith("custom:") and (
+                    requested_model.split("::", 1)[0]
+                    in await hidden_preset_providers(principal)
+                ):
+                    raise ValueError("provider hidden")
                 preferences = _normalize_ui_settings(
                     settings, current=context.model_params
                 )
                 preferences["default_model_selection"] = requested_model
                 await get_chat_store().save_user_app_preferences(principal, preferences)
             except ValueError:
-                pass  # 未知/失效选择不落库
+                pass  # 未知/失效/已移除的提供商不落为默认模型
         await asyncio.to_thread(
             service.set_model_params,
             context,

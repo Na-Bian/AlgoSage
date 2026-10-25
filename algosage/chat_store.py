@@ -1007,15 +1007,17 @@ class ChatDataLayer(BaseDataLayer):
             "font_size",
             "audit_summary",
             "disabled_providers",
+            "deleted_providers",
             "default_model_selection",
         }
+        provider_list_keys = {"disabled_providers", "deleted_providers"}
         clean = {
             key: preferences[key]
             for key in allowed_keys
             if key in preferences
             and (
                 (
-                    key == "disabled_providers"
+                    key in provider_list_keys
                     and isinstance(preferences[key], list)
                     and all(isinstance(v, str) for v in preferences[key])
                 )

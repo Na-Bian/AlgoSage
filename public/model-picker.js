@@ -499,41 +499,33 @@
     return state.providers.filter(function (item) { return item.id !== "custom"; });
   }
 
-  async function hidePresetProvider(providerId) {
+  async function presetProviderAction(providerId, action) {
     var response = await fetch("/models/preset", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ provider_id: providerId, hidden: true }),
+      body: JSON.stringify({ provider_id: providerId, action: action }),
     });
     if (!response.ok) {
       var payload = await response.json().catch(function () { return {}; });
-      throw new Error(payload.detail || `移除失败（${response.status}）`);
+      var labels = { hide: "移除", restore: "恢复", delete: "删除" };
+      throw new Error(payload.detail || `${labels[action] || "操作"}失败（${response.status}）`);
     }
     // 正在使用的提供商被移除时，先切回默认模型再刷新目录。
-    var stillSelected = state.providers.some(function (group) {
-      return group.id === providerId && group.models.some(function (model) {
-        return model.selection === state.currentSelection;
+    if (action === "hide") {
+      var stillSelected = state.providers.some(function (group) {
+        return group.id === providerId && group.models.some(function (model) {
+          return model.selection === state.currentSelection;
+        });
       });
-    });
-    if (stillSelected && state.currentSelection !== defaultSelection()) {
-      await selectModel(defaultSelection(), { force: true });
+      if (stillSelected && state.currentSelection !== defaultSelection()) {
+        await selectModel(defaultSelection(), { force: true });
+      }
     }
     await loadCatalog();
-  }
-
-  async function restorePresetProvider(providerId) {
-    var response = await fetch("/models/preset", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ provider_id: providerId, hidden: false }),
-    });
-    if (!response.ok) {
-      var payload = await response.json().catch(function () { return {}; });
-      throw new Error(payload.detail || `恢复失败（${response.status}）`);
-    }
-    await loadCatalog();
+    // 面板下拉的选项来自服务端下发的设置；借一次原生提交触发重发，
+    // 让"默认模型"列表立即反映提供商变化。
+    if (window.AlgoSageSettingsAutoSave) window.AlgoSageSettingsAutoSave.refresh();
   }
 
   async function removeCustomEntries(selections) {
@@ -543,7 +535,7 @@
     }
   }
 
-  function managedRow(name, options) {
+  function managedRow(name, specs) {
     var row = document.createElement("div");
     row.className = "eg-add-managed-row";
     var label = document.createElement("span");
@@ -551,30 +543,35 @@
     label.textContent = name;
     label.title = name;
     row.append(label);
-    var action = document.createElement("button");
-    action.type = "button";
-    action.className = options.restore
-      ? "eg-add-managed-restore"
-      : "eg-add-managed-remove";
-    action.textContent = options.text;
-    if (options.disabled) {
-      action.disabled = true;
-      action.title = options.title || "";
-    } else {
-      action.addEventListener("click", async function () {
+    var actions = document.createElement("span");
+    actions.className = "eg-add-managed-actions";
+    specs.forEach(function (options) {
+      var action = document.createElement("button");
+      action.type = "button";
+      action.className = options.style === "primary"
+        ? "eg-add-managed-restore"
+        : "eg-add-managed-remove";
+      action.textContent = options.text;
+      if (options.disabled) {
         action.disabled = true;
-        setDialogStatus(options.pending);
-        try {
-          await options.run();
-          renderManagedModels();
-          setDialogStatus(options.done, false);
-        } catch (error) {
-          action.disabled = false;
-          setDialogStatus(error.message || options.failed, true);
-        }
-      });
-    }
-    row.append(action);
+        action.title = options.title || "";
+      } else {
+        action.addEventListener("click", async function () {
+          action.disabled = true;
+          setDialogStatus(options.pending);
+          try {
+            await options.run();
+            renderManagedModels();
+            setDialogStatus(options.done, false);
+          } catch (error) {
+            action.disabled = false;
+            setDialogStatus(error.message || options.failed, true);
+          }
+        });
+      }
+      actions.append(action);
+    });
+    row.append(actions);
     return row;
   }
 
@@ -595,24 +592,23 @@
       if (group.hidden) return; // 已移除的显示在下方恢复区
       var name = `${group.label} · ${group.models.length} 个模型`;
       if (group.locked) {
-        list.append(managedRow(name, {
+        list.append(managedRow(name, [{
           text: "移除", disabled: true, title: "默认提供商，不可移除",
-          pending: "", done: "", failed: "", run: async function () {},
-        }));
+        }]));
         return;
       }
-      list.append(managedRow(name, {
+      list.append(managedRow(name, [{
         text: "移除", pending: "正在移除…", done: "已移除；它不再出现在模型选择里，可随时在下方恢复",
         failed: "移除失败",
-        run: function () { return hidePresetProvider(group.id); },
-      }));
+        run: function () { return presetProviderAction(group.id, "hide"); },
+      }]));
     });
     customEntries().forEach(function (model) {
-      list.append(managedRow(`${model.label || "自定义 API"} · ${model.model}`, {
+      list.append(managedRow(`${model.label || "自定义 API"} · ${model.model}`, [{
         text: "删除", pending: "正在删除…", done: "已删除；若它正被使用，已自动切回默认模型",
         failed: "删除失败",
         run: function () { return removeCustomEntries([model.selection]); },
-      }));
+      }]));
     });
     if (!presets.length && !customCount) {
       var empty = document.createElement("div");
@@ -629,11 +625,19 @@
       head.textContent = "已移除的预置提供商";
       removedList.append(head);
       hiddenPresets.forEach(function (group) {
-        removedList.append(managedRow(`${group.label} · ${group.models.length} 个模型`, {
-          text: "恢复", restore: true, pending: "正在恢复…", done: "已恢复",
-          failed: "恢复失败",
-          run: function () { return restorePresetProvider(group.id); },
-        }));
+        removedList.append(managedRow(`${group.label} · ${group.models.length} 个模型`, [
+          {
+            text: "恢复", style: "primary", pending: "正在恢复…", done: "已恢复",
+            failed: "恢复失败",
+            run: function () { return presetProviderAction(group.id, "restore"); },
+          },
+          {
+            text: "彻底删除", pending: "正在彻底删除…",
+            done: "已彻底删除；该提供商不再出现在列表中",
+            failed: "删除失败",
+            run: function () { return presetProviderAction(group.id, "delete"); },
+          },
+        ]));
       });
     }
   }

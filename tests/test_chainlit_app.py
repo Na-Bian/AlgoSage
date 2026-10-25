@@ -313,7 +313,7 @@ class ChainlitAppModuleTests(unittest.TestCase):
         self.assertEqual(group["source"], "preset")
 
         hidden = client.post(
-            "/models/preset", json={"provider_id": target, "hidden": True}
+            "/models/preset", json={"provider_id": target, "action": "hide"}
         )
         self.assertEqual(hidden.status_code, 200)
         catalog = client.get("/models/catalog").json()
@@ -323,19 +323,19 @@ class ChainlitAppModuleTests(unittest.TestCase):
         # 默认 Provider 与未知 id 都要拒绝。
         self.assertEqual(
             client.post(
-                "/models/preset", json={"provider_id": default_id, "hidden": True}
+                "/models/preset", json={"provider_id": default_id, "action": "hide"}
             ).status_code,
             400,
         )
         self.assertEqual(
             client.post(
-                "/models/preset", json={"provider_id": "ghost", "hidden": True}
+                "/models/preset", json={"provider_id": "ghost", "action": "hide"}
             ).status_code,
             404,
         )
 
         restored = client.post(
-            "/models/preset", json={"provider_id": target, "hidden": False}
+            "/models/preset", json={"provider_id": target, "action": "restore"}
         )
         self.assertEqual(restored.status_code, 200)
         catalog = client.get("/models/catalog").json()
@@ -349,6 +349,43 @@ class ChainlitAppModuleTests(unittest.TestCase):
         other = client.get("/models/catalog").json()
         other_group = next(g for g in other["providers"] if g["id"] == target)
         self.assertFalse(other_group["hidden"])
+
+    def test_preset_provider_delete_purges_from_catalog(self):
+        from fastapi.testclient import TestClient
+        from chainlit.server import app, get_current_user
+
+        service = self.module.get_service()
+        default_id = service.providers.default.split("::", 1)[0]
+        removable = sorted(
+            {option["id"] for option in service.providers.options()} - {default_id}
+        )
+        if not removable:
+            self.skipTest("registry only has the default provider")
+        target = removable[0]
+
+        client = TestClient(app)
+        self.addCleanup(app.dependency_overrides.clear)
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            identifier="provider-purger"
+        )
+
+        purged = client.post(
+            "/models/preset", json={"provider_id": target, "action": "delete"}
+        )
+        self.assertEqual(purged.status_code, 200)
+        catalog = client.get("/models/catalog").json()
+        self.assertFalse(
+            any(g["id"] == target for g in catalog["providers"]),
+            "彻底删除的预置提供商不应再出现在目录里",
+        )
+        # 恢复仍可撤销彻底删除。
+        restored = client.post(
+            "/models/preset", json={"provider_id": target, "action": "restore"}
+        )
+        self.assertEqual(restored.status_code, 200)
+        catalog = client.get("/models/catalog").json()
+        group = next(g for g in catalog["providers"] if g["id"] == target)
+        self.assertFalse(group["hidden"])
 
     def test_disconnect_preserves_shared_thread_context_and_guard(self):
         svc = self.module.get_service()

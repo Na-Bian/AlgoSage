@@ -779,6 +779,12 @@ main .ai-message .message-content ~ div button svg {
   font-size: .84rem;
 }
 
+.eg-add-managed-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 6px;
+}
+
 .eg-add-managed-remove {
   flex: 0 0 auto;
   border: 1px solid hsl(var(--destructive) / .4);
