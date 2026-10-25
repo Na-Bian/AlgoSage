@@ -428,8 +428,13 @@
       </div>
     `;
     document.body.append(addDialog);
+    // 不做"点空白关闭"：填到一半的 Base URL/API Key 不该被一次误点清空。
+    // 关闭只走"取消"按钮或 Esc。
     addDialog.addEventListener("click", function (event) {
-      if (event.target === addDialog) closeAddDialog();
+      if (event.target === addDialog) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     });
     addDialog.querySelector('[data-action="cancel"]').addEventListener("click", closeAddDialog);
     addDialog.querySelector('[data-action="discover"]').addEventListener("click", function () {

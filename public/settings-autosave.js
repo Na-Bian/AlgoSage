@@ -206,11 +206,17 @@
 
   // 窄视口下设置抽屉是带全屏遮罩的 dialog：点遮罩（视觉上的"页面空白处"）
   // 不再关闭面板——即时保存下没有"取消丢弃"语义，快速点击周边极易误触。
-  // 挂在 window 捕获阶段，先于 Radix DismissableLayer 的 document 监听。
+  // 同理适用于所有 Radix 遮罩弹窗（重命名对话等）：遮罩点击一律吞掉，
+  // 关闭只走明确的关闭/取消按钮或 Esc。挂在 window 捕获阶段，先于
+  // Radix DismissableLayer 的 document 监听。
   function swallowOverlayClose(event) {
-    var panel = surface();
-    if (!panel || !panel.matches('[role="dialog"]')) return;
-    if (event.target !== panel.previousElementSibling) return;
+    var target = event.target;
+    if (!target || target.nodeType !== 1) return;
+    var overlay =
+      target.matches?.('[data-state].fixed.inset-0[class*="bg-black"]') && target;
+    if (!overlay) return;
+    // 只吞"已打开"的遮罩；关闭动画中的遮罩点击放行。
+    if (overlay.getAttribute('data-state') !== 'open') return;
     event.preventDefault();
     event.stopImmediatePropagation();
   }
