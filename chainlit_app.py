@@ -636,16 +636,16 @@ async def send_provider_settings(context) -> None:
             label="启用界面动画",
             initial=bool(params.get("animations", True)),
         ),
+        Switch(
+            id="audit_summary",
+            label="显示安全摘要",
+            initial=bool(params.get("audit_summary", True)),
+        ),
         Select(
             id="font_size",
             label="字体大小",
             initial_value=str(params.get("font_size", "standard")),
             items={"小号": "small", "标准": "standard", "大号": "large"},
-        ),
-        Switch(
-            id="audit_summary",
-            label="显示安全摘要",
-            initial=bool(params.get("audit_summary", True)),
         ),
     ]
     platform = _client_platform()
