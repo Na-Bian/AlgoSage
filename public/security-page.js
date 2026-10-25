@@ -172,7 +172,10 @@
   document.getElementById("password-form").addEventListener("keydown", (event) => {
     const isEnter = event.key === "Enter" || event.keyCode === 13;
     const fromInput = event.target instanceof HTMLInputElement;
-    if (!isEnter || !fromInput || event.shiftKey) return;
+    // Enter pressed while an IME composition is active commits the pinyin
+    // instead of submitting; keyCode 229 covers engines without isComposing.
+    const composing = event.isComposing || event.keyCode === 229;
+    if (!isEnter || !fromInput || event.shiftKey || composing) return;
     event.preventDefault();
     if (!passwordChanged() || saveButton.disabled) return;
     saveButton.click();
