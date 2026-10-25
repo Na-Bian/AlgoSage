@@ -191,6 +191,8 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
                 )
             ),
             Message=Mock(return_value=SimpleNamespace(send=AsyncMock())),
+            ChatSettings=Mock(return_value=SimpleNamespace(send=AsyncMock())),
+            send_window_message=AsyncMock(),
         )
         with patch.object(chainlit_app, "cl", fake), patch.object(
             chainlit_app, "get_service", return_value=svc

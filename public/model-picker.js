@@ -296,20 +296,6 @@
     listElement = document.createElement("div");
     listElement.className = "eg-model-list";
     menu.append(listElement);
-    var addButton = document.createElement("button");
-    addButton.type = "button";
-    addButton.className = "eg-model-add";
-    addButton.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path d="M12 5v14M5 12h14"/>
-      </svg>
-      添加自定义模型
-    `;
-    addButton.addEventListener("click", function () {
-      closeMenu();
-      openAddDialog();
-    });
-    menu.append(addButton);
     statusElement = document.createElement("div");
     statusElement.className = "eg-model-menu-status";
     statusElement.setAttribute("aria-live", "polite");
@@ -411,6 +397,40 @@
   function defaultSelection() {
     var group = state.providers.find(function (item) { return item.id !== "custom"; });
     return (group && group.models[0] && group.models[0].selection) || "";
+  }
+
+  /* 设置面板入口："添加自定义模型"挂在"模型与 Provider"控件下方。
+     面板由 React 渲染，注入节点消失时由观察器补回；对话框复用本文件的实现。 */
+  function ensureSettingsAddEntry() {
+    if (!document.getElementById("chat-settings-sidebar-title")) return;
+    var label = document.querySelector('aside label[for="model_catalog"]');
+    if (!label) return;
+    var wrapper = label.closest("div.space-y-2") || label.parentElement;
+    if (!wrapper || !wrapper.parentElement) return;
+    var existing = document.getElementById("eg-settings-add-model");
+    if (existing && existing.parentElement === wrapper.parentElement) {
+      // React 重渲染可能重建控件包装；错位时把入口挪回控件正后方。
+      if (existing.previousElementSibling !== wrapper) {
+        wrapper.insertAdjacentElement("afterend", existing);
+      }
+      return;
+    }
+    var entry = document.createElement("button");
+    entry.type = "button";
+    entry.id = "eg-settings-add-model";
+    entry.className = "eg-settings-add";
+    entry.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+      添加自定义模型
+    `;
+    entry.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      openAddDialog();
+    });
+    wrapper.insertAdjacentElement("afterend", entry);
   }
 
   function closeAddDialog() {
@@ -549,11 +569,13 @@
         api_key: fields.api_key,
         model: item.id,
       });
-      closeAddDialog();
       await loadCatalog();
-      if (payload.entry && payload.entry.selection) {
-        await selectModel(payload.entry.selection, { force: true });
-      }
+      // 不自动切换：设置面板里的"模型与 Provider"下拉在确认保存前仍是旧值，
+      // 自动切换会被随后的确认用陈旧选择悄悄覆盖。添加后由用户在面板中显式选择。
+      setDialogStatus(
+        `已添加 ${item.id}；在"模型与 Provider"中选择它并点确认即可切换`,
+        false,
+      );
     } catch (error) {
       setDialogStatus(error.message || "添加失败", true);
     }
@@ -594,6 +616,7 @@
 
   new MutationObserver(function () {
     ensureComposerControl();
+    ensureSettingsAddEntry();
   }).observe(document.body, { childList: true, subtree: true });
 
   async function initialLoad() {

@@ -582,7 +582,7 @@ async def send_provider_settings(context) -> None:
             label="模型与 Provider",
             items=items,
             initial_value=context.provider_selection,
-            description="可在此快速切换；聊天输入框旁的模型菜单支持用 Base URL + API Key 添加自定义模型（≤27B）。",
+            description="可在此快速切换；用下方入口以 Base URL + API Key 添加自定义模型（≤27B），聊天输入框旁的模型菜单也可随时切换。",
         ),
         Slider(
             id="temperature",
@@ -704,6 +704,8 @@ async def on_settings_update(settings: dict) -> None:
             )
         await persist_backend_history(context)
         await send_model_catalog(context)
+        # 重新下发设置：面板里的模型列表需要包含新添加的自定义模型。
+        await send_provider_settings(context)
     info = service.provider_info(context)
     try:
         await cl.send_window_message(

@@ -725,11 +725,33 @@ main .ai-message .message-content ~ div button svg {
 
 .eg-model-add svg { width: 15px; height: 15px; }
 
+/* 设置面板里的"添加自定义模型"入口：与控件列同宽的虚线行。 */
+.eg-settings-add {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 10px;
+  background: transparent;
+  color: hsl(var(--foreground) / .86);
+  font: inherit;
+  font-size: .83rem;
+  cursor: pointer;
+}
+
+.eg-settings-add:hover { border-color: hsl(var(--primary) / .55); color: hsl(var(--foreground)); }
+
+.eg-settings-add svg { width: 15px; height: 15px; }
+
 /* Add-custom-model dialog */
 .eg-add-dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  /* 需要盖过设置抽屉与顶栏浮层；仍低于模型选择菜单(1300)。 */
+  z-index: 1200;
   display: flex;
   align-items: center;
   justify-content: center;
