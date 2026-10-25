@@ -849,7 +849,6 @@ async def on_settings_update(settings: dict) -> None:
         await send_model_catalog(context)
         # 重新下发设置：面板里的模型列表需要包含新添加的自定义模型。
         await send_provider_settings(context)
-    info = service.provider_info(context)
     try:
         await cl.send_window_message(
             {
@@ -869,12 +868,7 @@ async def on_settings_update(settings: dict) -> None:
         )
     except Exception:
         pass  # 偏好仍会持久化；旧客户端下次打开设置时可读取元数据。
-    await cl.Message(
-        content=(
-            f"设置已保存。当前模型：**{info['label']} · {info['model']}**；"
-            f"最大输出长度：**{context.model_params.get('max_output_tokens')} Token**。"
-        )
-    ).send()
+    # 不在对话流里回显设置结果：面板自身的确认与控件值即为反馈。
 
 
 def _msg_turn_map():
