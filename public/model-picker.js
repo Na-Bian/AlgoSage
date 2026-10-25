@@ -632,8 +632,8 @@
             run: function () { return presetProviderAction(group.id, "restore"); },
           },
           {
-            text: "彻底删除", pending: "正在彻底删除…",
-            done: "已彻底删除；该提供商不再出现在列表中",
+            text: "删除", pending: "正在删除…",
+            done: "已删除；该提供商不再出现在列表中",
             failed: "删除失败",
             run: function () { return presetProviderAction(group.id, "delete"); },
           },
