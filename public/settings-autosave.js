@@ -33,9 +33,11 @@
       comboTexts.set(combo, text);
       return false;
     }
-    if (comboTexts.get(combo) === text) return false;
+    var previous = comboTexts.get(combo);
     comboTexts.set(combo, text);
-    return true;
+    // 空基线 → 有值是抽屉重开后的补渲染，不是用户选择。
+    if (!previous.trim()) return false;
+    return previous !== text;
   }
 
   function scheduleSubmit() {
@@ -44,6 +46,18 @@
       var confirm = document.getElementById("confirm-sidebar");
       var panel = surface();
       if (!confirm || !panel) return;
+      // 程序化提交后进入冷却：重开 + React 补渲染期间产生的"变化"只是
+      // 渲染回放（空值→初值），不能再次触发提交，否则面板会收起/展开循环。
+      suppressAutoSubmit = true;
+      window.clearTimeout(suppressTimer);
+      suppressTimer = window.setTimeout(function () {
+        suppressAutoSubmit = false;
+        // 冷却期内的真实用户操作不被吞掉：冷却结束后补交一次。
+        if (pendingUserAction) {
+          pendingUserAction = false;
+          scheduleSubmit();
+        }
+      }, 1600);
       confirm.click();
       // Chainlit 提交后会收起并卸载设置抽屉；即时保存场景需要重新打开。
       // 抽屉卸载是异步的：轮询至其消失后再触发顶栏按钮，避免被面板状态吞掉。
@@ -63,6 +77,8 @@
   }
 
   var reopenTimer = null;
+  var suppressTimer = null;
+  var pendingUserAction = false;
 
   function armAutosave(panel) {
     panel.dataset.egAutosave = "armed";
@@ -76,8 +92,8 @@
     panel.addEventListener(
       "change",
       function (event) {
-        if (suppressAutoSubmit) return;
         if (event.target.closest(".eg-settings-add, .eg-add-dialog")) return;
+        if (suppressAutoSubmit) { pendingUserAction = true; return; }
         scheduleSubmit();
       },
       true
@@ -85,35 +101,34 @@
     panel.addEventListener(
       "click",
       function (event) {
-        if (suppressAutoSubmit) return;
         var toggle = event.target.closest('[role="switch"]');
         if (!toggle || toggle.closest(".eg-settings-add, .eg-add-dialog")) return;
+        if (suppressAutoSubmit) { pendingUserAction = true; return; }
         scheduleSubmit();
       },
       true
     );
     snapshotCombos(panel);
     valueObserver = new MutationObserver(function (records) {
-      if (suppressAutoSubmit) return;
+      var pending = false;
       for (var i = 0; i < records.length; i++) {
         var record = records[i];
         if (record.attributeName === "aria-valuenow") {
-          if (record.oldValue !== record.target.getAttribute("aria-valuenow")) {
-            scheduleSubmit();
-            return;
+          // oldValue 缺失（null）说明是首次渲染赋值，不是用户拖动。
+          if (
+            typeof record.oldValue === "string"
+            && record.oldValue !== record.target.getAttribute("aria-valuenow")
+          ) {
+            pending = true;
           }
         } else if (record.type === "characterData") {
-          if (comboTextChanged(record.target.parentElement)) {
-            scheduleSubmit();
-            return;
-          }
+          if (comboTextChanged(record.target.parentElement)) pending = true;
         } else if (record.type === "childList") {
-          if (comboTextChanged(record.target)) {
-            scheduleSubmit();
-            return;
-          }
+          if (comboTextChanged(record.target)) pending = true;
         }
       }
+      // 基线已在上面无条件刷新；冷却期（提交后的渲染回放）内不触发新提交。
+      if (pending && !suppressAutoSubmit) scheduleSubmit();
     });
     valueObserver.observe(panel, {
       subtree: true,
