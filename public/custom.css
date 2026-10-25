@@ -864,8 +864,9 @@ main .ai-message .message-content ~ div button svg {
   align-items: center;
   justify-content: center;
   padding: 18px;
-  background: hsl(var(--background) / .55);
-  backdrop-filter: blur(3px);
+  /* 与原生弹窗遮罩一致：纯变暗，不用模糊。 */
+  background: rgb(0 0 0 / 80%);
+  animation: eg-overlay-in var(--eg-motion-enter) var(--eg-motion-ease) both;
 }
 
 .eg-add-dialog {
@@ -879,6 +880,8 @@ main .ai-message .message-content ~ div button svg {
   background: hsl(var(--background));
   box-shadow: 0 24px 70px hsl(0 0% 0% / .28);
   overflow-y: auto;
+  /* 与原生弹窗一致的上浮入场动画。 */
+  animation: eg-surface-in var(--eg-motion-enter) var(--eg-motion-ease) both;
 }
 
 .eg-add-title {
