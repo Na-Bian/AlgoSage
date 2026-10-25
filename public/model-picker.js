@@ -554,14 +554,13 @@
 
     presets.forEach(function (group) {
       if (group.hidden) return; // 已移除的显示在下方恢复区
-      var name = `${group.label} · ${group.models.length} 个模型`;
       if (group.locked) {
-        list.append(managedRow(name, [{
+        list.append(managedRow(group.label, [{
           text: "移除", disabled: true, title: "默认提供商，不可移除",
         }]));
         return;
       }
-      list.append(managedRow(name, [{
+      list.append(managedRow(group.label, [{
         text: "移除", pending: "正在移除…", done: "已移除；它不再出现在模型选择里，可随时在下方恢复",
         failed: "移除失败",
         run: function () { return presetProviderAction(group.id, "hide"); },
@@ -589,7 +588,7 @@
       head.textContent = "已移除的预置提供商";
       removedList.append(head);
       hiddenPresets.forEach(function (group) {
-        removedList.append(managedRow(`${group.label} · ${group.models.length} 个模型`, [
+        removedList.append(managedRow(group.label, [
           {
             text: "恢复", style: "primary", pending: "正在恢复…", done: "已恢复",
             failed: "恢复失败",
