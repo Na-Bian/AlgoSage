@@ -207,6 +207,100 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(selection, registry.default)
         await store.close()
 
+    async def test_settings_default_model_is_account_scoped_not_thread_switch(self):
+        from algosage.config import Settings
+        from algosage.providers import ProviderRegistry
+        from algosage.service import TutorService
+        from algosage.chat_store import ChatDataLayer
+        from chainlit.user import User
+
+        store = ChatDataLayer(":memory:")
+        await store.create_user(User(identifier="p"))
+        registry = ProviderRegistry(
+            Settings(), entries=[{"id": "other", "mode": "mock", "models": ["m"]}]
+        )
+        svc = TutorService(registry.base, providers=registry)
+        history = [
+            {"role": "user", "content": "q"},
+            {"role": "assistant", "content": "a"},
+        ]
+        await store.save_backend_history("thread", "p", history, "other::m")
+        fake = SimpleNamespace(
+            context=SimpleNamespace(
+                session=SimpleNamespace(id="socket", thread_id="thread")
+            ),
+            user_session=SimpleNamespace(
+                get=lambda key: (
+                    SimpleNamespace(identifier="p") if key == "user" else None
+                )
+            ),
+            Message=Mock(return_value=SimpleNamespace(send=AsyncMock())),
+            ChatSettings=Mock(return_value=SimpleNamespace(send=AsyncMock())),
+            send_window_message=AsyncMock(),
+        )
+        with patch.object(chainlit_app, "cl", fake), patch.object(
+            chainlit_app, "get_service", return_value=svc
+        ), patch.object(chainlit_app, "get_chat_store", return_value=store):
+            await inspect.unwrap(chainlit_app.on_settings_update)(
+                {"model_catalog": "other::m", "temperature": 0.2}
+            )
+            prefs = await store.load_user_app_preferences("p")
+            self.assertEqual(prefs.get("default_model_selection"), "other::m")
+            # 当前线程的模型选择不被默认模型改动。
+            _, thread_selection = await store.load_backend_history("thread", "p")
+            self.assertEqual(thread_selection, "other::m")
+            # 无效选择不落库。
+            await inspect.unwrap(chainlit_app.on_settings_update)(
+                {"model_catalog": "ghost::x", "temperature": 0.2}
+            )
+            prefs = await store.load_user_app_preferences("p")
+            self.assertEqual(prefs.get("default_model_selection"), "other::m")
+        await store.close()
+
+    async def test_new_chats_start_on_user_default_and_fall_back(self):
+        from algosage.config import Settings
+        from algosage.providers import ProviderRegistry
+        from algosage.service import TutorService
+        from algosage.chat_store import ChatDataLayer
+        from chainlit.user import User
+
+        store = ChatDataLayer(":memory:")
+        await store.create_user(User(identifier="p"))
+        registry = ProviderRegistry(
+            Settings(), entries=[{"id": "other", "mode": "mock", "models": ["m"]}]
+        )
+        svc = TutorService(registry.base, providers=registry)
+        await store.save_user_app_preferences(
+            "p", {"default_model_selection": "other::m"}
+        )
+        fake = SimpleNamespace(
+            context=SimpleNamespace(
+                # 无历史线程的新会话：thread_id 缺省回落 session id。
+                session=SimpleNamespace(id="fresh-session")
+            ),
+            user_session=SimpleNamespace(
+                get=lambda key: (
+                    SimpleNamespace(identifier="p") if key == "user" else None
+                )
+            ),
+        )
+        with patch.object(chainlit_app, "cl", fake), patch.object(
+            chainlit_app, "get_service", return_value=svc
+        ), patch.object(chainlit_app, "get_chat_store", return_value=store):
+            context = await chainlit_app.restore_conversation(svc)
+            self.assertEqual(context.provider_selection, "other::m")
+            # 默认模型失效后（如被隐藏）新会话回退服务端默认。
+            await store.save_user_app_preferences(
+                "p",
+                {
+                    "default_model_selection": "other::m",
+                    "disabled_providers": ["other"],
+                },
+            )
+            fallback = await chainlit_app.restore_conversation(svc)
+            self.assertEqual(fallback.provider_selection, registry.default)
+        await store.close()
+
     async def test_two_windows_append_turns_to_latest_private_history(self):
         from algosage.config import Settings
         from algosage.service import TutorService

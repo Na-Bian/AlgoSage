@@ -1007,6 +1007,7 @@ class ChatDataLayer(BaseDataLayer):
             "font_size",
             "audit_summary",
             "disabled_providers",
+            "default_model_selection",
         }
         clean = {
             key: preferences[key]

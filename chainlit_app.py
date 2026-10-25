@@ -100,15 +100,24 @@ async def restore_conversation(service):
         await asyncio.to_thread(_restore_context_history, context, history)
         _rebuild_msg_turn_map(context.history)
         if selection:
+            # 已有会话沿用该线程上次的选择；记录失效时回退账号默认。
             try:
                 await asyncio.to_thread(service.select_provider, context, selection)
             except ValueError:
                 await asyncio.to_thread(
-                    service.select_provider, context, service.providers.default
+                    service.select_provider,
+                    context,
+                    await user_default_selection(service, principal),
                 )
-        if principal:
-            preferences = await get_chat_store().load_user_app_preferences(principal)
-            await asyncio.to_thread(service.set_model_params, context, preferences)
+        else:
+            # 新会话以账号级“默认模型”起步。
+            await asyncio.to_thread(
+                service.select_provider,
+                context,
+                await user_default_selection(service, principal),
+            )
+        preferences = await get_chat_store().load_user_app_preferences(principal)
+        await asyncio.to_thread(service.set_model_params, context, preferences)
     return context
 
 
@@ -131,6 +140,33 @@ async def hidden_preset_providers(principal: str | None) -> set[str]:
     preferences = await get_chat_store().load_user_app_preferences(principal)
     hidden = preferences.get("disabled_providers")
     return {str(item) for item in hidden} if isinstance(hidden, list) else set()
+
+
+async def user_default_selection(service, principal: str | None) -> str:
+    """The account-level default model for new chats; falls back to the server default.
+
+    A stored default that no longer resolves (custom entry deleted, provider
+    hidden) silently falls back so new chats always start on a working model.
+    """
+    fallback = service.providers.default
+    if not principal:
+        return fallback
+    preferences = await get_chat_store().load_user_app_preferences(principal)
+    stored = preferences.get("default_model_selection")
+    if not isinstance(stored, str) or not stored:
+        return fallback
+    try:
+        await asyncio.to_thread(service.select_provider_probe, stored, principal)
+    except ValueError:
+        return fallback
+    if not stored.startswith("custom:"):
+        hidden = preferences.get("disabled_providers")
+        hidden_ids = (
+            {str(item) for item in hidden} if isinstance(hidden, list) else set()
+        )
+        if stored.split("::", 1)[0] in hidden_ids:
+            return fallback
+    return stored
 
 
 async def send_model_catalog(context) -> None:
@@ -189,7 +225,9 @@ async def send_model_catalog(context) -> None:
                 "thread_id": context_id(),
                 "current_selection": context.provider_selection,
                 "current_label": f"{info['label']} · {info['model']}",
-                "default_selection": service.providers.default,
+                "default_selection": await user_default_selection(
+                    service, context.principal_id
+                ),
                 "providers": list(groups.values()),
             }
         )
@@ -427,7 +465,9 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             current_info = {"label": current, "model": current}
             current_available = False
         return {
-            "default_selection": service.providers.default,
+            "default_selection": await user_default_selection(
+                service, current_user.identifier
+            ),
             "current_selection": current,
             "current_available": current_available,
             "current_label": f"{current_info['label']} · {current_info['model']}",
@@ -644,9 +684,9 @@ async def send_provider_settings(context) -> None:
     widgets = [
         Select(
             id="model_catalog",
-            label="模型与 Provider",
+            label="默认模型",
             items=items,
-            initial_value=context.provider_selection,
+            initial_value=await user_default_selection(service, context.principal_id),
             description="仅限27B以内模型",
         ),
         Slider(
@@ -779,20 +819,28 @@ async def on_settings_update(settings: dict) -> None:
     service = get_service()
     async with conversation_lock():
         context = await restore_conversation(service)
+        # “默认模型”是账号级偏好：只持久化，不切换当前线程的模型。
         requested_model = str(settings.get("model_catalog") or "").strip()
-        if requested_model and requested_model != context.provider_selection:
+        principal = authenticated_principal_id()
+        if principal and requested_model:
             try:
                 await asyncio.to_thread(
-                    service.select_provider, context, requested_model
+                    service.select_provider_probe,
+                    requested_model,
+                    principal,
                 )
+                preferences = _normalize_ui_settings(
+                    settings, current=context.model_params
+                )
+                preferences["default_model_selection"] = requested_model
+                await get_chat_store().save_user_app_preferences(principal, preferences)
             except ValueError:
-                pass  # 未知/失效选择保留原模型，后续仍按原参数保存
+                pass  # 未知/失效选择不落库
         await asyncio.to_thread(
             service.set_model_params,
             context,
             _normalize_ui_settings(settings, current=context.model_params),
         )
-        principal = authenticated_principal_id()
         if principal:
             await get_chat_store().save_user_app_preferences(
                 principal, context.model_params

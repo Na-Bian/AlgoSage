@@ -475,6 +475,18 @@ class TutorService:
                 context.model_params, settings
             )
 
+    def select_provider_probe(
+        self, selection: str, principal_id: str | None = None
+    ) -> Settings:
+        """Validate a selection without mutating any context (default-model checks)."""
+        context = ServiceContext(
+            session_id="probe",
+            exam_mode=self.settings.exam_mode,
+            provider_selection=selection,
+            principal_id=principal_id,
+        )
+        return self._resolve_selection_settings(context, selection)
+
     # ------------------------------------------------------------------
     # BYOK custom providers (per principal, memory only)
     # ------------------------------------------------------------------

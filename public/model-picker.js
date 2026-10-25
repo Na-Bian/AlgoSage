@@ -407,7 +407,7 @@
     return (group && group.models[0] && group.models[0].selection) || "";
   }
 
-  /* 设置面板入口："添加自定义模型"挂在"模型与 Provider"控件下方。
+  /* 设置面板入口："管理模型提供商"挂在"默认模型"控件下方。
      面板由 React 渲染，注入节点消失时由观察器补回；对话框复用本文件的实现。 */
   function ensureSettingsAddEntry() {
     if (!document.getElementById("chat-settings-sidebar-title")) return;
@@ -742,7 +742,7 @@
       // 自动切换会被随后的确认用陈旧选择悄悄覆盖。添加后由用户在面板中显式选择。
       renderManagedModels();
       setDialogStatus(
-        `已添加 ${item.id}；在"模型与 Provider"中选择它并点确认即可切换`,
+        `已添加 ${item.id}；在"默认模型"中选择它并点确认，之后的新对话将默认使用`,
         false,
       );
     } catch (error) {
