@@ -621,13 +621,6 @@ async def send_provider_settings(context) -> None:
             step=128,
             initial=max_output,
         ),
-        Select(
-            id="enter_behavior",
-            label="发送快捷键",
-            initial_value=str(params.get("enter_behavior", "enter")),
-            # Chainlit 2.11 以 {显示名: 内部值} 序列化 items，方向反了会渲染成空下拉框。
-            items={"Enter 发送": "enter", "Ctrl+Enter 发送": "ctrl_enter"},
-        ),
         Switch(
             id="autoscroll",
             label="回复时自动滚动",
@@ -655,14 +648,51 @@ async def send_provider_settings(context) -> None:
             initial=bool(params.get("audit_summary", True)),
         ),
     ]
+    platform = _client_platform()
+    if platform != "mobile":  # 移动端虚拟键盘无修饰键，不展示该设置
+        widgets.append(
+            Select(
+                id="enter_behavior",
+                label="发送快捷键",
+                initial_value=str(params.get("enter_behavior", "enter")),
+                # Chainlit 2.11 以 {显示名: 内部值} 序列化 items，方向反了会渲染成空下拉框。
+                items={
+                    "Enter": "enter",
+                    (
+                        "Command+Enter" if platform == "mac" else "Ctrl+Enter"
+                    ): "ctrl_enter",
+                },
+            )
+        )
     await cl.ChatSettings(widgets).send()
     await send_model_catalog(context)
 
 
-def _normalize_ui_settings(settings: dict) -> dict:
+def _client_platform() -> str:
+    """Classify the client from the socket handshake: mobile / mac / desktop.
+
+    The behaviour layer already accepts Ctrl and Command interchangeably; this
+    only picks the modifier label and whether the shortcut setting appears.
+    """
+    context = getattr(cl, "context", None)
+    session = getattr(context, "session", None)
+    environ = getattr(session, "environ", None) or {}
+    agent = str(environ.get("HTTP_USER_AGENT") or "").lower()
+    if any(token in agent for token in ("iphone", "ipad", "ipod", "android", "mobile")):
+        return "mobile"
+    if "macintosh" in agent or "mac os x" in agent:
+        return "mac"
+    return "desktop"
+
+
+def _normalize_ui_settings(settings: dict, current: dict | None = None) -> dict:
     normalized = dict(settings)
-    if normalized.get("enter_behavior") not in {"enter", "ctrl_enter"}:
-        normalized["enter_behavior"] = "enter"
+    if "enter_behavior" in normalized:
+        if normalized["enter_behavior"] not in {"enter", "ctrl_enter"}:
+            normalized["enter_behavior"] = "enter"
+    elif current and "enter_behavior" in current:
+        # 移动端面板不展示发送快捷键；保存其余设置时保留既有偏好。
+        normalized["enter_behavior"] = current["enter_behavior"]
     if normalized.get("font_size") not in {"small", "standard", "large"}:
         normalized["font_size"] = "standard"
     for key in ("autoscroll", "keep_drafts", "animations", "audit_summary"):
@@ -697,7 +727,7 @@ async def on_settings_update(settings: dict) -> None:
         await asyncio.to_thread(
             service.set_model_params,
             context,
-            _normalize_ui_settings(settings),
+            _normalize_ui_settings(settings, current=context.model_params),
         )
         principal = authenticated_principal_id()
         if principal:

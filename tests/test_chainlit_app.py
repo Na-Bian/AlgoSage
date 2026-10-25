@@ -215,6 +215,55 @@ class ChainlitAppModuleTests(unittest.TestCase):
         self.assertNotIn("exam_mode_switch", widget_ids)
         self.assertNotIn("top_p", widget_ids)
 
+    def _send_settings_with_user_agent(self, user_agent):
+        service = self.module.get_service()
+        sent = mock.Mock(send=mock.AsyncMock())
+        fake_cl = SimpleNamespace(
+            ChatSettings=mock.Mock(return_value=sent),
+            context=SimpleNamespace(
+                session=SimpleNamespace(environ={"HTTP_USER_AGENT": user_agent})
+            ),
+        )
+        with mock.patch.object(self.module, "cl", fake_cl):
+            asyncio.run(
+                self.module.send_provider_settings(service.get_context("ua-test"))
+            )
+        widgets = fake_cl.ChatSettings.call_args.args[0]
+        return {widget.id: widget for widget in widgets}
+
+    def test_enter_shortcut_setting_adapts_to_client_platform(self):
+        # macOS 显示 Command+Enter；移动端隐藏该设置；文案不带"发送"后缀。
+        desktop = self._send_settings_with_user_agent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0"
+        )
+        self.assertIn("enter_behavior", desktop)
+        self.assertEqual(
+            list(desktop["enter_behavior"].items.keys()), ["Enter", "Ctrl+Enter"]
+        )
+
+        mac = self._send_settings_with_user_agent(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15"
+        )
+        self.assertEqual(
+            list(mac["enter_behavior"].items.keys()), ["Enter", "Command+Enter"]
+        )
+
+        mobile = self._send_settings_with_user_agent(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148"
+        )
+        self.assertNotIn("enter_behavior", mobile)
+
+    def test_missing_enter_behavior_inherits_current_preference(self):
+        # 移动端面板不发送该键：保存其它设置时必须保留既有偏好，而非重置。
+        inherited = self.module._normalize_ui_settings(
+            {"temperature": 0.3}, current={"enter_behavior": "ctrl_enter"}
+        )
+        self.assertEqual(inherited["enter_behavior"], "ctrl_enter")
+        invalid = self.module._normalize_ui_settings(
+            {"enter_behavior": "evil"}, current={"enter_behavior": "ctrl_enter"}
+        )
+        self.assertEqual(invalid["enter_behavior"], "enter")
+
     def test_disconnect_preserves_shared_thread_context_and_guard(self):
         svc = self.module.get_service()
         ctx = svc.new_context("disconnect")
