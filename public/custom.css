@@ -1660,10 +1660,14 @@ body.eg-chat-shell :is(
 #user-nav-button {
   width: 40px !important;
   height: 40px !important;
+  /* 原生按钮带 px-4 py-2；不清零的话 40px 按钮的内容区只剩 8×24，
+     头像照片会在窄条里被纵向拉伸。 */
+  padding: 0 !important;
   border-radius: 999px !important;
   background: hsl(var(--accent));
 }
 #user-nav-button > span { width: 100% !important; height: 100% !important; }
+#user-nav-button img { object-fit: cover !important; }
 
 /* Runtime details were removed from the empty state but stay available in the
    existing Readme dialog. */
