@@ -131,6 +131,12 @@
   outline: none;
 }
 
+/* 会话行的原生 Tooltip 在未命名时内容为空 <p></p>，会弹出一个空白胶囊；
+   仅隐藏内容为空的 tooltip，有文字的照常显示。 */
+[data-radix-popper-content-wrapper]:has(> [data-side] > p:empty:first-child) {
+  display: none !important;
+}
+
 /* 个人信息弹窗沿用应用变量和动效，深浅主题由 CSS 变量自然切换。 */
 #eg-profile-overlay {
   position: fixed;
