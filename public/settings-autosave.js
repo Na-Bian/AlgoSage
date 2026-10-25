@@ -218,6 +218,4 @@
   window.addEventListener("mousedown", swallowOverlayClose, true);
   window.addEventListener("click", swallowOverlayClose, true);
 
-  // 提供商管理对话框增删 provider 后，借一次原生提交让服务端重发面板设置。
-  window.AlgoSageSettingsAutoSave = { refresh: scheduleSubmit };
 })();

@@ -478,9 +478,8 @@
       }
     }
     await loadCatalog();
-    // 面板下拉的选项来自服务端下发的设置；借一次原生提交触发重发，
-    // 让"默认模型"列表立即反映提供商变化。
-    if (window.AlgoSageSettingsAutoSave) window.AlgoSageSettingsAutoSave.refresh();
+    // 面板下拉的选项由服务端在 /models/preset 成功后直接重发
+    // （send_provider_settings），无需前端再触发提交收起抽屉。
   }
 
   async function removeCustomEntries(selections) {

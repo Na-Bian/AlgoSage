@@ -407,6 +407,25 @@ try:  # pragma: no cover - exercised through the running Chainlit server
 
     models_router = _chainlit_router(_chainlit_server_app)
 
+    async def push_provider_views() -> None:
+        """Re-push panel settings + catalog after provider changes.
+
+        ChatSettings.send() updates the drawer's select in place, so the
+        默认模型 list reflects the change without the collapse/reopen cycle
+        a confirm submit would cause. Best-effort: outside an active
+        websocket context (tests, detached calls) this is a no-op.
+        """
+        try:
+            context = await restore_conversation(get_service())
+            await send_provider_settings(context)
+            await send_model_catalog(context)
+        except LookupError:
+            pass  # 无运行中的 Chainlit 上下文（测试/无连接），静默跳过
+        except Exception as error:  # noqa: BLE001 - 刷新失败不影响操作本身
+            logger.info(
+                "provider views re-push skipped error_type=%s", type(error).__name__
+            )
+
     def _catalog_groups(service, options):
         groups: dict[str, dict] = {}
         for option in options:
@@ -529,6 +548,7 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         await get_chat_store().save_user_app_preferences(
             current_user.identifier, preferences
         )
+        await push_provider_views()
         return {
             "success": True,
             "provider_id": provider_id,
@@ -581,6 +601,7 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+        await push_provider_views()
         return {"success": True, "entry": entry}
 
     @models_router.delete("/models/custom", include_in_schema=False)
@@ -596,6 +617,7 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         )
         if not removed:
             raise HTTPException(status_code=404, detail="Entry not found")
+        await push_provider_views()
         return {"success": True}
 
     @models_router.post("/models/select", include_in_schema=False)
