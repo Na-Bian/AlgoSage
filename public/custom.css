@@ -142,7 +142,7 @@
 [role="dialog"]:has(input#name) label[for="name"] {
   display: block;
   text-align: left;
-  margin-bottom: 6px;
+  margin-bottom: 12px;
 }
 
 /* "名称+输入框"与标题区、按钮区的间距过大；统一为更紧凑的节奏。 */
