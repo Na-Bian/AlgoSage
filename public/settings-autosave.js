@@ -158,6 +158,20 @@
     scan();
   }
 
+  // 窄视口下设置抽屉是带全屏遮罩的 dialog：点遮罩（视觉上的"页面空白处"）
+  // 不再关闭面板——即时保存下没有"取消丢弃"语义，快速点击周边极易误触。
+  // 挂在 window 捕获阶段，先于 Radix DismissableLayer 的 document 监听。
+  function swallowOverlayClose(event) {
+    var panel = surface();
+    if (!panel || !panel.matches('[role="dialog"]')) return;
+    if (event.target !== panel.previousElementSibling) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+  window.addEventListener("pointerdown", swallowOverlayClose, true);
+  window.addEventListener("mousedown", swallowOverlayClose, true);
+  window.addEventListener("click", swallowOverlayClose, true);
+
   // 提供商管理对话框增删 provider 后，借一次原生提交让服务端重发面板设置。
   window.AlgoSageSettingsAutoSave = { refresh: scheduleSubmit };
 })();
