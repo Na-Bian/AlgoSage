@@ -9,7 +9,6 @@
 
   var CLASS = "eg-autosave";
   var submitTimer = null;
-  var suppressAutoSubmit = false;
   var valueObserver = null;
   var comboTexts = new WeakMap();
 
@@ -46,54 +45,64 @@
       var confirm = document.getElementById("confirm-sidebar");
       var panel = surface();
       if (!confirm || !panel) return;
-      // 程序化提交后进入冷却：重开 + React 补渲染期间产生的"变化"只是
-      // 渲染回放（空值→初值），不能再次触发提交，否则面板会收起/展开循环。
-      suppressAutoSubmit = true;
-      window.clearTimeout(suppressTimer);
-      suppressTimer = window.setTimeout(function () {
-        suppressAutoSubmit = false;
-        // 冷却期内的真实用户操作不被吞掉：冷却结束后补交一次。
-        if (pendingUserAction) {
-          pendingUserAction = false;
-          scheduleSubmit();
-        }
-      }, 1600);
+      // 程序化提交 → 抽屉收起 → 自动重开 → React 补渲染。整条链路的时长
+      // 随负载波动，固定冷却窗（1.6s）在高负载下会提前失效，让渲染回放
+      // （空值→初值）被当成用户编辑，引发面板收起/展开循环。改用确定性
+      // 门闩：提交即进入 pending 状态，抽屉重新出现并稳定 3 个宏任务后
+      // 才解除，期间所有观察到的"变化"一律只刷新基线。
+      pendingSettle = true;
       confirm.click();
-      // Chainlit 提交后会收起并卸载设置抽屉；即时保存场景需要重新打开。
-      // 抽屉卸载是异步的：轮询至其消失后再触发顶栏按钮，避免被面板状态吞掉。
+      // 抽屉卸载是异步的：轮询至其消失后再触发顶栏按钮重新打开。
       var tries = 0;
       window.clearInterval(reopenTimer);
       reopenTimer = window.setInterval(function () {
-        if (surface()) return; // 仍打开（未来版本行为变化时）则无需处理
+        if (surface()) return;
         var trigger = document.getElementById("chat-settings-header-button");
         if (trigger) {
           window.clearInterval(reopenTimer);
           trigger.click();
         } else if (++tries > 20) {
           window.clearInterval(reopenTimer);
+          pendingSettle = false; // 兜底：重开失败也不能永久卡死自动保存
         }
       }, 200);
     }, 400);
   }
 
   var reopenTimer = null;
-  var suppressTimer = null;
-  var pendingUserAction = false;
+  var pendingSettle = false;
+
+  // 抽屉重开后的渲染稳定检测：连续 3 个宏任务无 DOM 变更即视为稳定。
+  function watchSettle(panel) {
+    var quiet = 0;
+    var check = function () {
+      if (!surface() || surface() !== panel) { settleDone(); return; }
+      if (++quiet >= 3) { settleDone(); return; }
+      window.setTimeout(check, 120);
+    };
+    window.setTimeout(check, 120);
+  }
+
+  function settleDone() {
+    if (!pendingSettle) return;
+    pendingSettle = false;
+    var panel = surface();
+    if (panel) snapshotCombos(panel);
+  }
 
   function armAutosave(panel) {
     panel.dataset.egAutosave = "armed";
-    // 用户手动触发原生提交（键盘 Enter 等）时跳过本轮自动提交，避免双发。
+    // 用户手动触发原生提交（键盘 Enter 等）时同样走门闩，避免双发。
     panel.addEventListener("submit", function () {
       window.clearTimeout(submitTimer);
-      suppressAutoSubmit = true;
-      window.setTimeout(function () { suppressAutoSubmit = false; }, 800);
+      pendingSettle = true;
+      watchSettle(panel);
     });
     // Select / 原生控件走 change；Radix Switch 走 click。
     panel.addEventListener(
       "change",
       function (event) {
         if (event.target.closest(".eg-settings-add, .eg-add-dialog")) return;
-        if (suppressAutoSubmit) { pendingUserAction = true; return; }
         scheduleSubmit();
       },
       true
@@ -103,12 +112,12 @@
       function (event) {
         var toggle = event.target.closest('[role="switch"]');
         if (!toggle || toggle.closest(".eg-settings-add, .eg-add-dialog")) return;
-        if (suppressAutoSubmit) { pendingUserAction = true; return; }
         scheduleSubmit();
       },
       true
     );
     snapshotCombos(panel);
+    if (pendingSettle) watchSettle(panel);
     valueObserver = new MutationObserver(function (records) {
       var pending = false;
       for (var i = 0; i < records.length; i++) {
@@ -127,8 +136,9 @@
           if (comboTextChanged(record.target)) pending = true;
         }
       }
-      // 基线已在上面无条件刷新；冷却期（提交后的渲染回放）内不触发新提交。
-      if (pending && !suppressAutoSubmit) scheduleSubmit();
+      // 门闩期间（提交后的收起/重开/补渲染）只刷新基线，不触发提交；
+      // 基线在 comboTextChanged 与下方无条件刷新。
+      if (pending && !pendingSettle) scheduleSubmit();
     });
     valueObserver.observe(panel, {
       subtree: true,
