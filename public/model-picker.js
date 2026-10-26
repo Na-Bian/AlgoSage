@@ -232,7 +232,7 @@
     if (!state.providers.length || !hasUsableModels()) {
       var empty = document.createElement("div");
       empty.className = "eg-model-menu-empty";
-      empty.textContent = "尚未添加模型提供商：添加你的 API 后即可开始对话。";
+      empty.textContent = "尚未添加模型提供商，添加你的 API 提供商后即可开始对话。";
       listElement.append(empty);
       var addBtn = document.createElement("button");
       addBtn.type = "button";
@@ -431,11 +431,44 @@
   }
 
   /* 设置面板入口："管理模型提供商"挂在"默认模型"控件下方。
-     面板由 React 渲染，注入节点消失时由观察器补回；对话框复用本文件的实现。 */
+     无可用提供商时"默认模型"控件不渲染，入口改挂到设置面板标题下方，
+     保证删除全部提供商后仍能从这里重新添加。 */
+  function entryHTML() {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 0-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+      管理模型提供商
+    `;
+  }
+
+  function bindEntry(entry) {
+    entry.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      openAddDialog();
+    });
+  }
+
   function ensureSettingsAddEntry() {
     if (!document.getElementById("chat-settings-sidebar-title")) return;
     var label = document.querySelector('aside label[for="model_catalog"]');
-    if (!label) return;
+    if (!label) {
+      // 无"默认模型"控件（无任何提供商）：入口挂到设置面板标题下方。
+      var anchor = document.getElementById("chat-settings-sidebar-title");
+      var headerBlock = anchor && anchor.closest("div");
+      var panel = anchor && (anchor.closest('[role="dialog"]') || anchor.closest("[data-panel]"));
+      if (!headerBlock || !panel) return;
+      var entry = document.createElement("button");
+      entry.type = "button";
+      entry.id = "eg-settings-add-model";
+      entry.className = "eg-settings-add";
+      entry.innerHTML = entryHTML();
+      bindEntry(entry);
+      headerBlock.insertAdjacentElement("afterend", entry);
+      return;
+    }
     var wrapper = label.closest("div.space-y-2") || label.parentElement;
     if (!wrapper || !wrapper.parentElement) return;
     var existing = document.getElementById("eg-settings-add-model");
@@ -450,18 +483,8 @@
     entry.type = "button";
     entry.id = "eg-settings-add-model";
     entry.className = "eg-settings-add";
-    entry.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-        <circle cx="12" cy="12" r="3"/>
-      </svg>
-      管理模型提供商
-    `;
-    entry.addEventListener("click", function (event) {
-      event.preventDefault();
-      event.stopPropagation();
-      openAddDialog();
-    });
+    entry.innerHTML = entryHTML();
+    bindEntry(entry);
     wrapper.insertAdjacentElement("afterend", entry);
   }
 
@@ -926,7 +949,7 @@
     var toast = document.createElement("div");
     toast.className = "eg-no-model-toast";
     toast.setAttribute("role", "alert");
-    toast.textContent = "尚未添加模型提供商：点击「未配置模型」按钮，添加你的 API 提供商后即可开始对话。";
+    toast.textContent = "尚未添加模型提供商，添加你的 API 提供商后即可开始对话。";
     document.body.append(toast);
     window.setTimeout(function () { toast.remove(); }, 4500);
   }

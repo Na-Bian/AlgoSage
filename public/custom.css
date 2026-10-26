@@ -767,7 +767,9 @@ body.eg-no-models #chat-submit {
 }
 
 .eg-model-add {
-  flex: 0 0 auto;
+  /* 菜单空态的添加入口：水平撑满列表区。 */
+  flex: 1 1 auto;
+  width: calc(100% - 14px);
   margin: 2px 7px 9px;
   min-height: 38px;
   display: flex;
