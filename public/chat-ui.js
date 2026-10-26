@@ -717,15 +717,23 @@
     }, 24);
   }
 
-  // 设置面板/说明文档对话框打开时给 body 打标记（CSS :has 的 JS 兜底，
-  // 兼容不支持复杂 :has 的浏览器），用于隐藏侧栏顶部品牌与快捷图标组。
-  new MutationObserver(function () {
+  // Only the readme covers the app. The settings panel must leave navigation
+  // available. Use the trigger's dialog ID instead of treating any h1 as readme.
+  function syncReadmeVisibility() {
+    const dialogId = document.getElementById("readme-button")?.getAttribute("aria-controls");
+    const dialog = dialogId && document.getElementById(dialogId);
     document.body.classList.toggle(
-      "eg-dialog-open",
-      !!document.getElementById("chat-settings-sidebar-title")
-        || !!document.querySelector('[role="dialog"] h1')
+      "eg-readme-open",
+      !!dialog && dialog.getAttribute("role") === "dialog"
     );
-  }).observe(document.body, { childList: true, subtree: true });
+  }
+  syncReadmeVisibility();
+  new MutationObserver(syncReadmeVisibility).observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["aria-expanded", "data-state"],
+  });
 
   const composerRemovalObserver = new MutationObserver((mutations) => {
     if (composerMotion.phase !== "armed-chat" && composerMotion.phase !== "armed-welcome") return;
