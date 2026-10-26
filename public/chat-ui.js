@@ -118,9 +118,10 @@
 
   function enhanceSidebar() {
     const sidebar = document.querySelector('[data-sidebar="sidebar"]');
+    const mobile = sidebar?.dataset.mobile === "true";
     const group = sidebar?.closest(".group.peer");
     const header = sidebar?.querySelector('[data-sidebar="header"] > .flex.items-center.justify-between');
-    if (!sidebar || !group || !header) return false;
+    if (!sidebar || (!group && !mobile) || !header) return false;
 
     const sourceTrigger = header.querySelector("#sidebar-trigger-button");
     const sourceSearch = header.querySelector("#search-chats-button");
@@ -131,7 +132,7 @@
       || !sidebarRefs.search.isConnected || !sidebarRefs.new.isConnected;
     if (refsChanged) {
       const collapseControl = makeIconControl(
-      group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏",
+      !mobile && group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏",
       SIDEBAR_ICONS.panel,
       () => sidebarRefs?.trigger.click()
     );
@@ -179,7 +180,13 @@
       const newLabel = document.createElement("span");
       newLabel.textContent = "新建对话";
       newChatAction.append(plus, newLabel);
-      newChatAction.addEventListener("click", () => sidebarRefs.new.click());
+      newChatAction.addEventListener("click", () => {
+        const { new: newControl, trigger } = sidebarRefs;
+        newControl.click();
+        // Starting an empty chat can stay on the same route, so the drawer
+        // needs closing explicitly when navigation has not unmounted it.
+        if (mobile && sidebar.isConnected && sidebar.dataset.state === "open") trigger.click();
+      });
 
       presentation.append(newChatAction);
       header.append(presentation);
@@ -187,9 +194,13 @@
 
     sidebarRefs.collapseControl.setAttribute(
       "aria-label",
-      group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏"
+      !mobile && group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏"
     );
     sidebarRefs.collapseControl.title = sidebarRefs.collapseControl.getAttribute("aria-label");
+
+    // A mobile drawer has no desktop peer/state or persisted desktop width.
+    // Reuse its header controls without replaying the desktop collapse cookie.
+    if (mobile) return true;
 
     if (restoreSidebarPreference(group, sourceTrigger)) return false;
 
@@ -235,6 +246,55 @@
     pill.append(expandButton, searchButton, newButton);
     collapsedBar.append(logo, pill);
     document.body.append(collapsedBar);
+  }
+
+  function enhanceMobileHeader() {
+    const header = document.getElementById("header");
+    const navigation = header?.firstElementChild;
+    const tools = header?.lastElementChild;
+    if (!navigation || !tools || !navigation.querySelector("#sidebar-trigger-button")) return;
+    if (!navigation.classList.contains("eg-header-navigation")) navigation.classList.add("eg-header-navigation");
+    if (!tools.classList.contains("eg-header-tools")) tools.classList.add("eg-header-tools");
+
+    if (!navigation.querySelector(".eg-mobile-navigation")) {
+      // Presentation controls delegate to the original React-owned actions.
+      // Keep these in header flow; the desktop floating bar stays separate.
+      const mobileNavigation = document.createElement("div");
+      mobileNavigation.className = "eg-mobile-navigation";
+      const logo = document.createElement("img");
+      logo.src = "/public/favicon.png";
+      logo.alt = "AlgoSage";
+      const actions = document.createElement("div");
+      actions.className = "eg-mobile-actions";
+      const nativeAction = (id) => header.querySelector(`#${id}`)?.click();
+      actions.append(
+        makeIconControl("展开侧栏", SIDEBAR_ICONS.panel, () => nativeAction("sidebar-trigger-button")),
+        makeIconControl("新建对话", SIDEBAR_ICONS.squarePen, () => nativeAction("new-chat-button"))
+      );
+      mobileNavigation.append(logo, actions);
+      navigation.append(mobileNavigation);
+    }
+
+    const readme = header.querySelector("#readme-button");
+    if (readme && !readme.querySelector(".eg-readme-icon")) {
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.classList.add("eg-readme-icon");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("fill", "none");
+      icon.setAttribute("stroke", "currentColor");
+      icon.setAttribute("stroke-width", "1.8");
+      icon.setAttribute("stroke-linecap", "round");
+      icon.setAttribute("stroke-linejoin", "round");
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML = '<path d="M12 7v14m0-14C9 4 5 4 2 5v14c3-1 7-1 10 2m0-14c3-3 7-3 10-2v14c-3-1-7-1-10 2"/>';
+      readme.append(icon);
+      readme.setAttribute("aria-label", "说明");
+      readme.title = "说明";
+    }
+    const settings = header.querySelector("#chat-settings-header-button");
+    if (settings && !settings.hasAttribute("aria-label")) settings.setAttribute("aria-label", "设置");
+    const userMenu = header.querySelector("#user-nav-button");
+    if (userMenu && !userMenu.hasAttribute("aria-label")) userMenu.setAttribute("aria-label", "用户菜单");
   }
 
   function enhanceStepStatusIcons() {
@@ -801,6 +861,7 @@
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
+      enhanceMobileHeader();
       enhanceSidebar();
       enhanceStepStatusIcons();
       translateStepLabels();
