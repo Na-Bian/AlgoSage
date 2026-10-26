@@ -2018,3 +2018,12 @@ main div:has(> #messages) { overflow: visible; }
   padding-left: 12px;
   margin: 4px 0 8px;
 }
+
+/* 模型菜单里自定义模型行的能力文字（弱化、不抢焦点）。 */
+.eg-model-option-caps {
+  margin-left: 8px;
+  color: hsl(var(--muted-foreground) / .85);
+  font-size: .7rem;
+  font-style: normal;
+  white-space: nowrap;
+}

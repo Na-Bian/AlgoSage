@@ -191,7 +191,7 @@
 
   function visibleProviders() {
     var queryText = query.trim().toLowerCase();
-    return state.providers
+    var groups = state.providers
       .filter(function (group) { return !group.hidden; })
       .map(function (group) {
         var models = group.models.filter(function (model) {
@@ -204,6 +204,25 @@
       .filter(function (group) {
         return group.models.length > 0;
       });
+    // 自定义模型按提供商显示名称拆分成独立分组（组名如"我的 SiliconFlow"）。
+    var expanded = [];
+    groups.forEach(function (group) {
+      if (group.id !== "custom") {
+        expanded.push(group);
+        return;
+      }
+      var byLabel = {};
+      group.models.forEach(function (model) {
+        var label = model.label || group.label;
+        (byLabel[label] = byLabel[label] || []).push(model);
+      });
+      Object.keys(byLabel).forEach(function (label) {
+        expanded.push(
+          Object.assign({}, group, { label: label, models: byLabel[label] })
+        );
+      });
+    });
+    return expanded;
   }
 
   function renderMenu() {
@@ -250,8 +269,18 @@
         option.setAttribute("role", "option");
         option.setAttribute("aria-selected", String(model.selection === state.currentSelection));
         option.disabled = !model.available || state.switching;
+        // 自定义模型行附加能力文字（思考 · 多模态 · 联网）。
+        var capText = "";
+        if (group.id === "custom") {
+          var optionCaps = model.capabilities || {};
+          var optionTags = [];
+          if (optionCaps.thinking) optionTags.push("思考");
+          if (optionCaps.multimodal) optionTags.push("多模态");
+          if (optionCaps.web_search) optionTags.push("联网");
+          capText = optionTags.join(" · ");
+        }
         option.innerHTML = `
-          <span class="eg-model-option-name">${model.short_name || shortModelName(model.model)}</span>
+          <span class="eg-model-option-name">${model.short_name || shortModelName(model.model)}${capText ? `<em class="eg-model-option-caps">${capText}</em>` : ""}</span>
           <span class="eg-model-option-state">${model.selection === state.currentSelection ? "✓" : model.available ? "" : "不可用"}</span>
         `;
         option.addEventListener("click", function () {
