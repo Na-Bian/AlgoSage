@@ -293,19 +293,7 @@
         option.addEventListener("click", function () {
           selectModel(model.selection);
         });
-        if (group.id === "custom") {
-          var remove = document.createElement("span");
-          remove.className = "eg-model-remove";
-          remove.setAttribute("role", "button");
-          remove.title = "删除该自定义模型";
-          remove.textContent = "×";
-          remove.addEventListener("click", function (event) {
-            event.preventDefault();
-            event.stopPropagation();
-            removeCustomModel(model.selection);
-          });
-          option.append(remove);
-        }
+        // 删除入口统一在「管理模型提供商」对话框，菜单里不放删除按钮避免误触。
         listElement.append(option);
       });
     });
@@ -433,17 +421,6 @@
     } finally {
       state.switching = false;
       renderMenu();
-    }
-  }
-
-  async function removeCustomModel(selection) {
-    if (state.switching) return;
-    setStatus("正在删除…");
-    try {
-      await deleteCustomSelection(selection);
-      setStatus("已删除", false);
-    } catch (error) {
-      setStatus(error.message || "删除失败", true);
     }
   }
 
