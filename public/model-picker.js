@@ -387,6 +387,7 @@
       state.currentLabel = payload.label || safeModelLabel(selection);
       state.switching = false;
       updateButton();
+      syncNoModelState();
       renderMenu();
       setStatus("模型已切换", false);
       window.setTimeout(closeMenu, 500);
@@ -717,6 +718,51 @@
     }
   }
 
+  var probedCapabilities = {};
+  var probingModels = {};
+
+  function probeCapabilities(fields, item) {
+    if (probingModels[item.id]) return;
+    probingModels[item.id] = true;
+    fetch("/models/probe", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        base_url: fields.base_url,
+        api_key: fields.api_key,
+        model: item.id,
+      }),
+    })
+      .then(function (response) { return response.json(); })
+      .then(function (payload) {
+        var capabilities = payload.capabilities;
+        if (!capabilities) return;
+        probedCapabilities[item.id] = capabilities;
+        item.capabilities = capabilities;
+        // 若行还在列表里，刷新能力标签显示。
+        var row = [...document.querySelectorAll(".eg-add-model")].find(function (r) {
+          return (
+            r.querySelector(".eg-add-model-name") &&
+            r.dataset.modelId === item.id
+          );
+        });
+        if (row) {
+          var capTags = [];
+          if (capabilities.thinking === true) capTags.push("思考");
+          if (capabilities.multimodal === true) capTags.push("多模态");
+          if (capabilities.web_search === true) capTags.push("联网");
+          var capsNode = row.querySelector(".eg-add-model-caps");
+          if (capsNode) {
+            capsNode.classList.remove("eg-caps-pending");
+            capsNode.textContent = capTags.length ? capTags.join(" · ") : "";
+          }
+        }
+      })
+      .catch(function () {})
+      .finally(function () { delete probingModels[item.id]; });
+  }
+
   function showResultsNotice(message) {
     if (!addDialog) return;
     var results = addDialog.querySelector(".eg-add-results");
@@ -739,7 +785,6 @@
         confirmButton.textContent = count ? `添加所选（${count}）` : "添加所选";
       }
     }
-    var probePending = !probed;
     function appendItem(item) {
       var row = document.createElement("button");
       row.type = "button";
@@ -748,12 +793,9 @@
       var caps = item.capabilities || {};
       var capTags = [];
       if (caps.thinking === true) capTags.push("思考");
-      else if (caps.thinking === false) capTags.push("不支持思考");
       if (caps.multimodal === true) capTags.push("多模态");
       if (caps.web_search === true) capTags.push("联网");
-      var capChips = probePending
-        ? ["能力探测中…"]
-        : capTags;
+      var capChips = capTags;
       var capHtml = capChips.length
         ? `<span class="eg-add-model-caps">${capChips
             .map(function (chip) {
@@ -767,6 +809,7 @@
         : item.params_b == null
           ? "参数量未知"
           : `${sizeText} · 超出限制`;
+      row.dataset.modelId = item.id;
       row.innerHTML = `
         <span class="eg-add-model-name">${shortModelName(item.id)}${capHtml}</span>
         <span class="eg-add-model-size">${item.allowed ? sizeText : blockReason}</span>
@@ -781,6 +824,8 @@
             row.classList.add("eg-add-model-selected");
           }
           syncConfirm();
+          // 选中即后台探测真实能力，完成后更新该行标签。
+          if (!probedCapabilities[item.id]) probeCapabilities(fields, item);
         });
       }
       results.append(row);

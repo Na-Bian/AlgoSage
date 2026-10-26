@@ -617,44 +617,56 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                 status_code=400,
                 detail="无法获取模型列表：请检查 Base URL、API Key 与网络连通性",
             ) from error
-        # 真实能力探测：对每个可添加的对话模型发送构造请求（思考/多模态/联网
-        # 各一个最小请求），依据上游行为而非命名规则判定支持情况。
+        # 能力探测改为懒式：仅对用户选中的模型按需探测（POST /models/probe），
+        # 避免获取列表时对全量模型逐一发请求造成长时间等待。
+        return {"models": models}
+
+    @models_router.post("/models/probe", include_in_schema=False)
+    async def probe_single_model(payload: dict, current_user: UserParam):
+        """对单个模型做真实能力探测（思考/多模态/联网），按需调用。"""
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Invalid payload")
+        base_url = str(payload.get("base_url") or "").strip()
+        api_key = str(payload.get("api_key") or "").strip()
+        model = str(payload.get("model") or "").strip()
+        if not base_url or not api_key or not model:
+            raise HTTPException(status_code=400, detail="Base URL、API Key 与模型不能为空")
+        service = get_service()
+        from algosage.providers import validate_public_base_url
+
+        try:
+            validate_public_base_url(base_url)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        if not model.strip():
+            raise HTTPException(status_code=400, detail="模型不能为空")
         from algosage.custom_providers import probe_model_capabilities
 
-        probed = [
-            m
-            for m in models
-            if m.get("allowed") and m.get("capabilities", {}).get("is_chat")
-        ]
-
-        async def probe_one(model_entry) -> None:
-            try:
-                capabilities = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        probe_model_capabilities, base_url, api_key, model_entry["id"]
-                    ),
-                    timeout=60,
-                )
-                model_entry["capabilities"] = capabilities
-            except Exception as error:  # noqa: BLE001 - 探测失败保持推断结果
-                logger.info(
-                    "capability probe failed model=%s error_type=%s",
-                    model_entry.get("id"),
-                    type(error).__name__,
-                )
-
-        semaphore = asyncio.Semaphore(8)
-
-        async def bounded(entry):
-            async with semaphore:
-                await probe_one(entry)
-
-        if probed:
-            await asyncio.wait(
-                [asyncio.create_task(bounded(entry)) for entry in probed],
-                timeout=90,
+        try:
+            capabilities = await asyncio.wait_for(
+                asyncio.to_thread(probe_model_capabilities, base_url, api_key, model),
+                timeout=60,
             )
-        return {"models": models, "probed": True}
+        except asyncio.TimeoutError:
+            capabilities = {
+                "thinking": None,
+                "multimodal": None,
+                "web_search": None,
+                "is_chat": None,
+            }
+        except Exception as error:  # noqa: BLE001 - 探测失败不影响响应
+            logger.info(
+                "capability probe failed model=%s error_type=%s", model, type(error).__name__
+            )
+            capabilities = {
+                "thinking": None,
+                "multimodal": None,
+                "web_search": None,
+                "is_chat": None,
+            }
+        return {"capabilities": capabilities}
 
     @models_router.post("/models/custom", include_in_schema=False)
     async def register_custom_model(payload: dict, current_user: UserParam):
@@ -749,6 +761,7 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             "/models/discover",
             "/models/custom",
             "/models/preset",
+            "/models/probe",
         ),
     )
 
