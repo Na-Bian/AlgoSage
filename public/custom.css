@@ -2191,7 +2191,9 @@ main div:has(> #messages) { overflow: visible; }
   font-style: normal;
 }
 
-/* 设置面板打开时隐藏侧栏顶部的品牌与快捷图标组。 */
-body:has(#chat-settings-sidebar-title) [data-sidebar="sidebar"] .eg-original-sidebar-header {
+/* 设置面板或"说明"文档对话框打开时，隐藏侧栏顶部的品牌与快捷图标组。
+   文档对话框以"含 h1 的 Radix 对话框"识别（其余对话框均无 h1）。 */
+body:has(#chat-settings-sidebar-title) [data-sidebar="sidebar"] .eg-original-sidebar-header,
+body:has([role="dialog"] h1) [data-sidebar="sidebar"] .eg-original-sidebar-header {
   display: none;
 }
