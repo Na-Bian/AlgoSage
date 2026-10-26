@@ -506,6 +506,7 @@ class TutorService:
         api_key: str,
         model: str,
         label: str = "",
+        capabilities: dict | None = None,
     ) -> dict:
         return self.custom_providers.register(
             principal_id,
@@ -513,6 +514,7 @@ class TutorService:
             api_key=api_key,
             model=model,
             label=label,
+            capabilities=capabilities,
         )
 
     def list_custom_providers(self, principal_id: str) -> list[dict]:

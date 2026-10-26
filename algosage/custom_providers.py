@@ -47,6 +47,104 @@ _ENV_SECRET_KEY = "SAGE_CUSTOM_PROVIDER_SECRET"
 _ENV_FIELDS = ("PRINCIPAL", "LABEL", "BASE_URL", "MODEL", "KEY", "CAPABILITIES")
 _FORBIDDEN_CHARS = re.compile(r"[\r\n\x00]")
 
+# 能力探测用的 64x64 纯色 PNG（data URL）：VL 模型对过小图片会报尺寸错误。
+_PROBE_IMAGE_DATA_URL = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAf0lE"
+    "QVR4nNXOQREAIAzAsFJd83/IQgSPXaMg585QJnESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ES"
+    "J3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ES"
+    "J3ESJ3ESJ3ESJ3ESJ3ES53bg1wOShAHAaQyuBQAAAABJRU5ErkJggg=="
+)
+
+
+def probe_model_capabilities(base_url: str, api_key: str, model_id: str) -> dict:
+    """真实调用上游判断模型能力：每个能力一个构造好的最小请求，观察行为。
+
+    - 思考：enable_thinking=true 后响应必须携带非空 reasoning_content
+      （上游对不支持的模型会静默忽略参数，必须检查输出而非报错）；
+    - 多模态：携带 64x64 data-url 图片，非视觉模型返回 400（not a VLM）；
+    - 联网搜索：enable_search=true，上游拒绝（4xx）即不支持；
+    - is_chat：纯文本最小请求，全部探测失败时用于区分"模型不存在"。
+    异常/超时统一记为 None（未知），不冒充支持。
+    """
+    from openai import OpenAI
+
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=15, max_retries=0)
+    result = {
+        "thinking": None,
+        "multimodal": None,
+        "web_search": None,
+        "is_chat": None,
+    }
+
+    import time as _time
+
+    from openai import APIStatusError
+
+    def attempt(payload, require_reasoning=False):
+        # 4xx（非限流）= 上游明确拒绝 → 该能力不支持；
+        # 429/5xx/超时 = 暂时失败 → 短退避重试，最终仍失败记为未知。
+        for round_index in range(3):
+            try:
+                completion = client.chat.completions.create(**payload)
+            except APIStatusError as error:
+                status = getattr(error, "status_code", None)
+                if isinstance(status, int) and 400 <= status < 500 and status != 429:
+                    return False
+                last_error = error
+            except Exception as error:  # noqa: BLE001 - 超时/连接失败归为未知
+                last_error = error
+            _time.sleep(1.2 * (round_index + 1))
+        logger.info(
+            "capability probe inconclusive model=%s last_error=%s",
+            model_id,
+            type(last_error).__name__,
+        )
+        return None
+
+    result["thinking"] = attempt(
+        {
+            "model": model_id,
+            "messages": [{"role": "user", "content": "1+1等于几？先想一想再回答。"}],
+            "max_tokens": 30,
+            "extra_body": {"enable_thinking": True},
+        },
+        require_reasoning=True,
+    )
+    result["multimodal"] = attempt(
+        {
+            "model": model_id,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "hi"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": _PROBE_IMAGE_DATA_URL},
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": 1,
+        }
+    )
+    result["web_search"] = attempt(
+        {
+            "model": model_id,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+            "extra_body": {"enable_search": True},
+        }
+    )
+    result["is_chat"] = attempt(
+        {
+            "model": model_id,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+        }
+    )
+    return result
+
 
 def _env_quote(value: str) -> str:
     """Quote a dotenv value when necessary (spaces, #, quotes, leading/trailing ws)."""
@@ -184,9 +282,7 @@ class CustomProviderStore:
                 lines.append(f"{prefix}BASE_URL={_env_quote(entry['base_url'])}")
                 lines.append(f"{prefix}MODEL={_env_quote(entry['model'])}")
                 caps = entry.get("capabilities") or {}
-                tags = ",".join(
-                    name for name, on in sorted(caps.items()) if on
-                )
+                tags = ",".join(name for name, on in sorted(caps.items()) if on)
                 lines.append(f"{prefix}CAPABILITIES={_env_quote(tags)}")
                 lines.append(f"{prefix}KEY={sealed}")
         lines.append(_ENV_BLOCK_END)
@@ -226,6 +322,7 @@ class CustomProviderStore:
         api_key: str,
         model: str,
         label: str = "",
+        capabilities: dict | None = None,
         _persist: bool = True,
     ) -> dict:
         if not isinstance(principal_id, str) or not principal_id.strip():
@@ -252,7 +349,11 @@ class CustomProviderStore:
             "mode": "api",
             "available": True,
             "params_b": parse_model_params_b(model),
-            "capabilities": capabilities,
+            "capabilities": (
+                capabilities
+                if isinstance(capabilities, dict) and capabilities
+                else infer_model_capabilities(model)
+            ),
             "base_url": settings.base_url,
             # Runtime-only plaintext; on disk this is Fernet-sealed.
             "api_key": api_key,

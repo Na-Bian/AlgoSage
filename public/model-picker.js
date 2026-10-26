@@ -693,7 +693,7 @@
       });
       var payload = await response.json().catch(function () { return {}; });
       if (!response.ok) throw new Error(payload.detail || `获取失败（${response.status}）`);
-      renderDiscoveredModels(payload.models || [], fields);
+      renderDiscoveredModels(payload.models || [], fields, payload.probed === true);
     } catch (error) {
       showResultsNotice(error.message || "获取模型列表失败");
     }
@@ -706,7 +706,7 @@
     results.textContent = message;
   }
 
-  function renderDiscoveredModels(models, fields) {
+  function renderDiscoveredModels(models, fields, probed) {
     var results = addDialog.querySelector(".eg-add-results");
     results.hidden = false;
     results.textContent = "";
@@ -721,6 +721,7 @@
         confirmButton.textContent = count ? `添加所选（${count}）` : "添加所选";
       }
     }
+    var probePending = !probed;
     function appendItem(item) {
       var row = document.createElement("button");
       row.type = "button";
@@ -728,14 +729,20 @@
       row.disabled = !item.allowed;
       var caps = item.capabilities || {};
       var capTags = [];
-      if (caps.thinking) capTags.push("思考");
-      if (caps.multimodal) capTags.push("多模态");
-      if (caps.web_search) capTags.push("联网");
-      var capHtml = capTags.length
-        ? `<span class="eg-add-model-caps">${capTags.join(" · ")}</span>`
+      if (caps.thinking === true) capTags.push("思考");
+      else if (caps.thinking === false) capTags.push("不支持思考");
+      if (caps.multimodal === true) capTags.push("多模态");
+      if (caps.web_search === true) capTags.push("联网");
+      var capText = probePending
+        ? "能力探测中…"
+        : capTags.length
+          ? capTags.join(" · ")
+          : "";
+      var capHtml = capText
+        ? `<span class="eg-add-model-caps${probePending ? " eg-caps-pending" : ""}">${capText}</span>`
         : "";
       var sizeText = item.params_b == null ? "参数量未知" : `${item.params_b}B`;
-      var blockReason = !caps.is_chat
+      var blockReason = caps.is_chat === false
         ? "非对话模型"
         : item.params_b == null
           ? "参数量未知"
@@ -792,6 +799,12 @@
           failed.push(`${picked[i].id}（${error.message}）`);
         }
       }
+      // 清空已成功添加的选择
+      picked.forEach(function (item) {
+        if (!failed.some(function (f) { return f.startsWith(item.id); })) {
+          delete selected[item.id];
+        }
+      });
       await loadCatalog();
       renderManagedModels();
       selected = {};
