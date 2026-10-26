@@ -865,7 +865,16 @@ class ChatDataLayer(BaseDataLayer):
         history: List[Dict[str, Any]],
         provider_selection: str,
         model_params: dict | None = None,
+        *,
+        only_existing: bool = False,
     ) -> None:
+        """Persist a turn, or update an existing chat for account settings.
+
+        Settings may arrive after a chat was deleted or before its first turn.
+        Their optional update must not create/revive a thread. Check under the
+        same lock as the write so concurrent deletion cannot race this decision.
+        Ordinary message writes retain the strict tombstone/ownership checks.
+        """
         safe_history = []
         for message in history[-24:]:
             if not isinstance(message, dict):
@@ -907,9 +916,13 @@ class ChatDataLayer(BaseDataLayer):
             if self._conn.execute(
                 "SELECT 1 FROM deleted_threads WHERE thread_id = ?", (thread_id,)
             ).fetchone():
+                if only_existing:
+                    return
                 raise PermissionError("deleted thread cannot receive backend history")
             row = self._thread_row(thread_id)
             if row is None:
+                if only_existing:
+                    return
                 user = self._conn.execute(
                     "SELECT 1 FROM users WHERE identifier = ?", (principal_id,)
                 ).fetchone()

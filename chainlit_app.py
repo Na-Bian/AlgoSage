@@ -1090,7 +1090,9 @@ async def on_settings_update(settings: dict) -> None:
             await get_chat_store().save_user_app_preferences(
                 principal, context.model_params
             )
-        await persist_backend_history(context)
+        # Account preferences are already saved above. A late settings event
+        # may reference a deleted chat; do not create/revive one as a side effect.
+        await persist_backend_history(context, only_existing=True)
         await send_model_catalog(context)
         # 重新下发设置：面板里的模型列表需要包含新添加的自定义模型。
         await send_provider_settings(context)
@@ -1155,7 +1157,7 @@ def _restore_context_history(context, history):
         context.history[:] = [dict(m) for m in history[-2 * HISTORY_TURNS_KEPT :]]
 
 
-async def persist_backend_history(context) -> None:
+async def persist_backend_history(context, *, only_existing: bool = False) -> None:
     principal = authenticated_principal_id()
     if principal:
         history, selection = await asyncio.to_thread(_snapshot_context, context)
@@ -1164,6 +1166,7 @@ async def persist_backend_history(context) -> None:
             principal,
             history,
             selection,
+            only_existing=only_existing,
         )
 
 

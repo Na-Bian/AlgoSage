@@ -163,7 +163,12 @@ def main() -> int:
         all_received: list[dict] = []
         events: list[str] = []
         streamed: list[dict] = []
+        settings_updates: list = []
         session_id = str(uuid.uuid4())
+
+        @sio.on("chat_settings")
+        def on_chat_settings(data):
+            settings_updates.append(data)
 
         @sio.on("new_message")
         def on_new_message(data):
@@ -347,6 +352,7 @@ def main() -> int:
             resumed.on("new_message", on_new_message)
             resumed.on("task_end", on_task_end)
             resumed.on("stream_token", on_stream_token)
+            resumed.on("chat_settings", on_chat_settings)
             resumed.connect(
                 base,
                 socketio_path="/ws/socket.io",
@@ -381,10 +387,30 @@ def main() -> int:
                 v["turns"] for v in before_restart.values()
             ) + 1:
                 failures.append("continued turn did not extend the original risk budget")
-            resumed.disconnect()
             http.delete(
                 base + "/project/thread", json={"threadId": thread_id}, timeout=10
             ).raise_for_status()
+            # Keep the socket attached to the deleted chat, like a delayed
+            # settings autosave from an already-open browser tab.
+            received.clear()
+            settings_updates.clear()
+            resumed.emit("chat_settings_change", {
+                "model_catalog": "offline-second::other-model",
+                "temperature": 0.3,
+            })
+            deadline = time.time() + 5
+            while time.time() < deadline and not settings_updates:
+                time.sleep(0.1)
+            if not settings_updates:
+                failures.append("settings autosave failed after deleting the active chat")
+            if received:
+                failures.append("settings autosave appended a message to the deleted chat")
+            prefs = http.get(base + "/auth/preferences", timeout=10).json()
+            if prefs.get("default_model_selection") != "offline-second::other-model":
+                failures.append("deleted-chat settings failed to save the account default")
+            if "deleted thread cannot" in (runtime_root / "server.log").read_text():
+                failures.append("deleted-chat settings raised a late history/step error")
+            resumed.disconnect()
             remaining = http.post(
                 base + "/project/threads",
                 json={"pagination": {"first": 100}, "filter": {}},
@@ -420,7 +446,7 @@ def main() -> int:
             print(" -", item)
         return 1
     print(
-        "E2E PASS: 问答与流式事件 / 对话保存恢复搜索重命名删除 / 跨工作区隔离 / 跨目录重启与登录过期恢复 / 原安全预算继续累计 / Provider切换 / 考试门控 / 无密钥泄漏 全部通过"
+        "E2E PASS: 问答与流式事件 / 对话保存恢复搜索重命名删除 / 删除后设置保存 / 跨工作区隔离 / 跨目录重启与登录过期恢复 / 原安全预算继续累计 / Provider切换 / 考试门控 / 无密钥泄漏 全部通过"
     )
     return 0
 

@@ -257,6 +257,57 @@ class ChatFeatureTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(prefs.get("default_model_selection"), "other::m")
         await store.close()
 
+    async def test_account_settings_do_not_create_or_revive_chat_history(self):
+        from algosage.config import Settings
+        from algosage.providers import ProviderRegistry
+        from algosage.service import TutorService
+        from algosage.chat_store import ChatDataLayer
+        from chainlit.user import User
+
+        for deleted in (False, True):
+            with self.subTest(deleted=deleted):
+                store = ChatDataLayer(":memory:")
+                self.addAsyncCleanup(store.close)
+                await store.create_user(User(identifier="p"))
+                registry = ProviderRegistry(
+                    Settings(mode="mock"),
+                    entries=[{"id": "other", "mode": "mock", "models": ["m"]}],
+                )
+                svc = TutorService(registry.base, providers=registry)
+                if deleted:
+                    await store.save_backend_history(
+                        "stale-thread", "p",
+                        [{"role": "user", "content": "deleted question"}],
+                        registry.default,
+                    )
+                    await store.delete_thread("stale-thread")
+                fake = SimpleNamespace(
+                    context=SimpleNamespace(
+                        session=SimpleNamespace(id="socket", thread_id="stale-thread")
+                    ),
+                    user_session=SimpleNamespace(
+                        get=lambda key: SimpleNamespace(identifier="p") if key == "user" else None
+                    ),
+                    Message=Mock(return_value=SimpleNamespace(send=AsyncMock())),
+                    ChatSettings=Mock(return_value=SimpleNamespace(send=AsyncMock())),
+                    send_window_message=AsyncMock(),
+                )
+                with patch.object(chainlit_app, "cl", fake), patch.object(
+                    chainlit_app, "get_service", return_value=svc
+                ), patch.object(chainlit_app, "get_chat_store", return_value=store):
+                    await inspect.unwrap(chainlit_app.on_settings_update)(
+                        {"model_catalog": "other::m", "temperature": 0.3}
+                    )
+                prefs = await store.load_user_app_preferences("p")
+                self.assertEqual(prefs["default_model_selection"], "other::m")
+                self.assertEqual(prefs["temperature"], 0.3)
+                self.assertIsNone(await store.get_thread("stale-thread"))
+                fake.Message.assert_not_called()
+                if deleted:
+                    # Ordinary chat writes must still reject a tombstoned ID.
+                    with self.assertRaises(PermissionError):
+                        await store.save_backend_history("stale-thread", "p", [], "other::m")
+
     async def test_new_chats_start_on_user_default_and_fall_back(self):
         from algosage.config import Settings
         from algosage.providers import ProviderRegistry

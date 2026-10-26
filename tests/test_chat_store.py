@@ -240,6 +240,25 @@ class ChatStoreTests(unittest.TestCase):
         }
         run(reopened.close())
 
+    def test_optional_settings_history_update_keeps_ownership_and_deletion_guards(self):
+        store = ChatDataLayer(str(self.root / "settings.sqlite3"))
+        self.addCleanup(lambda: run(store.close()))
+        run(store.create_user(User(identifier="alice")))
+        run(store.create_user(User(identifier="bob")))
+        run(store.update_thread("live", user_id="alice"))
+        history = [{"role": "user", "content": "existing question"}]
+        run(store.save_backend_history("live", "alice", history, "model", only_existing=True))
+        self.assertEqual(run(store.load_backend_history("live", "alice")), (history, "model"))
+        with self.assertRaises(PermissionError):
+            run(store.save_backend_history("live", "bob", [], "other", only_existing=True))
+        run(store.save_backend_history("missing", "alice", [], "model", only_existing=True))
+        self.assertIsNone(run(store.get_thread("missing")))
+        run(store.delete_thread("live"))
+        run(store.save_backend_history("live", "alice", history, "model", only_existing=True))
+        self.assertIsNone(run(store.get_thread("live")))
+        with self.assertRaises(PermissionError):
+            run(store.save_backend_history("live", "alice", history, "model"))
+
     def test_deleted_thread_rejects_late_backend_history_write(self):
         tmp_path = self.root
         store = ChatDataLayer(str(tmp_path / "chat.sqlite3"))
