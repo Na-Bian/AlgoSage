@@ -576,6 +576,14 @@
     return state.providers.filter(function (item) { return item.id !== "custom"; });
   }
 
+  // 提供商增删成功后请求服务端重发面板设置（HTTP 路由里没有 ws 上下文，
+  // 服务端自身的推送发不出来；走 socket 事件在 ws 上下文里执行才有上下文）。
+  function requestProviderViewsRefresh() {
+    if (window.AlgoSageSocket) {
+      window.AlgoSageSocket.emitEvent("algosage_refresh_provider_views");
+    }
+  }
+
   async function presetProviderAction(providerId, action) {
     var response = await fetch("/models/preset", {
       method: "POST",
@@ -600,8 +608,8 @@
       }
     }
     await loadCatalog();
-    // 面板下拉的选项由服务端在 /models/preset 成功后直接重发
-    // （send_provider_settings），无需前端再触发提交收起抽屉。
+    // 面板"默认模型"下拉由服务端经 socket 重发（send_provider_settings）。
+    requestProviderViewsRefresh();
   }
 
   async function removeCustomEntries(selections) {
@@ -609,6 +617,7 @@
       var done = await deleteCustomSelection(selections[i]);
       if (!done) throw new Error("正在切换模型，请稍后再试");
     }
+    requestProviderViewsRefresh();
   }
 
   function managedRow(name, specs, chips) {
@@ -917,6 +926,8 @@
         }
       });
       await loadCatalog();
+      // 设置面板的"默认模型"下拉由服务端经 socket 重发，即时包含新模型。
+      requestProviderViewsRefresh();
       renderManagedModels();
       selected = {};
       confirmButton.textContent = "添加所选";

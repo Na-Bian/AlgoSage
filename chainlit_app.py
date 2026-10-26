@@ -442,6 +442,24 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                 "provider views re-push skipped error_type=%s", type(error).__name__
             )
 
+    # 提供商增删发生在 HTTP 路由里，那里没有 websocket 上下文，
+    # ChatSettings.send() 必然抛 ChainlitContextException——上面的推送
+    # 在真实页面里从未生效。改为客户端注册成功后经 socket 直发本事件，
+    # 在 ws 上下文里执行重发，面板的"默认模型"列表即时更新。
+    from chainlit.socket import sio as _chainlit_sio, init_ws_context
+
+    @_chainlit_sio.on("algosage_refresh_provider_views")
+    async def refresh_provider_views(sid: str, _payload: dict | None = None) -> None:
+        try:
+            init_ws_context(sid)
+            context = await restore_conversation(get_service())
+            await send_provider_settings(context)
+            await send_model_catalog(context)
+        except Exception as error:  # noqa: BLE001 - 刷新失败不影响操作本身
+            logger.info(
+                "provider views refresh skipped error_type=%s", type(error).__name__
+            )
+
     def _catalog_groups(service, options):
         groups: dict[str, dict] = {}
         for option in options:
