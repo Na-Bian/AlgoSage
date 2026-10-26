@@ -32,6 +32,7 @@ from .providers import (
     custom_model_max_b,
     custom_selection_id,
     infer_model_capabilities,
+    is_chat_model,
     parse_model_params_b,
     validate_public_base_url,
 )
@@ -425,9 +426,10 @@ class CustomProviderStore:
             raise ValueError("API Key 不能为空")
         limit_b = custom_model_max_b()
         models = []
+        # 列表阶段不推断/不显示能力：真实能力由选中后的懒探测获取，
+        # 非对话模型仍按命名规则直接排除。
         for model_id in self._fetch_models(url, api_key)[:DISCOVERY_MODEL_LIMIT]:
             params_b = parse_model_params_b(model_id)
-            capabilities = infer_model_capabilities(model_id)
             models.append(
                 {
                     "id": model_id,
@@ -435,9 +437,8 @@ class CustomProviderStore:
                     "allowed": (
                         params_b is not None
                         and params_b <= limit_b
-                        and capabilities["is_chat"]
+                        and is_chat_model(model_id)
                     ),
-                    "capabilities": capabilities,
                 }
             )
         models.sort(
