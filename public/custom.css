@@ -1069,6 +1069,13 @@ body.eg-no-models #chat-submit {
   white-space: nowrap;
 }
 
+/* 发现列表点选后的“能力探测中…”：灰色弱化，区别于真实能力 chip。 */
+.eg-add-model-caps.eg-caps-pending span {
+  background: transparent;
+  color: hsl(var(--muted-foreground) / .75);
+  font-weight: 400;
+}
+
 .eg-add-model-size {
   flex: 0 0 auto;
   color: hsl(var(--muted-foreground));

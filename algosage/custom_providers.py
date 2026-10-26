@@ -69,7 +69,8 @@ def probe_model_capabilities(base_url: str, api_key: str, model_id: str) -> dict
     """
     from openai import OpenAI
 
-    client = OpenAI(api_key=api_key, base_url=base_url, timeout=15, max_retries=0)
+    # 思考探测要等上游生成 reasoning_content，实测可达 25s+；15s 会误判超时。
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=30, max_retries=0)
     result = {
         "thinking": None,
         "multimodal": None,
@@ -350,7 +351,12 @@ class CustomProviderStore:
                 raise ValueError(f"{field} 不能包含换行或控制字符")
         settings = build_custom_settings(self._base, base_url, api_key, model)
         selection = custom_selection_id(name, settings.base_url, model)
-        capabilities = infer_model_capabilities(model)
+        # 显式传入（真实探测结果）优先；未探测时回退命名推断仅作展示。
+        entry_capabilities = (
+            capabilities
+            if isinstance(capabilities, dict) and capabilities
+            else infer_model_capabilities(model)
+        )
         entry = {
             "id": "custom",
             "label": name,
@@ -359,11 +365,7 @@ class CustomProviderStore:
             "mode": "api",
             "available": True,
             "params_b": parse_model_params_b(model),
-            "capabilities": (
-                capabilities
-                if isinstance(capabilities, dict) and capabilities
-                else infer_model_capabilities(model)
-            ),
+            "capabilities": entry_capabilities,
             "base_url": settings.base_url,
             # Runtime-only plaintext; on disk this is Fernet-sealed.
             "api_key": api_key,
@@ -435,11 +437,11 @@ class CustomProviderStore:
             raise ValueError("API Key 不能为空")
         limit_b = custom_model_max_b()
         models = []
-        # 列表阶段用命名规则推断能力做即时展示（本地正则，零成本）；
-        # 点选某行后懒探测真实能力并修正标签。
+        # 列表默认不显示能力标签；is_chat 用命名规则仅做非对话排除，
+        # 真实能力由前端点选该模型后调用 /models/probe 探测。
         for model_id in self._fetch_models(url, api_key)[:DISCOVERY_MODEL_LIMIT]:
             params_b = parse_model_params_b(model_id)
-            capabilities = infer_model_capabilities(model_id)
+            is_chat = is_chat_model(model_id)
             models.append(
                 {
                     "id": model_id,
@@ -447,9 +449,9 @@ class CustomProviderStore:
                     "allowed": (
                         params_b is not None
                         and params_b <= limit_b
-                        and capabilities["is_chat"]
+                        and is_chat
                     ),
-                    "capabilities": capabilities,
+                    "capabilities": {"is_chat": is_chat},
                 }
             )
         models.sort(

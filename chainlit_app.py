@@ -617,50 +617,8 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                 status_code=400,
                 detail="无法获取模型列表：请检查 Base URL、API Key 与网络连通性",
             ) from error
-        # 全量真实能力探测：对每个可添加的对话模型并发发送构造请求
-        # （思考/多模态/联网/存在性各一个最小请求），依据上游行为判定。
-        from algosage.custom_providers import probe_model_capabilities
-
-        probed = [
-            m
-            for m in models
-            if m.get("allowed") and m.get("capabilities", {}).get("is_chat")
-        ]
-        probe_started = time.perf_counter()
-
-        async def probe_one(model_entry) -> None:
-            try:
-                capabilities = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        probe_model_capabilities, base_url, api_key, model_entry["id"]
-                    ),
-                    timeout=90,
-                )
-                model_entry["capabilities"] = capabilities
-            except Exception as error:  # noqa: BLE001 - 探测失败保持推断结果
-                logger.info(
-                    "capability probe failed model=%s error_type=%s",
-                    model_entry.get("id"),
-                    type(error).__name__,
-                )
-
-        semaphore = asyncio.Semaphore(8)
-
-        async def bounded(entry):
-            async with semaphore:
-                await probe_one(entry)
-
-        if probed:
-            await asyncio.wait(
-                [asyncio.create_task(bounded(entry)) for entry in probed],
-                timeout=300,
-            )
-        logger.info(
-            "capability probing finished models=%s elapsed_ms=%s",
-            len(probed),
-            int((time.perf_counter() - probe_started) * 1000),
-        )
-        return {"models": models, "probed": True}
+        # 列表默认不探测能力；前端点选模型后经 /models/probe 逐个探测。
+        return {"models": models}
 
     @models_router.post("/models/probe", include_in_schema=False)
     async def probe_single_model(payload: dict, current_user: UserParam):
@@ -690,7 +648,7 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         try:
             capabilities = await asyncio.wait_for(
                 asyncio.to_thread(probe_model_capabilities, base_url, api_key, model),
-                timeout=60,
+                timeout=90,
             )
         except asyncio.TimeoutError:
             capabilities = {
@@ -722,10 +680,15 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         service = get_service()
         try:
             raw_capabilities = payload.get("capabilities")
+            # 探测不明确的能力为 None：保留真实探测结果，不回退命名推断。
             capabilities = (
                 raw_capabilities
                 if isinstance(raw_capabilities, dict)
-                and all(isinstance(v, bool) for v in raw_capabilities.values())
+                and raw_capabilities
+                and all(
+                    isinstance(value, bool) or value is None
+                    for value in raw_capabilities.values()
+                )
                 else None
             )
             entry = await asyncio.to_thread(

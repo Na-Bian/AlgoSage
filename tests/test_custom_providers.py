@@ -10,6 +10,7 @@ from algosage.custom_providers import CustomProviderStore
 from algosage.providers import (
     build_custom_settings,
     custom_selection_id,
+    infer_model_capabilities,
     parse_model_params_b,
 )
 from algosage.service import TutorService
@@ -138,6 +139,36 @@ class CustomProviderStoreTests(unittest.TestCase):
         self.assertFalse(by_id["gpt-4o-mini"]["allowed"])
         # 可用模型排在最前，方便前端展示。
         self.assertEqual(models[0]["id"], "Qwen/Qwen3-8B")
+        # 列表默认不带能力标签，仅 is_chat 做非对话排除；真实能力点选后懒探测。
+        for item in models:
+            self.assertEqual(set(item["capabilities"]), {"is_chat"})
+
+    def test_register_keeps_probed_capabilities(self):
+        # 真实探测结果（含 None 的未知项）优先于命名推断，不得被覆盖。
+        capabilities = {
+            "thinking": True,
+            "multimodal": None,
+            "web_search": True,
+            "is_chat": True,
+        }
+        entry = self.store.register(
+            "u1",
+            base_url="https://api.example.com/v1",
+            api_key="sk-test",
+            model="Qwen2.5-7B-Instruct",
+            capabilities=capabilities,
+        )
+        self.assertEqual(entry["capabilities"], capabilities)
+        # 未传入探测结果时回退命名推断。
+        fallback = self.store.register(
+            "u2",
+            base_url="https://api.example.com/v1",
+            api_key="sk-test",
+            model="Qwen2.5-7B-Instruct",
+        )
+        self.assertEqual(
+            fallback["capabilities"], infer_model_capabilities("Qwen2.5-7B-Instruct")
+        )
 
     def test_discover_validates_url_and_key(self):
         store = CustomProviderStore(mock_settings(), fetch_models=lambda u, k: [])

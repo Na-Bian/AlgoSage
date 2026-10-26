@@ -725,7 +725,7 @@
     }
     var results = addDialog.querySelector(".eg-add-results");
     results.hidden = false;
-    results.textContent = "正在获取模型列表并探测能力（约需 1-2 分钟）…";
+    results.textContent = "正在获取模型列表…";
     try {
       var response = await fetch("/models/discover", {
         method: "POST",
@@ -735,7 +735,7 @@
       });
       var payload = await response.json().catch(function () { return {}; });
       if (!response.ok) throw new Error(payload.detail || `获取失败（${response.status}）`);
-      renderDiscoveredModels(payload.models || [], fields, payload.probed === true);
+      renderDiscoveredModels(payload.models || [], fields);
     } catch (error) {
       showResultsNotice(error.message || "获取模型列表失败");
     }
@@ -744,10 +744,40 @@
   var probedCapabilities = {};
   var probingModels = {};
 
+  function renderRowCaps(row, capabilities, pending) {
+    var capsNode = row.querySelector(".eg-add-model-caps");
+    if (!capsNode) return;
+    var tags = [];
+    var unknown = false;
+    if (pending) {
+      tags.push("能力探测中…");
+      unknown = true;
+    } else if (capabilities) {
+      if (capabilities.thinking === true) tags.push("思考");
+      if (capabilities.multimodal === true) tags.push("多模态");
+      if (capabilities.web_search === true) tags.push("联网");
+      // 全部探测不明确（超时/上游异常）时给出弱反馈，不冒充“不支持”。
+      if (!tags.length && ["thinking", "multimodal", "web_search"].some(function (key) {
+        return capabilities[key] == null;
+      })) {
+        tags.push("能力未知");
+        unknown = true;
+      }
+    }
+    capsNode.classList.toggle("eg-caps-pending", unknown);
+    capsNode.innerHTML = tags
+      .map(function (tag) { return `<span>${tag}</span>`; })
+      .join("");
+  }
+
   function probeCapabilities(fields, item) {
-    if (probingModels[item.id]) return;
-    probingModels[item.id] = true;
-    fetch("/models/probe", {
+    if (probedCapabilities[item.id]) return Promise.resolve();
+    if (probingModels[item.id]) return probingModels[item.id];
+    var row = [...document.querySelectorAll(".eg-add-model")].find(function (r) {
+      return r.dataset.modelId === item.id;
+    });
+    if (row) renderRowCaps(row, null, true);
+    var promise = fetch("/models/probe", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -763,27 +793,12 @@
         if (!capabilities) return;
         probedCapabilities[item.id] = capabilities;
         item.capabilities = capabilities;
-        // 若行还在列表里，刷新能力标签显示。
-        var row = [...document.querySelectorAll(".eg-add-model")].find(function (r) {
-          return (
-            r.querySelector(".eg-add-model-name") &&
-            r.dataset.modelId === item.id
-          );
-        });
-        if (row) {
-          var capTags = [];
-          if (capabilities.thinking === true) capTags.push("思考");
-          if (capabilities.multimodal === true) capTags.push("多模态");
-          if (capabilities.web_search === true) capTags.push("联网");
-          var capsNode = row.querySelector(".eg-add-model-caps");
-          if (capsNode) {
-            capsNode.classList.remove("eg-caps-pending");
-            capsNode.textContent = capTags.length ? capTags.join(" · ") : "";
-          }
-        }
+        if (row) renderRowCaps(row, capabilities, false);
       })
       .catch(function () {})
       .finally(function () { delete probingModels[item.id]; });
+    probingModels[item.id] = promise;
+    return promise;
   }
 
   function showResultsNotice(message) {
@@ -793,7 +808,7 @@
     results.textContent = message;
   }
 
-  function renderDiscoveredModels(models, fields, probed) {
+  function renderDiscoveredModels(models, fields) {
     var results = addDialog.querySelector(".eg-add-results");
     results.hidden = false;
     results.textContent = "";
@@ -813,27 +828,17 @@
       row.type = "button";
       row.className = "eg-add-model" + (item.allowed ? "" : " eg-add-model-blocked");
       row.disabled = !item.allowed;
-      var caps = item.capabilities || {};
-      var capTags = [];
-      if (caps.thinking) capTags.push("思考");
-      if (caps.multimodal) capTags.push("多模态");
-      if (caps.web_search) capTags.push("联网");
-      var capHtml = capTags.length
-        ? `<span class="eg-add-model-caps">${capTags
-            .map(function (chip) {
-              return `<span>${chip}</span>`;
-            })
-            .join("")}</span>`
-        : "";
       var sizeText = item.params_b == null ? "参数量未知" : `${item.params_b}B`;
-      var blockReason = caps.is_chat === false
+      var blockReason = (item.capabilities || {}).is_chat === false
         ? "非对话模型"
         : item.params_b == null
           ? "参数量未知"
           : `${sizeText} · 超出限制`;
       row.dataset.modelId = item.id;
       row.innerHTML = `
-        <span class="eg-add-model-name">${shortModelName(item.id)}${capHtml}</span>
+        <span class="eg-add-model-name">${shortModelName(item.id)}${item.allowed
+          ? '<span class="eg-add-model-caps"></span>'
+          : ""}</span>
         <span class="eg-add-model-size">${item.allowed ? sizeText : blockReason}</span>
       `;
       if (item.allowed) {
@@ -844,10 +849,14 @@
           } else {
             selected[item.id] = item;
             row.classList.add("eg-add-model-selected");
+            // 点选即探测真实能力：默认无标签，探测完成后就地更新。
+            if (probedCapabilities[item.id]) {
+              renderRowCaps(row, probedCapabilities[item.id], false);
+            } else {
+              probeCapabilities(fields, item);
+            }
           }
           syncConfirm();
-          // 选中即后台探测真实能力，完成后更新该行标签。
-          if (!probedCapabilities[item.id]) probeCapabilities(fields, item);
         });
       }
       results.append(row);
@@ -877,6 +886,10 @@
       var picked = Object.keys(selected).map(function (id) { return selected[id]; });
       if (!picked.length) return;
       confirmButton.disabled = true;
+      // 等待已选模型在途的能力探测，让注册携带真实探测结果。
+      await Promise.all(
+        picked.map(function (item) { return probeCapabilities(fields, item); })
+      );
       confirmButton.textContent = "正在添加…";
       var failed = [];
       for (var i = 0; i < picked.length; i++) {
@@ -922,6 +935,7 @@
         base_url: fields.base_url,
         api_key: fields.api_key,
         model: item.id,
+        capabilities: probedCapabilities[item.id],
       }),
     });
     var payload = await response.json().catch(function () { return {}; });
