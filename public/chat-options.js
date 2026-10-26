@@ -15,7 +15,12 @@
     if (!composer) return null;
     var existing = composer.querySelector(".eg-option-pills");
     if (existing && existing.isConnected) return existing;
-    var attach = composer.querySelector("button");
+    // 附件按钮是 composer 里带纸别针图标的行内按钮（首个 button 可能是
+    // 其它控件）；pills 插到它右边、同行内联，不占独立一行。
+    var attach = [...composer.querySelectorAll("button")].find(function (b) {
+      var path = b.querySelector("svg path");
+      return path && /M9 7C9 4/.test(path.getAttribute("d") || "");
+    });
     var row = attach && attach.parentElement;
     if (!row) return null;
     var wrap = document.createElement("div");
@@ -38,7 +43,7 @@
       });
       wrap.append(pill);
     });
-    row.insertBefore(wrap, attach);
+    attach.insertAdjacentElement("afterend", wrap);
     syncPills(wrap);
     return wrap;
   }

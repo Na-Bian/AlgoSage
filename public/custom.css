@@ -2123,7 +2123,8 @@ main div:has(> #messages) { overflow: visible; }
 
 /* ---------- 输入区生成选项（深度思考 / 联网搜索） ---------- */
 .eg-option-pills {
-  display: flex;
+  display: inline-flex;
+  vertical-align: middle;
   align-items: center;
   gap: 8px;
 }
@@ -2196,4 +2197,10 @@ main div:has(> #messages) { overflow: visible; }
 body:has(#chat-settings-sidebar-title) [data-sidebar="sidebar"] .eg-original-sidebar-header,
 body:has([role="dialog"] h1) [data-sidebar="sidebar"] .eg-original-sidebar-header {
   display: none;
+}
+
+/* "思考模式/联网搜索"与附件按钮同行内联（父容器原为 inline-block，纵向错位）。 */
+#message-composer :has(> .eg-option-pills) {
+  display: flex;
+  align-items: center;
 }
