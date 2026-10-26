@@ -69,7 +69,7 @@
   loadScript("/public/theme-transition.js?v=20261025-options-1")
     .then(() => loadScript("/public/account-profile.js?v=20261025-focus-return-3"))
     .then(() => loadScript("/public/user-preferences.js?v=20261024-model-picker-2"))
-    .then(() => loadScript("/public/model-picker.js?v=20261026-settings-entry"))
+    .then(() => loadScript("/public/model-picker.js?v=20261026-hide-blocked-1"))
     .then(() => loadScript("/public/chat-ui.js?v=20261025-options-1"))
     .then(() => loadScript("/public/settings-autosave.js?v=20261026-settle-timeout-1"))
     .then(() => loadScript("/public/chat-options.js?v=20261025-options-1"))

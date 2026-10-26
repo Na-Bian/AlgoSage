@@ -847,47 +847,37 @@
     function appendItem(item) {
       var row = document.createElement("button");
       row.type = "button";
-      row.className = "eg-add-model" + (item.allowed ? "" : " eg-add-model-blocked");
-      row.disabled = !item.allowed;
+      row.className = "eg-add-model";
       var sizeText = item.params_b == null ? "参数量未知" : `${item.params_b}B`;
-      var blockReason = (item.capabilities || {}).is_chat === false
-        ? "非对话模型"
-        : item.params_b == null
-          ? "参数量未知"
-          : `${sizeText} · 超出限制`;
       row.dataset.modelId = item.id;
       row.innerHTML = `
-        <span class="eg-add-model-name">${shortModelName(item.id)}${item.allowed
-          ? '<span class="eg-add-model-caps"></span>'
-          : ""}</span>
-        <span class="eg-add-model-size">${item.allowed ? sizeText : blockReason}</span>
+        <span class="eg-add-model-name">${shortModelName(item.id)}<span class="eg-add-model-caps"></span></span>
+        <span class="eg-add-model-size">${sizeText}</span>
       `;
-      if (item.allowed) {
-        row.addEventListener("click", function () {
-          if (selected[item.id]) {
-            delete selected[item.id];
-            row.classList.remove("eg-add-model-selected");
+      row.addEventListener("click", function () {
+        if (selected[item.id]) {
+          delete selected[item.id];
+          row.classList.remove("eg-add-model-selected");
+        } else {
+          selected[item.id] = item;
+          row.classList.add("eg-add-model-selected");
+          // 点选即探测真实能力：默认无标签，探测完成后就地更新。
+          if (probedCapabilities[item.id]) {
+            renderRowCaps(row, probedCapabilities[item.id], false);
           } else {
-            selected[item.id] = item;
-            row.classList.add("eg-add-model-selected");
-            // 点选即探测真实能力：默认无标签，探测完成后就地更新。
-            if (probedCapabilities[item.id]) {
-              renderRowCaps(row, probedCapabilities[item.id], false);
-            } else {
-              probeCapabilities(fields, item);
-            }
+            probeCapabilities(fields, item);
           }
-          syncConfirm();
-        });
-      }
+        }
+        syncConfirm();
+      });
       results.append(row);
     }
     allowed.slice(0, 30).forEach(appendItem);
-    blocked.slice(0, 8).forEach(appendItem);
-    if (blocked.length > 8) {
+    // 不可添加的模型（超限/参数量未知/非对话）一律不渲染，仅计数。
+    if (blocked.length) {
       var more = document.createElement("div");
       more.className = "eg-add-more";
-      more.textContent = `另有 ${blocked.length - 8} 个模型因超过 27B 或参数量未知被隐藏`;
+      more.textContent = `另有 ${blocked.length} 个模型因超过 27B 或参数量未知被隐藏`;
       results.append(more);
     }
     if (!allowed.length && !blocked.length) {
