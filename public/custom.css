@@ -2020,10 +2020,20 @@ main div:has(> #messages) { overflow: visible; }
 }
 
 /* 模型菜单里自定义模型行的能力文字（弱化、不抢焦点）。 */
-.eg-model-option-caps {
+.eg-model-caps {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin-left: 8px;
-  color: hsl(var(--muted-foreground) / .85);
-  font-size: .7rem;
-  font-style: normal;
+}
+
+.eg-model-caps span {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: hsl(var(--primary) / .12);
+  color: hsl(var(--primary));
+  font-size: .68rem;
+  font-weight: 600;
   white-space: nowrap;
+  font-style: normal;
 }

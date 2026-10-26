@@ -279,8 +279,15 @@
           if (optionCaps.web_search) optionTags.push("联网");
           capText = optionTags.join(" · ");
         }
+        var capHtml = capText
+          ? `<span class="eg-model-caps">${optionTags
+              .map(function (tag) {
+                return `<span>${tag}</span>`;
+              })
+              .join("")}</span>`
+          : "";
         option.innerHTML = `
-          <span class="eg-model-option-name">${model.short_name || shortModelName(model.model)}${capText ? `<em class="eg-model-option-caps">${capText}</em>` : ""}</span>
+          <span class="eg-model-option-name">${model.short_name || shortModelName(model.model)}${capHtml}</span>
           <span class="eg-model-option-state">${model.selection === state.currentSelection ? "✓" : model.available ? "" : "不可用"}</span>
         `;
         option.addEventListener("click", function () {
