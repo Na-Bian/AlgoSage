@@ -632,7 +632,9 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         api_key = str(payload.get("api_key") or "").strip()
         model = str(payload.get("model") or "").strip()
         if not base_url or not api_key or not model:
-            raise HTTPException(status_code=400, detail="Base URL、API Key 与模型不能为空")
+            raise HTTPException(
+                status_code=400, detail="Base URL、API Key 与模型不能为空"
+            )
         service = get_service()
         from algosage.providers import validate_public_base_url
 
@@ -658,7 +660,9 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             }
         except Exception as error:  # noqa: BLE001 - 探测失败不影响响应
             logger.info(
-                "capability probe failed model=%s error_type=%s", model, type(error).__name__
+                "capability probe failed model=%s error_type=%s",
+                model,
+                type(error).__name__,
             )
             capabilities = {
                 "thinking": None,
@@ -1042,6 +1046,15 @@ async def on_settings_update(settings: dict) -> None:
                 )
                 preferences["default_model_selection"] = requested_model
                 await get_chat_store().save_user_app_preferences(principal, preferences)
+                # 当前界面是"新建对话"（尚无任何轮次）时，跟随新默认立即切换，
+                # 让窗口与面板所见一致；已打开的对话保持自身选择不受影响。
+                if not context.history:
+                    try:
+                        await asyncio.to_thread(
+                            service.select_provider, context, requested_model
+                        )
+                    except ValueError:
+                        pass
             except ValueError:
                 pass  # 未知/失效/已移除的提供商不落为默认模型
         await asyncio.to_thread(
