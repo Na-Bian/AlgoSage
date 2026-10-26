@@ -138,12 +138,8 @@
     button.className = "eg-model-button";
     button.setAttribute("aria-haspopup", "listbox");
     button.setAttribute("aria-expanded", "false");
+    // 只保留模型名称与下拉箭头（用户偏好：无图标、无框、无阴影）。
     button.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-        <rect x="4" y="4" width="16" height="16" rx="3"/>
-        <path d="M9 9h6v6H9z"/>
-        <path d="M12 2v2M12 20v2M2 12h2M20 12h2"/>
-      </svg>
       <span class="eg-model-name">选择模型</span>
       <svg class="eg-model-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path d="m6 9 6 6 6-6"/>
