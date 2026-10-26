@@ -84,9 +84,12 @@ def probe_model_capabilities(base_url: str, api_key: str, model_id: str) -> dict
     def attempt(payload, require_reasoning=False):
         # 4xx（非限流）= 上游明确拒绝 → 该能力不支持；
         # 429/5xx/超时 = 暂时失败 → 短退避重试，最终仍失败记为未知。
+        last_error = None
+        completion = None
         for round_index in range(3):
             try:
                 completion = client.chat.completions.create(**payload)
+                break  # 成功即退出重试循环
             except APIStatusError as error:
                 status = getattr(error, "status_code", None)
                 if isinstance(status, int) and 400 <= status < 500 and status != 429:
@@ -95,12 +98,18 @@ def probe_model_capabilities(base_url: str, api_key: str, model_id: str) -> dict
             except Exception as error:  # noqa: BLE001 - 超时/连接失败归为未知
                 last_error = error
             _time.sleep(1.2 * (round_index + 1))
-        logger.info(
-            "capability probe inconclusive model=%s last_error=%s",
-            model_id,
-            type(last_error).__name__,
-        )
-        return None
+        if completion is None:
+            logger.info(
+                "capability probe inconclusive model=%s last_error=%s",
+                model_id,
+                type(last_error).__name__ if last_error else "unknown",
+            )
+            return None
+        if require_reasoning:
+            message = completion.choices[0].message
+            reasoning = (getattr(message, "reasoning_content", "") or "").strip()
+            return bool(reasoning)
+        return True
 
     result["thinking"] = attempt(
         {

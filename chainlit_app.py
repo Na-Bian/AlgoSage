@@ -617,9 +617,50 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                 status_code=400,
                 detail="无法获取模型列表：请检查 Base URL、API Key 与网络连通性",
             ) from error
-        # 能力探测改为懒式：仅对用户选中的模型按需探测（POST /models/probe），
-        # 避免获取列表时对全量模型逐一发请求造成长时间等待。
-        return {"models": models}
+        # 全量真实能力探测：对每个可添加的对话模型并发发送构造请求
+        # （思考/多模态/联网/存在性各一个最小请求），依据上游行为判定。
+        from algosage.custom_providers import probe_model_capabilities
+
+        probed = [
+            m
+            for m in models
+            if m.get("allowed") and m.get("capabilities", {}).get("is_chat")
+        ]
+        probe_started = time.perf_counter()
+
+        async def probe_one(model_entry) -> None:
+            try:
+                capabilities = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        probe_model_capabilities, base_url, api_key, model_entry["id"]
+                    ),
+                    timeout=90,
+                )
+                model_entry["capabilities"] = capabilities
+            except Exception as error:  # noqa: BLE001 - 探测失败保持推断结果
+                logger.info(
+                    "capability probe failed model=%s error_type=%s",
+                    model_entry.get("id"),
+                    type(error).__name__,
+                )
+
+        semaphore = asyncio.Semaphore(8)
+
+        async def bounded(entry):
+            async with semaphore:
+                await probe_one(entry)
+
+        if probed:
+            await asyncio.wait(
+                [asyncio.create_task(bounded(entry)) for entry in probed],
+                timeout=300,
+            )
+        logger.info(
+            "capability probing finished models=%s elapsed_ms=%s",
+            len(probed),
+            int((time.perf_counter() - probe_started) * 1000),
+        )
+        return {"models": models, "probed": True}
 
     @models_router.post("/models/probe", include_in_schema=False)
     async def probe_single_model(payload: dict, current_user: UserParam):

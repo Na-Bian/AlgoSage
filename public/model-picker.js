@@ -725,7 +725,7 @@
     }
     var results = addDialog.querySelector(".eg-add-results");
     results.hidden = false;
-    results.textContent = "正在获取模型列表…";
+    results.textContent = "正在获取模型列表并探测能力（约需 1-2 分钟）…";
     try {
       var response = await fetch("/models/discover", {
         method: "POST",
@@ -815,12 +815,11 @@
       row.disabled = !item.allowed;
       var caps = item.capabilities || {};
       var capTags = [];
-      if (caps.thinking === true) capTags.push("思考");
-      if (caps.multimodal === true) capTags.push("多模态");
-      if (caps.web_search === true) capTags.push("联网");
-      var capChips = capTags;
-      var capHtml = capChips.length
-        ? `<span class="eg-add-model-caps">${capChips
+      if (caps.thinking) capTags.push("思考");
+      if (caps.multimodal) capTags.push("多模态");
+      if (caps.web_search) capTags.push("联网");
+      var capHtml = capTags.length
+        ? `<span class="eg-add-model-caps">${capTags
             .map(function (chip) {
               return `<span>${chip}</span>`;
             })
