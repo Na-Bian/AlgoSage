@@ -71,7 +71,11 @@ def validate_public_base_url(url: str) -> str:
 
 
 def build_custom_settings(
-    base: Settings, base_url: str, api_key: str, model: str
+    base: Settings,
+    base_url: str,
+    api_key: str,
+    model: str,
+    capabilities: dict | None = None,
 ) -> Settings:
     """A per-user BYOK provider profile; same trusted Settings the pipeline uses."""
     url = validate_public_base_url(base_url)
@@ -88,7 +92,14 @@ def build_custom_settings(
         raise ValueError(
             f"模型参数量 {params_b:g}B 超过自定义上限 {custom_model_max_b():g}B"
         )
-    return replace(base, mode="api", api_key=api_key, base_url=url, model=model)
+    return replace(
+        base,
+        mode="api",
+        api_key=api_key,
+        base_url=url,
+        model=model,
+        capabilities=capabilities,
+    )
 
 
 _NON_CHAT_MARKERS = ("embedding", "reranker", "asr", "tts", "audio", "voice", "speech")
@@ -155,6 +166,27 @@ def infer_model_capabilities(model_id: str) -> dict[str, bool]:
         "multimodal": multimodal,
         "web_search": True,
     }
+
+
+def capability_overrides(settings: Settings, deep_think: bool, web_search: bool) -> dict:
+    """能力感知透传：开关打开且模型支持时才向 extra_body 传对应参数。
+
+    优先使用 BYOK 注册时真实探测并持久化的能力（settings.capabilities）；
+    无探测数据（预置模型）回退命名推断。探测不明确（None）、缺失或为
+    False 一律视为不支持，不透传。
+    """
+    probed = getattr(settings, "capabilities", None)
+    caps = (
+        probed
+        if isinstance(probed, dict) and probed
+        else infer_model_capabilities(settings.model)
+    )
+    overrides: dict = {}
+    if deep_think and caps.get("thinking"):
+        overrides["enable_thinking"] = True
+    if web_search and caps.get("web_search"):
+        overrides["enable_search"] = True
+    return overrides
 
 
 def custom_selection_id(label: str, base_url: str, model: str) -> str:

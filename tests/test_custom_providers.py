@@ -8,6 +8,7 @@ from unittest import mock
 from algosage.config import Settings
 from algosage.custom_providers import CustomProviderStore
 from algosage.providers import (
+    capability_overrides,
     build_custom_settings,
     custom_selection_id,
     infer_model_capabilities,
@@ -54,6 +55,64 @@ class BuildCustomSettingsTests(unittest.TestCase):
         self.assertEqual(settings.api_key, "sk-test")
         self.assertEqual(settings.base_url, "https://api.example.com/v1")
         self.assertEqual(settings.model, "Qwen/Qwen3-8B")
+        self.assertIsNone(settings.capabilities)
+
+    def test_carries_probed_capabilities(self):
+        caps = {
+            "thinking": True,
+            "multimodal": False,
+            "web_search": True,
+            "is_chat": True,
+        }
+        settings = build_custom_settings(
+            mock_settings(),
+            "https://api.example.com/v1",
+            "sk-test",
+            "Qwen/Qwen3-8B",
+            capabilities=caps,
+        )
+        self.assertEqual(settings.capabilities, caps)
+
+    def test_capability_overrides_prefer_probed_over_naming(self):
+        # 命名推断 Qwen3-8B 支持思考；真实探测说不支持 → 不透传。
+        settings = build_custom_settings(
+            mock_settings(),
+            "https://api.example.com/v1",
+            "sk",
+            "Qwen3-8B",
+            capabilities={"thinking": False, "web_search": False, "is_chat": True},
+        )
+        self.assertEqual(capability_overrides(settings, True, True), {})
+        # 命名推断 Qwen2.5 不支持思考；真实探测说支持 → 透传。
+        settings = build_custom_settings(
+            mock_settings(),
+            "https://api.example.com/v1",
+            "sk",
+            "Qwen2.5-7B-Instruct",
+            capabilities={"thinking": True, "web_search": True, "is_chat": True},
+        )
+        self.assertEqual(
+            capability_overrides(settings, True, True),
+            {"enable_thinking": True, "enable_search": True},
+        )
+        # 探测不明确（None）视为不支持。
+        settings = build_custom_settings(
+            mock_settings(),
+            "https://api.example.com/v1",
+            "sk",
+            "Qwen3-8B",
+            capabilities={"thinking": None, "web_search": None, "is_chat": True},
+        )
+        self.assertEqual(capability_overrides(settings, True, True), {})
+        # 无探测数据（预置模型）回退命名推断。
+        settings = build_custom_settings(
+            mock_settings(), "https://api.example.com/v1", "sk", "Qwen3-8B"
+        )
+        self.assertEqual(
+            capability_overrides(settings, True, False), {"enable_thinking": True}
+        )
+        # 开关关闭时不透传。
+        self.assertEqual(capability_overrides(settings, False, True), {"enable_search": True})
 
     def test_rejects_insecure_or_credentialed_urls(self):
         for url in (
@@ -294,6 +353,31 @@ class CustomProviderPersistenceTests(unittest.TestCase):
         self.assertEqual(entries[0]["selection"], entry["selection"])
         settings = revived.resolve("student-a", entry["selection"])
         self.assertEqual(settings.api_key, "sk-keep")
+
+    def test_probed_capabilities_survive_restart(self):
+        # 注册时携带真实探测结果，重启后必须还原到 settings.capabilities，
+        # 不得回退命名推断（Qwen3-8B 命名会说支持思考，探测结果为不支持）。
+        store = self._store()
+        entry = store.register(
+            "student-a",
+            base_url="https://api.example.com/v1",
+            api_key="sk-caps",
+            model="Qwen3-8B",
+            label="探测条目",
+            capabilities={
+                "thinking": False,
+                "multimodal": None,
+                "web_search": True,
+                "is_chat": True,
+            },
+        )
+        revived = self._store()
+        settings = revived.resolve("student-a", entry["selection"])
+        # 持久化标签只保留 True 项；缺失键等价于不支持，绝无命名推断的 True。
+        self.assertEqual(
+            settings.capabilities, {"is_chat": True, "web_search": True}
+        )
+        self.assertIsNone(settings.capabilities.get("thinking"))
 
     def test_remove_updates_env_and_restart(self):
         store = self._store()

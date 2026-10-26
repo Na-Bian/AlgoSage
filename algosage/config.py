@@ -62,6 +62,9 @@ class Settings:
     concise_max_output_tokens: int = 768
     parallel_reviews: bool = True
     min_classifier_confidence: float = 0.7
+    # BYOK 注册时真实探测并持久化的模型能力（thinking/web_search/…）。
+    # None 表示无探测数据（预置模型），门控回退命名推断；缺失/None 视为不支持。
+    capabilities: dict | None = None
 
     def __post_init__(self) -> None:
         for name in (

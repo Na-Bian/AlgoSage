@@ -258,6 +258,11 @@ class CustomProviderStore:
             except (InvalidToken, ValueError):
                 logger.info("custom provider 条目解密失败（idx=%s），跳过", idx)
                 continue
+            # 恢复注册时真实探测并持久化的能力；标签只含 True 项。
+            capability_tags = item.get("CAPABILITIES", "")
+            capabilities = {
+                tag.strip(): True for tag in capability_tags.split(",") if tag.strip()
+            }
             try:
                 self.register(
                     item["PRINCIPAL"],
@@ -265,6 +270,7 @@ class CustomProviderStore:
                     api_key=api_key,
                     model=item["MODEL"],
                     label=item.get("LABEL", ""),
+                    capabilities=capabilities or None,
                     _persist=False,
                 )
             except ValueError:
@@ -349,14 +355,16 @@ class CustomProviderStore:
         ):
             if isinstance(value, str) and _FORBIDDEN_CHARS.search(value):
                 raise ValueError(f"{field} 不能包含换行或控制字符")
-        settings = build_custom_settings(self._base, base_url, api_key, model)
-        selection = custom_selection_id(name, settings.base_url, model)
         # 显式传入（真实探测结果）优先；未探测时回退命名推断仅作展示。
         entry_capabilities = (
             capabilities
             if isinstance(capabilities, dict) and capabilities
             else infer_model_capabilities(model)
         )
+        settings = build_custom_settings(
+            self._base, base_url, api_key, model, capabilities=entry_capabilities
+        )
+        selection = custom_selection_id(name, settings.base_url, model)
         entry = {
             "id": "custom",
             "label": name,

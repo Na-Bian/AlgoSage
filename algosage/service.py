@@ -508,7 +508,7 @@ class TutorService:
         label: str = "",
         capabilities: dict | None = None,
     ) -> dict:
-        return self.custom_providers.register(
+        entry = self.custom_providers.register(
             principal_id,
             base_url=base_url,
             api_key=api_key,
@@ -516,6 +516,11 @@ class TutorService:
             label=label,
             capabilities=capabilities,
         )
+        # 同 selection 重建（如删除后重加、换了探测结果）时旧 tutor 携带
+        # 旧能力，必须作废重建。
+        with self._provider_lock:
+            self._custom_tutors.pop((principal_id, entry["selection"]), None)
+        return entry
 
     def list_custom_providers(self, principal_id: str) -> list[dict]:
         return self.custom_providers.list_for(principal_id)
