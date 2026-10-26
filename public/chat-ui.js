@@ -671,6 +671,8 @@
             await animateComposerActor(firstRect, targetRect, duration);
           }
           releaseComposerActor(target);
+          document.getElementById("welcome-screen")
+            ?.removeAttribute("data-eg-brand-exit");
           target.querySelector("#chat-input")?.focus({ preventScroll: true });
         } catch (_) {
           settleMotionImmediately();
@@ -736,7 +738,26 @@
   });
 
   const composerRemovalObserver = new MutationObserver((mutations) => {
-    if (composerMotion.phase !== "armed-chat" && composerMotion.phase !== "armed-welcome") return;
+    if (composerMotion.phase !== "armed-chat" && composerMotion.phase !== "armed-welcome") {
+      // 发送真正的标志：欢迎页连同其中的 composer 一起被 React 移除。
+      // 此刻捕获旧 composer 首帧并武装正向转场。
+      if (composerMotion.phase !== "idle") return;
+      for (const mutation of mutations) {
+        for (const removedRoot of mutation.removedNodes) {
+          if (removedRoot.nodeType !== 1) continue;
+          if (!removedRoot.querySelector?.("#welcome-screen")
+            && removedRoot.id !== "welcome-screen") continue;
+          const composer = removedRoot.querySelector?.("#message-composer");
+          if (composer && composerHasPayload(composer)) {
+            composerMotion.candidate = composer;
+            composerMotion.firstRect = composer.getBoundingClientRect();
+            armOnWelcomeRemoval(composer);
+          }
+          return;
+        }
+      }
+      return;
+    }
     for (const mutation of mutations) {
       for (const removedRoot of mutation.removedNodes) {
         if (removedRoot.nodeType !== 1) continue;
@@ -752,28 +773,25 @@
   });
   composerRemovalObserver.observe(document.body, { childList: true, subtree: true });
 
-  function armForwardTransition() {
-    const welcome = activeWelcome();
-    const composer = activeComposer();
-    if (!welcome || !composer || !composerHasPayload(composer)) return false;
+  /* 发送转场由"欢迎页被卸载"驱动：消息真正发出、React 移除欢迎页时，
+     composerRemovalObserver 捕获旧 composer 首帧并播放飞入动画。
+     不再由回车/按钮预触发——按键不代表消息真的发出，预触发会让 logo
+     淡出后又淡回（未发送时页面留在欢迎页，兜底定时器到期复位）。 */
+  function armOnWelcomeRemoval(removedComposer) {
+    if (motionDisabled()) return false;
+    const composer = composerMotion.candidate || removedComposer;
+    if (!composer) return false;
     composerMotion.phase = "armed-chat";
     composerMotion.direction = "to-chat";
     composerMotion.candidate = composer;
-    composerMotion.firstRect = composer.getBoundingClientRect();
     composer.dataset.egMotionCandidate = "1";
-    welcome.dataset.egBrandExit = "1";
-    captureBrandGhost(composerMotion.firstRect);
+    const welcome = activeWelcome();
+    if (welcome) welcome.dataset.egBrandExit = "1";
+    captureBrandGhost(composerMotion.firstRect || composer.getBoundingClientRect());
     composerMotion.timer = window.setTimeout(() => {
       if (composerMotion.phase === "armed-chat") disarmComposerCandidate();
     }, 2000);
     return true;
-  }
-
-  function beginForwardTransition() {
-    if (motionDisabled()) return false;
-    const result = armForwardTransition();
-    if (!result) composerMotion.direction = "none";
-    return result;
   }
 
   function armReverseTransition() {
@@ -819,35 +837,12 @@
       const now = performance.now();
       if (now < composerMotion.guardUntil) return;
 
-      const submit = event.target?.closest?.("#chat-submit");
-      if (submit && composerMotion.phase === "idle" && activeWelcome()) {
-        const composer = activeComposer();
-        if (composer?.contains(submit) && composerHasPayload(composer)) {
-          composerMotion.guardUntil = now + 900;
-          beginForwardTransition();
-        }
-        return;
-      }
-
       if (visibleNewChatButton(event.target)) {
         if (composerMotion.phase === "idle" && !activeWelcome() && composerMotion.reverseEligible) {
           composerMotion.guardUntil = now + 900;
           beginReverseTransition();
         }
       }
-    },
-    true
-  );
-
-  document.addEventListener(
-    "keydown",
-    (event) => {
-      if (event.key !== "Enter" || event.shiftKey || composerMotion.phase !== "idle") return;
-      const composer = activeComposer();
-      if (!composer || !activeWelcome() || !composer.contains(event.target)) return;
-      if (!composerHasPayload(composer)) return;
-      composerMotion.guardUntil = performance.now() + 900;
-      beginForwardTransition();
     },
     true
   );
