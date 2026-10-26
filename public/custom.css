@@ -629,7 +629,8 @@ body.eg-no-models #chat-submit {
   border-radius: 16px;
   background: hsl(var(--popover));
   color: hsl(var(--popover-foreground));
-  /* 用户偏好：无框无阴影，仅靠背景色与页面区分。 */
+  /* 无边框，但保留阴影让浮层与页面分层。 */
+  box-shadow: var(--eg-shadow-2);
   animation: eg-surface-in var(--eg-motion-enter) var(--eg-motion-ease) both;
 }
 
