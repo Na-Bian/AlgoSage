@@ -45,12 +45,41 @@
       var confirm = document.getElementById("confirm-sidebar");
       var panel = surface();
       if (!confirm || !panel) return;
-      // 程序化提交 → 抽屉收起 → 自动重开 → React 补渲染。整条链路的时长
-      // 随负载波动，固定冷却窗会提前失效，让渲染回放（空值→初值）被当成
-      // 用户编辑，引发面板收起/展开循环。改用确定性门闩：提交即进入
-      // pending 状态，抽屉重新出现并稳定后（watchSettle）才解除。
+      // 首选直发路径：借前端自身维护的设置镜像（chat_settings_edit 全量
+      // 事件）算出增量，直接发 chat_settings_change——服务端合并并原位
+      // 重发面板，抽屉全程不关，无收起/重开闪烁。
+      var socket = window.AlgoSageSocket;
+      if (socket) {
+        var mirror = socket.settingsMirror();
+        if (mirror && Object.keys(mirror).length) {
+          var delta = {};
+          if (!lastSent) {
+            // 基线未建：首发改全量（幂等合并）。model_catalog 由打开面板
+            // 时的选择承担，不掺进采样偏好提交，避免误触发默认模型分支。
+            for (var k in mirror) if (k !== "model_catalog") delta[k] = mirror[k];
+          } else {
+            for (var key in mirror) {
+              if (mirror[key] !== lastSent[key]) delta[key] = mirror[key];
+            }
+          }
+          if (Object.keys(delta).length) {
+            if (socket.emitSettingsChange(delta)) {
+              lastSent = Object.assign(lastSent || {}, mirror);
+              return;
+            }
+          } else {
+            return; // 无真实增量（渲染回放误触发）：不提交也不闪面板
+          }
+        }
+      }
+      // 回退路径（无 WebSocket/镜像未就绪）：程序化提交 → 抽屉收起 →
+      // 自动重开 → React 补渲染。整条链路的时长随负载波动，固定冷却窗
+      // 会提前失效，让渲染回放（空值→初值）被当成用户编辑，引发面板收
+      // 起/展开循环。改用确定性门闩：提交即进入 pending 状态，抽屉重新
+      // 出现并稳定后（watchSettle）才解除。
       pendingSettle = true;
       confirm.click();
+      if (socket) lastSent = socket.settingsMirror();
       // 抽屉卸载是异步的：轮询至其消失后再触发顶栏按钮重新打开。
       // 用户在周期内点了齿轮（明确要关闭）时轮询必须让位，否则会与
       // 用户形成"你关我开"的拉锯——这正是连点齿轮时鬼畜的来源。
@@ -81,6 +110,8 @@
   var reopenTimer = null;
   var pendingSettle = false;
   var lastGearClickAt = 0;
+  // 直发路径的服务端已确认值（镜像与之 diff 出增量）；null=尚未建立基线。
+  var lastSent = null;
 
   // 抽屉重开后的渲染稳定检测：面板稳定后解除门闩并重拍基线。
   // 同一面板只保留一条检测链，避免多链互相重置门闩。
