@@ -115,15 +115,16 @@
 
   // 抽屉重开后的渲染稳定检测：面板稳定后解除门闩并重拍基线。
   // 同一面板只保留一条检测链，避免多链互相重置门闩。
+  // 等待期改为固定静默窗：直发路径下面板不经历关闭重开，旧的
+  // "轮询至面板消失"会永久等不到解除、拦死后续所有 observer 触发。
   var settlePanel = null;
   function watchSettle(panel) {
     if (settlePanel === panel) return;
     settlePanel = panel;
-    var check = function () {
-      if (!surface() || surface() !== panel) { settleDone(); return; }
-      window.setTimeout(check, 120);
-    };
-    window.setTimeout(check, 360);
+    window.setTimeout(function () {
+      if (surface() !== panel) return; // 面板已换：由新面板的检测链接管
+      settleDone();
+    }, 700);
   }
 
   function settleDone() {

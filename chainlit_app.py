@@ -885,8 +885,8 @@ async def send_provider_settings(context) -> None:
             Slider(
                 id="temperature",
                 label="Temperature（创造性）",
-                minimum=0,
-                maximum=2,
+                min=0,
+                max=2,
                 step=0.05,
                 initial=float(params.get("temperature", 0.7)),
                 description="控制回答的发散程度：越低越稳定、越高越有创造性。",
@@ -894,8 +894,8 @@ async def send_provider_settings(context) -> None:
             Slider(
                 id="frequency_penalty",
                 label="Frequency Penalty（减少重复）",
-                minimum=0,
-                maximum=2,
+                min=0,
+                max=2,
                 step=0.05,
                 initial=float(params.get("frequency_penalty", 0)),
                 description="越高越不容易反复使用相同的词句。",
@@ -903,8 +903,8 @@ async def send_provider_settings(context) -> None:
             Slider(
                 id="presence_penalty",
                 label="Presence Penalty（引入新话题）",
-                minimum=0,
-                maximum=2,
+                min=0,
+                max=2,
                 step=0.05,
                 initial=float(params.get("presence_penalty", 0)),
                 description="越高越倾向于展开新内容、不纠缠旧话题。",
@@ -912,8 +912,8 @@ async def send_provider_settings(context) -> None:
             Slider(
                 id="max_output_tokens",
                 label="最大输出长度（Token）",
-                minimum=128,
-                maximum=provider.max_output_tokens,
+                min=128,
+                max=provider.max_output_tokens,
                 step=128,
                 initial=max_output,
             ),
