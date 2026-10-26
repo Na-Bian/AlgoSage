@@ -775,7 +775,9 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         return {
             "success": True,
             "selection": context.provider_selection,
-            "label": f"{info['label']} · {info['model']}",
+            # 与目录 current_label、菜单行一致：展示用短名（去组织前缀），
+            # 否则切换后按钮回退成 "Provider · 完整模型名"。
+            "label": short_model_name(info["model"]),
             "model": info["model"],
         }
 
