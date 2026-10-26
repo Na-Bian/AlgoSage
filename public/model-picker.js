@@ -460,12 +460,24 @@
       var headerBlock = anchor && anchor.closest("div");
       var panel = anchor && (anchor.closest('[role="dialog"]') || anchor.closest("[data-panel]"));
       if (!headerBlock || !panel) return;
-      var entry = document.createElement("button");
-      entry.type = "button";
-      entry.id = "eg-settings-add-model";
-      entry.className = "eg-settings-add";
-      entry.innerHTML = entryHTML();
-      bindEntry(entry);
+      // 本函数由全局 MutationObserver 驱动，插入本身又会触发观察器：
+      // 不检查已存在就会"插入→触发→再插入"无限微任务循环，页面卡死。
+      var entry = document.getElementById("eg-settings-add-model");
+      if (
+        entry
+        && entry.parentElement === headerBlock.parentElement
+        && entry.previousElementSibling === headerBlock
+      ) {
+        return;
+      }
+      if (!entry) {
+        entry = document.createElement("button");
+        entry.type = "button";
+        entry.id = "eg-settings-add-model";
+        entry.className = "eg-settings-add";
+        entry.innerHTML = entryHTML();
+        bindEntry(entry);
+      }
       headerBlock.insertAdjacentElement("afterend", entry);
       return;
     }
