@@ -11,7 +11,6 @@ asyncio 后端，anyio.to_thread 随之失效，导致所有 FileResponse 静态
 
 用法：
     .venv/bin/python run_app.py                       # 学生端 chainlit_app
-    .venv/bin/python run_app.py eval_page --port 8081 # 教师/开发者评测页
 """
 
 from __future__ import annotations
@@ -42,7 +41,7 @@ def main() -> None:
         "target",
         nargs="?",
         default="chainlit_app",
-        help="应用模块名：chainlit_app（学生端）或 eval_page（教师评测页）",
+        help="应用模块名：chainlit_app（学生端）",
     )
     parser.add_argument("--host", default=os.environ.get("CHAINLIT_HOST", "127.0.0.1"))
     parser.add_argument(

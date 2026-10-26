@@ -196,4 +196,4 @@ QQ 邮箱 SMTP 使用 `smtp.qq.com:465`，`SAGE_SMTP_USERNAME` 填完整 QQ 邮�
 
 交互结构参考 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的会话侧栏、会话菜单与分组模型选择器（参考源码 HEAD `1600d8a`）；没有引入其 Agent 工具执行能力。
 
-回归入口：`.venv/bin/python -m unittest discover -s tests -q`、`.venv/bin/python -m pytest -q`、`.venv/bin/python e2e_chainlit_check.py`。E2E 使用隔离的临时数据库与离线模型，验证真实 HTTP/SocketIO、流式事件、历史恢复、搜索/重命名/删除、跨工作区隔离和切换后的考试门控。
+回归入口：`.venv/bin/python -m unittest discover -s tests -q`、`.venv/bin/python -m pytest -q`。

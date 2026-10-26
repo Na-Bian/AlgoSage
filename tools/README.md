@@ -5,8 +5,7 @@ provider configuration. Never package `.env` or runtime databases. The journal
 keeps rejected drafts for local developer review. Do not expose
 `browser_acceptance_app.py` on a public network or feed it user chat data.
 
-1. Run `.venv/bin/python -m unittest discover -s tests -q` and
-   `.venv/bin/python e2e_chainlit_check.py`.
+1. Run `.venv/bin/python -m unittest discover -s tests -q`.
 2. Conduct pilot cases; preserve failures and any repaired pilot in separate folders.
 3. Freeze with `.venv/bin/python tools/freeze_acceptance.py results/<batch>/freeze`.
    Set `SAGE_CLASSIFIER_MODE=hybrid SAGE_OUTPUT_GUARD=layered` for the recorded D configuration.
