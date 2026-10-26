@@ -553,7 +553,7 @@
     }
   }
 
-  function managedRow(name, specs) {
+  function managedRow(name, specs, chips) {
     var row = document.createElement("div");
     row.className = "eg-add-managed-row";
     var label = document.createElement("span");
@@ -561,6 +561,16 @@
     label.textContent = name;
     label.title = name;
     row.append(label);
+    if (chips && chips.length) {
+      var chipsWrap = document.createElement("span");
+      chipsWrap.className = "eg-add-managed-chips";
+      chips.forEach(function (chipText) {
+        var chip = document.createElement("span");
+        chip.textContent = chipText;
+        chipsWrap.append(chip);
+      });
+      row.append(chipsWrap);
+    }
     var actions = document.createElement("span");
     actions.className = "eg-add-managed-actions";
     specs.forEach(function (options) {
@@ -623,13 +633,12 @@
       var name =
         (model.label && model.label !== "自定义 API"
           ? model.label + " · "
-          : "") + shortModelName(model.model) +
-        (capTags.length ? " · " + capTags.join("/") : "");
+          : "") + shortModelName(model.model);
       list.append(managedRow(name, [{
         text: "删除", pending: "正在删除…", done: "已删除；若它正被使用，已自动切回默认模型",
         failed: "删除失败",
         run: function () { return removeCustomEntries([model.selection]); },
-      }]));
+      }], capTags));
     });
     if (!presets.length && !customCount) {
       var empty = document.createElement("div");
@@ -729,13 +738,15 @@
       else if (caps.thinking === false) capTags.push("不支持思考");
       if (caps.multimodal === true) capTags.push("多模态");
       if (caps.web_search === true) capTags.push("联网");
-      var capText = probePending
-        ? "能力探测中…"
-        : capTags.length
-          ? capTags.join(" · ")
-          : "";
-      var capHtml = capText
-        ? `<span class="eg-add-model-caps${probePending ? " eg-caps-pending" : ""}">${capText}</span>`
+      var capChips = probePending
+        ? ["能力探测中…"]
+        : capTags;
+      var capHtml = capChips.length
+        ? `<span class="eg-add-model-caps">${capChips
+            .map(function (chip) {
+              return `<span>${chip}</span>`;
+            })
+            .join("")}</span>`
         : "";
       var sizeText = item.params_b == null ? "参数量未知" : `${item.params_b}B`;
       var blockReason = caps.is_chat === false

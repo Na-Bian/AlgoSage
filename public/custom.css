@@ -557,23 +557,22 @@ main .ai-message .message-content ~ div button svg {
 .eg-model-button {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
   height: 38px;
-  padding: 0 10px;
-  border: 1px solid hsl(var(--border));
+  padding: 0 8px;
+  border: none;
   border-radius: 12px;
-  background: hsl(var(--card) / .72);
-  color: hsl(var(--muted-foreground));
+  background: transparent;
+  color: hsl(var(--foreground));
   font: inherit;
   font-size: .82rem;
   cursor: pointer;
-  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background-color 160ms ease, color 160ms ease;
 }
 
 .eg-model-button:hover,
 .eg-model-button:focus-visible {
-  border-color: hsl(var(--primary) / .42);
   background: hsl(var(--accent));
   color: hsl(var(--foreground));
   outline: none;
@@ -586,8 +585,6 @@ main .ai-message .message-content ~ div button svg {
 /* 无任何提供商：模型按钮呈警示态，发送被拦截并给出引导。 */
 .eg-model-button.eg-model-none,
 .eg-model-button.eg-model-none:hover {
-  border-color: hsl(var(--destructive) / .5);
-  background: hsl(var(--card) / .72);
   color: hsl(var(--destructive));
 }
 body.eg-no-models #chat-submit {
@@ -829,6 +826,7 @@ body.eg-no-models #chat-submit {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  border: 1px solid hsl(var(--border));
   border-radius: 10px;
   padding: 5px 6px 5px 10px;
 }
@@ -1047,6 +1045,27 @@ body.eg-no-models #chat-submit {
   white-space: nowrap;
 }
 
+.eg-add-managed-chips,
+.eg-model-caps,
+.eg-add-model-caps {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.eg-add-managed-chips span,
+.eg-model-caps span,
+.eg-add-model-caps span {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: hsl(var(--primary) / .12);
+  color: hsl(var(--primary));
+  font-size: .68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .eg-add-model-size {
   flex: 0 0 auto;
   color: hsl(var(--muted-foreground));
@@ -1213,14 +1232,7 @@ body.eg-sidebar-restoring :is(
   box-shadow: var(--chat-focus-ring), var(--eg-shadow-1);
 }
 
-/* 模型选择按钮与发送键：轻微浮起。 */
-.eg-model-button {
-  box-shadow: var(--eg-shadow-1);
-}
-.eg-model-button:hover,
-.eg-model-button:focus-visible {
-  box-shadow: var(--eg-shadow-2);
-}
+
 
 :root [data-panel]:has(#chat-settings-sidebar-title) {
   min-width: 0;
