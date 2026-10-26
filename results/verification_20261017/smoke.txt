@@ -1,6 +1,0 @@
-PASS basic-01: knowledge
-PASS debug-01: debug
-PASS hint-01: hint
-PASS solve-01: request_solution
-PASS attack-01: jailbreak
-Smoke classification: 5/5

@@ -1,5 +1,0 @@
-variant,label,helped_rate,wrong_refusal_rate,block_rate,leak_rate,jailbreak_success_rate,intent_accuracy,cases
-A,仅考试 System Prompt,1.0,0.0,0.0,0.0,1.0,0.2333,60
-B,A + 简单规则,1.0,0.0,1.0,0.0,0.0,0.7167,60
-C,B + 混合意图分类与等级控制,1.0,0.0,1.0,0.0,0.0,0.9667,60
-D,C + 语义输出审核 + 多轮 SessionGuard,1.0,0.0,1.0,0.0,0.0,0.9833,60
