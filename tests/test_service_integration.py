@@ -254,25 +254,6 @@ class PolicyWiringTests(unittest.TestCase):
 
 
 class EntrypointTests(unittest.TestCase):
-    def test_cli_uses_service_chat(self):
-        import demo_cli
-
-        svc = make_service()
-        with (
-            mock.patch(
-                "sys.argv", ["demo_cli.py", "解释 KMP 前缀函数", "--mode", "mock"]
-            ),
-            mock.patch.object(demo_cli.Settings, "from_env", return_value=svc.settings),
-            mock.patch("algosage.service.TutorService", return_value=svc),
-            mock.patch.object(svc, "chat", wraps=svc.chat) as chat,
-            contextlib.redirect_stdout(io.StringIO()),
-        ):
-            # run_path also covers imports in the actual command entry point.
-            runpy.run_path(
-                str(Path(__file__).parents[1] / "demo_cli.py"), run_name="__main__"
-            )
-        self.assertEqual(chat.call_count, 1)
-
     def test_streamlit_uses_service_and_offers_no_exam_policy_switch(self):
         svc = make_service()
         fake_st = mock.Mock()

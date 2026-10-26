@@ -20,26 +20,19 @@ cp .env.example .env
 离线演示和验证必须显式指定 mock（`Settings.from_env()` 的运行缺省为 API）：
 
 ```bash
-APP_MODE=mock SAGE_OUTPUT_GUARD=rules python demo_cli.py '什么是前缀函数？'
 APP_MODE=mock SAGE_OUTPUT_GUARD=rules python run_app.py
 APP_MODE=mock python -m unittest discover -s tests -v
-APP_MODE=mock python smoke_check.py
-APP_MODE=mock python e2e_chainlit_check.py
 ```
 
-学生端默认 `http://127.0.0.1:8000`。`run_app.py` 使用原生 uvicorn；本项目在 Python 3.15 上使用它绕开 Chainlit CLI / nest_asyncio 的已知静态资源问题。E2E 覆盖真实起服、Socket.IO 会话及已移除教师重置入口，不等于浏览器视觉或真实模型效果验证。
+学生端默认 `http://127.0.0.1:8000`。`run_app.py` 使用原生 uvicorn；本项目在 Python 3.15 上使用它绕开 Chainlit CLI / nest_asyncio 的已知静态资源问题。
 
 API 模式在本地未跟踪 `.env` 中设置 `APP_MODE=api`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`。本地使用过 SiliconFlow 的 `Qwen/Qwen3.5-9B`，历史配置 `enable_thinking=false`；模型可用性以服务商账号为准。不要将密钥写入源码、日志、截图或提交包。
 
 ```bash
 python run_app.py
-python run_app.py eval_page --port 8081
 # 旧入口也经过同一个 TutorService
 streamlit run app.py
-python demo_cli.py --mode api '解释摊还复杂度'
 ```
-
-开发者评测页提供 `info` 和 `run smoke`，API 批量调用需命令追加 `confirm-api`。它仅支持 smoke 的 `question/expected_intent` schema，会明确拒绝正式 Harness schema；正式多轮和消融使用下面的 CLI。
 
 ### 学生端功能
 

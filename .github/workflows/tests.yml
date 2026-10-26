@@ -20,8 +20,3 @@ jobs:
           APP_MODE: mock
           SAGE_STATE_FILE: ""
         run: python -m pytest -q
-      - name: Chainlit E2E
-        env:
-          APP_MODE: mock
-          SAGE_STATE_FILE: ""
-        run: python e2e_chainlit_check.py
