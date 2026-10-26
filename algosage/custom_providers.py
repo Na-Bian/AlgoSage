@@ -49,48 +49,53 @@ _ENV_FIELDS = ("PRINCIPAL", "LABEL", "BASE_URL", "MODEL", "KEY", "CAPABILITIES")
 _FORBIDDEN_CHARS = re.compile(r"[\r\n\x00]")
 
 # 能力探测用的 64x64 纯色 PNG（data URL）：VL 模型对过小图片会报尺寸错误。
+# 块 CRC 必须合法——上游会严格校验图片文件，损坏的 PNG 被当成 400 误判为不支持。
 _PROBE_IMAGE_DATA_URL = (
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAf0lE"
-    "QVR4nNXOQREAIAzAsFJd83/IQgSPXaMg585QJnESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ES"
-    "J3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ES"
-    "J3ESJ3ESJ3ESJ3ESJ3ES53bg1wOShAHAaQyuBQAAAABJRU5ErkJggg=="
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAf0lEQVR4nNXOMREAIBDAsFL/wpgxBCJ+4BoFWftcyiRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4vwdmHqZHgMZgZAxXgAAAABJRU5ErkJggg=="
 )
 
 
 def probe_model_capabilities(base_url: str, api_key: str, model_id: str) -> dict:
     """真实调用上游判断模型能力：每个能力一个构造好的最小请求，观察行为。
 
-    - 思考：enable_thinking=true 后响应必须携带非空 reasoning_content
-      （上游对不支持的模型会静默忽略参数，必须检查输出而非报错）；
+    - 思考：流式请求 enable_thinking=true，一旦出现 reasoning_content 即
+      判支持并中断（不等整个响应生成完）；content 先到且无 reasoning 则
+      判不支持（上游对不支持的模型会静默忽略参数，必须看输出）；
     - 多模态：携带 64x64 data-url 图片，非视觉模型返回 400（not a VLM）；
     - 联网搜索：enable_search=true，上游拒绝（4xx）即不支持；
     - is_chat：纯文本最小请求，全部探测失败时用于区分"模型不存在"。
+    四项检查相互独立，并发执行以缩短点击后的等待；单模型耗时≈最慢一项。
     异常/超时统一记为 None（未知），不冒充支持。
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     from openai import OpenAI
 
-    # 思考探测要等上游生成 reasoning_content，实测可达 25s+；15s 会误判超时。
+    # 思考探测要等上游产出首个增量，实测可达 25s+；15s 会误判超时。
     client = OpenAI(api_key=api_key, base_url=base_url, timeout=30, max_retries=0)
-    result = {
-        "thinking": None,
-        "multimodal": None,
-        "web_search": None,
-        "is_chat": None,
-    }
 
     import time as _time
 
     from openai import APIStatusError
 
-    def attempt(payload, require_reasoning=False):
+    def attempt(payload, check=None):
         # 4xx（非限流）= 上游明确拒绝 → 该能力不支持；
         # 429/5xx/超时 = 暂时失败 → 短退避重试，最终仍失败记为未知。
         last_error = None
-        completion = None
+        settled = None
         for round_index in range(3):
             try:
-                completion = client.chat.completions.create(**payload)
-                break  # 成功即退出重试循环
+                if check is not None:
+                    result = check()
+                    if result is not None:
+                        settled = result
+                        break
+                    # 流式检查返回 None 表示本轮无结论，重试
+                    last_error = None
+                else:
+                    client.chat.completions.create(**payload)
+                    settled = True
+                    break
             except APIStatusError as error:
                 status = getattr(error, "status_code", None)
                 if isinstance(status, int) and 400 <= status < 500 and status != 429:
@@ -99,61 +104,92 @@ def probe_model_capabilities(base_url: str, api_key: str, model_id: str) -> dict
             except Exception as error:  # noqa: BLE001 - 超时/连接失败归为未知
                 last_error = error
             _time.sleep(1.2 * (round_index + 1))
-        if completion is None:
+        if settled is None:
             logger.info(
                 "capability probe inconclusive model=%s last_error=%s",
                 model_id,
                 type(last_error).__name__ if last_error else "unknown",
             )
             return None
-        if require_reasoning:
-            message = completion.choices[0].message
-            reasoning = (getattr(message, "reasoning_content", "") or "").strip()
-            return bool(reasoning)
-        return True
+        return settled
 
-    result["thinking"] = attempt(
-        {
-            "model": model_id,
-            "messages": [{"role": "user", "content": "1+1等于几？先想一想再回答。"}],
-            "max_tokens": 30,
-            "extra_body": {"enable_thinking": True},
-        },
-        require_reasoning=True,
-    )
-    result["multimodal"] = attempt(
-        {
-            "model": model_id,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "hi"},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": _PROBE_IMAGE_DATA_URL},
-                        },
-                    ],
-                }
-            ],
-            "max_tokens": 1,
+    def probe_thinking():
+        """流式早停：出现 reasoning_content 即 True；content 先到无 reasoning
+        即 False；无增量产出返回 None 触发重试。"""
+
+        def check():
+            stream = client.chat.completions.create(
+                model=model_id,
+                messages=[{"role": "user", "content": "1+1等于几？先想一想再回答。"}],
+                max_tokens=30,
+                extra_body={"enable_thinking": True},
+                stream=True,
+            )
+            try:
+                for chunk in stream:
+                    choice = chunk.choices[0] if chunk.choices else None
+                    delta = choice.delta if choice else None
+                    if delta is None:
+                        continue
+                    reasoning = (getattr(delta, "reasoning_content", "") or "").strip()
+                    if reasoning:
+                        return True
+                    content = (getattr(delta, "content", "") or "").strip()
+                    if content:
+                        return False
+                return None
+            finally:
+                stream.close()
+
+        return attempt(None, check=check)
+
+    def probe_multimodal():
+        return attempt(
+            {
+                "model": model_id,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "hi"},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": _PROBE_IMAGE_DATA_URL},
+                            },
+                        ],
+                    }
+                ],
+                "max_tokens": 1,
+            }
+        )
+
+    def probe_web_search():
+        return attempt(
+            {
+                "model": model_id,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 1,
+                "extra_body": {"enable_search": True},
+            }
+        )
+
+    def probe_is_chat():
+        return attempt(
+            {
+                "model": model_id,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 1,
+            }
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {
+            "thinking": pool.submit(probe_thinking),
+            "multimodal": pool.submit(probe_multimodal),
+            "web_search": pool.submit(probe_web_search),
+            "is_chat": pool.submit(probe_is_chat),
         }
-    )
-    result["web_search"] = attempt(
-        {
-            "model": model_id,
-            "messages": [{"role": "user", "content": "hi"}],
-            "max_tokens": 1,
-            "extra_body": {"enable_search": True},
-        }
-    )
-    result["is_chat"] = attempt(
-        {
-            "model": model_id,
-            "messages": [{"role": "user", "content": "hi"}],
-            "max_tokens": 1,
-        }
-    )
+        result = {name: future.result() for name, future in futures.items()}
     return result
 
 
