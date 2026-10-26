@@ -22,3 +22,14 @@ results/raw_private/
 *.sqlite
 *.sqlite3
 *.sqlite3-*
+
+# 开发支持目录与文件：本地保留，不进入版本管理/不上传 GitHub
+/datasets/
+/deploy/
+/docs/
+/tests/
+/.github/
+/docker-compose.yml
+/docker-compose.prod.yml
+/Dockerfile
+/.dockerignore
