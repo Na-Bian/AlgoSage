@@ -77,15 +77,15 @@
     });
   }
 
-  loadScript("/public/theme-transition.js?v=20261025-options-1")
-    .then(() => loadScript("/public/account-profile.js?v=20261025-focus-return-3"))
-    .then(() => loadScript("/public/user-preferences.js?v=20261024-model-picker-2"))
-    .then(() => loadScript("/public/model-picker.js?v=20261026-ws-refresh-1"))
-    .then(() => loadScript("/public/chat-ui.js?v=20261026-doc-hide-1"))
-    .then(() => loadScript("/public/settings-autosave.js?v=20261026-settle-timeout-1"))
-    .then(() => loadScript("/public/chat-options.js?v=20261026-pills-inline-1"))
+  loadScript("/public/theme-transition.js?v=20261026-refresh-all-1")
+    .then(() => loadScript("/public/account-profile.js?v=20261026-refresh-all-1"))
+    .then(() => loadScript("/public/user-preferences.js?v=20261026-refresh-all-1"))
+    .then(() => loadScript("/public/model-picker.js?v=20261026-refresh-all-1"))
+    .then(() => loadScript("/public/chat-ui.js?v=20261026-refresh-all-1"))
+    .then(() => loadScript("/public/settings-autosave.js?v=20261026-refresh-all-1"))
+    .then(() => loadScript("/public/chat-options.js?v=20261026-refresh-all-1"))
     .catch(() => {
       // Existing behavior remains usable even if optional enhancements fail.
-      loadScript("/public/account-profile.js?v=20261025-focus-return-3");
+      loadScript("/public/account-profile.js?v=20261026-refresh-all-1");
     });
 })();
