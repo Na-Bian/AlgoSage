@@ -254,17 +254,8 @@
         option.setAttribute("role", "option");
         option.setAttribute("aria-selected", String(model.selection === state.currentSelection));
         option.disabled = !model.available || state.switching;
-        var caps = model.capabilities || {};
-        var capTags = [];
-        if (caps.thinking) capTags.push("思考");
-        if (caps.multimodal) capTags.push("多模态");
-        if (caps.web_search) capTags.push("联网");
-        var capHtml = capTags.length
-          ? `<span class="eg-model-caps">${capTags.join(" · ")}</span>`
-          : "";
-        var displayName = model.short_name || shortModelName(model.model);
         option.innerHTML = `
-          <span class="eg-model-option-name">${displayName}${group.id === "custom" ? '<em class="eg-model-custom-badge">自定义</em>' : ""}${capHtml}</span>
+          <span class="eg-model-option-name">${model.short_name || shortModelName(model.model)}</span>
           <span class="eg-model-option-state">${model.selection === state.currentSelection ? "✓" : model.available ? "" : "不可用"}</span>
         `;
         option.addEventListener("click", function () {
