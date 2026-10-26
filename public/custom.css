@@ -1704,7 +1704,8 @@ body.eg-chat-shell :is(
   position: fixed;
   top: 13px;
   left: 16px;
-  z-index: 70;
+  /* Navigation stays below Radix's modal overlay/content (z-50). */
+  z-index: 40;
   display: flex;
   align-items: center;
   gap: 18px;
@@ -2192,11 +2193,14 @@ main div:has(> #messages) { overflow: visible; }
   font-style: normal;
 }
 
-/* 设置面板或"说明"文档对话框打开时，隐藏侧栏顶部的品牌与快捷图标组。
+/* 设置面板或"说明"文档对话框打开时，同时隐藏展开头部和收起后的悬浮组。
    文档对话框以"含 h1 的 Radix 对话框"识别（其余对话框均无 h1）。 */
 body:has(#chat-settings-sidebar-title) [data-sidebar="sidebar"] .eg-original-sidebar-header,
 body:has([role="dialog"] h1) [data-sidebar="sidebar"] .eg-original-sidebar-header,
-body.eg-dialog-open [data-sidebar="sidebar"] .eg-original-sidebar-header {
+body.eg-dialog-open [data-sidebar="sidebar"] .eg-original-sidebar-header,
+body:has(#chat-settings-sidebar-title) #eg-collapsed-bar,
+body:has([role="dialog"] h1) #eg-collapsed-bar,
+body.eg-dialog-open #eg-collapsed-bar {
   display: none;
 }
 
