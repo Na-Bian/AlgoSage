@@ -1465,7 +1465,7 @@ body.eg-chat-shell::after { background: var(--color-canvas-arcs); }
 main { background: transparent !important; }
 
 /* Widen Chainlit's built-in sidebar while keeping its collapse behavior. */
-[class*="group/sidebar-wrapper"] { --sidebar-width: 18rem !important; }
+[class*="group/sidebar-wrapper"] { --sidebar-width: 14rem !important; }
 [data-sidebar="sidebar"] {
   border-right: 1px solid hsl(var(--sidebar-border));
   background:
@@ -2054,7 +2054,7 @@ main div:has(> #welcome-screen),
 main div:has(> #messages) { overflow: visible; }
 
 @media (max-width: 900px) {
-  [class*="group/sidebar-wrapper"] { --sidebar-width: 18rem !important; }
+  [class*="group/sidebar-wrapper"] { --sidebar-width: 14rem !important; }
   #welcome-screen .eg-config-card,
   #welcome-screen .eg-usage-card { border-radius: 18px; }
   #welcome-screen .eg-config-card th { width: 116px; }
