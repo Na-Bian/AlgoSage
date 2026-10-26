@@ -455,18 +455,27 @@
     if (!document.getElementById("chat-settings-sidebar-title")) return;
     var label = document.querySelector('aside label[for="model_catalog"]');
     if (!label) {
-      // 无"默认模型"控件（无任何提供商）：入口挂到设置面板标题下方。
+      // 无"默认模型"控件（无任何提供商）：入口插到控件滚动容器的首位，
+      // 与各控件包装块同级同宽——插在标题旁或外层容器会大出一圈边距。
       var anchor = document.getElementById("chat-settings-sidebar-title");
       var headerBlock = anchor && anchor.closest("div");
       var panel = anchor && (anchor.closest('[role="dialog"]') || anchor.closest("[data-panel]"));
       if (!headerBlock || !panel) return;
+      var body = headerBlock.nextElementSibling;
+      if (!(body && body.querySelector("label"))) return;
+      // 控件真正的父级：body 的直接子元素中包含控件包装的那个。
+      var container = body.querySelector("label").closest("div");
+      while (container && container.parentElement !== body) {
+        container = container.parentElement;
+      }
+      if (!container) return;
       // 本函数由全局 MutationObserver 驱动，插入本身又会触发观察器：
       // 不检查已存在就会"插入→触发→再插入"无限微任务循环，页面卡死。
       var entry = document.getElementById("eg-settings-add-model");
       if (
         entry
-        && entry.parentElement === headerBlock.parentElement
-        && entry.previousElementSibling === headerBlock
+        && entry.parentElement === container
+        && container.firstElementChild === entry
       ) {
         return;
       }
@@ -478,7 +487,7 @@
         entry.innerHTML = entryHTML();
         bindEntry(entry);
       }
-      headerBlock.insertAdjacentElement("afterend", entry);
+      container.insertBefore(entry, container.firstChild);
       return;
     }
     var wrapper = label.closest("div.space-y-2") || label.parentElement;
