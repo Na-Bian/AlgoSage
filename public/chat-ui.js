@@ -36,11 +36,11 @@
           node.textContent = node.textContent.replace(safeName, label);
         }
       });
-      // 思考过程默认折叠：点击标题展开/收起。
+      // 思考过程：默认展开、自动滚动、置于正式回答上方；点击标题可收起。
       if (safeName === "model-reasoning") {
         const container = button.parentElement;
         if (container && !container.dataset.egReasoningCollapse) {
-          container.dataset.egReasoningCollapse = "collapsed";
+          container.dataset.egReasoningCollapse = "open";
           container.classList.add("eg-reasoning-step");
           const apply = () => {
             const collapsed =
@@ -51,6 +51,7 @@
             }
             while (body) {
               body.style.display = collapsed ? "none" : "";
+              if (!collapsed) body.scrollTop = body.scrollHeight;
               body = body.nextElementSibling;
               if (!body || body.querySelector?.('button[id^="step-"]')) break;
             }
@@ -729,6 +730,35 @@
       !!dialog && dialog.getAttribute("role") === "dialog"
     );
   }
+  /* 思考过程步骤：跨容器移到正式回答上方。
+     首个思考增量到达时页面可能仍在欢迎视图，思考 Step 会渲染进欢迎
+     容器；而回答流式渲染在消息容器——两者是兄弟容器，必须跨容器移动。 */
+  function syncReasoningPlacement() {
+    const container = document.querySelector(".eg-reasoning-step");
+    if (!container) return;
+    const row = container.closest(".step") || container.parentElement;
+    if (!row) return;
+    const aMsg = document.querySelector('[data-step-type="assistant_message"]');
+    if (!aMsg) return;
+    const aContainer = aMsg.parentElement;
+    if (row.parentElement === aContainer) {
+      // 同容器：确保思考行紧邻回答行之前即可。
+      const aMsgRow = aMsg.closest(".step") || aMsg;
+      if (row.nextElementSibling === aMsgRow) return;
+      aContainer.insertBefore(row, aMsgRow);
+      return;
+    }
+    // 跨容器：思考行与其后的输出片段整体移到回答行之前。
+    const moving = [];
+    let sib = row.nextElementSibling;
+    while (sib) {
+      moving.push(sib);
+      sib = sib.nextElementSibling;
+    }
+    aContainer.insertBefore(row, aMsgRow);
+    moving.forEach((n) => aContainer.insertBefore(n, aMsgRow));
+  }
+
   syncReadmeVisibility();
   new MutationObserver(syncReadmeVisibility).observe(document.body, {
     childList: true,
@@ -880,6 +910,7 @@
       translateStepLabels();
       enhanceWelcome();
       enhanceReadmeDetails();
+      syncReasoningPlacement();
     });
   }
 

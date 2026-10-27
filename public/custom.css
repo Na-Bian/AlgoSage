@@ -2172,6 +2172,8 @@ main div:has(> #messages) { overflow: visible; }
   border-left: 2px solid hsl(var(--border));
   padding-left: 12px;
   margin: 4px 0 8px;
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 /* 模型菜单里自定义模型行的能力文字（弱化、不抢焦点）。 */

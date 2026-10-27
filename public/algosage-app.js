@@ -81,7 +81,7 @@
     .then(() => loadScript("/public/account-profile.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/user-preferences.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/model-picker.js?v=20261027-welcome-pick-1"))
-    .then(() => loadScript("/public/chat-ui.js?v=20261027-motion-removal-1"))
+    .then(() => loadScript("/public/chat-ui.js?v=20261027-reasoning-top-1"))
     .then(() => loadScript("/public/settings-autosave.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/chat-options.js?v=20261026-refresh-all-1"))
     .catch(() => {
