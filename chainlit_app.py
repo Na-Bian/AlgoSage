@@ -1285,8 +1285,9 @@ def _make_delta_sink(context, stream_out):
 
     def sink(text_so_far, reasoning_so_far):
         async def apply():
-            if reasoning_so_far:
-                step = stream_out.get("reasoning_step")
+            async with stream_out["ui_lock"]:
+                if reasoning_so_far:
+                    step = stream_out.get("reasoning_step")
                 if step is None:
                     step = cl.Step(name="model-reasoning", type="run", icon="brain")
                     await step.send()
@@ -1295,19 +1296,19 @@ def _make_delta_sink(context, stream_out):
                     step.output = reasoning_so_far
                     await step.update()
                     stream_out["reasoning"] = reasoning_so_far
-            reply = stream_out.get("reply")
-            if reply is None:
-                reply = cl.Message(content="")
-                stream_out["reply"] = reply
-            if len(text_so_far) < stream_out.get("streamed", 0):
-                # 重生成：文本从头开始，重置已播内容。
-                reply.content = ""
-                stream_out["streamed"] = 0
-            tail = text_so_far[stream_out.get("streamed", 0) :]
-            if tail:
-                await reply.stream_token(tail)
-                stream_out["streamed"] = len(text_so_far)
-                stream_out["text"] = text_so_far
+                reply = stream_out.get("reply")
+                if reply is None:
+                    reply = cl.Message(content="")
+                    stream_out["reply"] = reply
+                if len(text_so_far) < stream_out.get("streamed", 0):
+                    # 重生成：文本从头开始，重置已播内容。
+                    reply.content = ""
+                    stream_out["streamed"] = 0
+                tail = text_so_far[stream_out.get("streamed", 0) :]
+                if tail:
+                    await reply.stream_token(tail)
+                    stream_out["streamed"] = len(text_so_far)
+                    stream_out["text"] = text_so_far
 
 
         asyncio.run_coroutine_threadsafe(apply(), loop)
@@ -1327,6 +1328,9 @@ async def run_turn(
 ):
     started = time.perf_counter()
     stream_out = stream_out if stream_out is not None else {}
+    # 流式 UI 更新串行锁：思考/正文增量回调从 worker 线程调度到主循环，
+    # await 期间后续回调若并发执行会在 Step 创建前重复创建（4ms 内 4 条）。
+    stream_out.setdefault("ui_lock", asyncio.Lock())
     if conversation_lock().locked():
         await cl.Message(content="⏳ 上一条回答仍在生成，本条已排队等待。").send()
     async with conversation_lock():
