@@ -121,6 +121,16 @@ def main() -> None:
 
     app.add_middleware(BaseHTTPMiddleware, dispatch=legacy_avatar_fallback)
 
+    async def html_no_cache(request, call_next):
+        # SPA 外壳（/、/login、/thread/*）必须每次回源：发版后 HTML 里带
+        # 新的 ?v= 静态地址，若 HTML 被启发式缓存，刷新也会继续跑旧脚本。
+        response = await call_next(request)
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    app.add_middleware(BaseHTTPMiddleware, dispatch=html_no_cache)
+
     uvicorn.run(
         app,
         host=args.host,

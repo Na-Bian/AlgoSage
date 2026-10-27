@@ -1375,7 +1375,12 @@ def install_student_auth(app: Any, service_factory) -> None:
             return await call_next(request)
         account = service().store.get_account(identifier.removeprefix("student:"))
         expected = int((account or {}).get("session_version", -1))
-        actual = int((getattr(user, "metadata", None) or {}).get("session_version", -2))
+        # 陈旧或被篡改的 token 里 session_version 可能不是数字；按会话失效
+        # 处理跳登录页，而不是让 int() 抛 ValueError 变成整页 500。
+        try:
+            actual = int((getattr(user, "metadata", None) or {}).get("session_version", -2))
+        except (TypeError, ValueError):
+            actual = -3
         if not account or account.get("status") != "active" or actual != expected:
             from fastapi.responses import RedirectResponse
 

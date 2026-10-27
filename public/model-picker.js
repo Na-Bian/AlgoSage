@@ -120,17 +120,45 @@
     button.disabled = Boolean(state.switching);
   }
 
+  var retryScheduled = false;
+  var retryBudget = 0;
+  var lastComposer = null;
+  function scheduleComposerRetry() {
+    // 水合期会把动作行短暂拆散/换父，此时注入必然失败。MutationObserver
+    // 要等下一次 DOM 变动才会再跑，中间可能隔着多帧绘制——按钮肉眼可见地
+    // 消失。rAF 回调在本帧绘制前执行，紧跟着重试最多再等一帧。
+    if (retryScheduled || retryBudget > 30) return;
+    retryScheduled = true;
+    retryBudget += 1;
+    requestAnimationFrame(function () {
+      retryScheduled = false;
+      ensureComposerControl();
+    });
+  }
+
   function ensureComposerControl() {
     var composer = document.getElementById("message-composer");
     if (!composer) return;
+    if (composer !== lastComposer) {
+      // 新一轮挂载重新给重试预算；同一节点只配额一次，防永久性失败空转。
+      lastComposer = composer;
+      retryBudget = 0;
+    }
     var actionRow = composer.querySelector(":scope > .flex.items-center.justify-between");
     var rightGroup = actionRow?.querySelector(":scope > .flex.items-center:last-child");
     var submit = document.getElementById("chat-submit");
-    if (!actionRow || !rightGroup || !submit) return;
+    if (button && button.isConnected && rightGroup && rightGroup.contains(button)) {
+      retryBudget = 0;
+      return;
+    }
     // A framework hydration pass can temporarily detach the action row.
-    // Wait for the next mutation rather than inserting into a stale parent.
-    if (submit.parentElement !== rightGroup || !rightGroup.isConnected || !composer.isConnected) return;
-    if (button && button.isConnected && rightGroup.contains(button)) return;
+    // Retry on the next animation frame instead of waiting for an
+    // unrelated mutation to re-trigger this observer.
+    if (!actionRow || !rightGroup || !submit
+      || submit.parentElement !== rightGroup || !rightGroup.isConnected || !composer.isConnected) {
+      scheduleComposerRetry();
+      return;
+    }
 
     button = document.createElement("button");
     button.type = "button";
