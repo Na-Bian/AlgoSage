@@ -1285,8 +1285,7 @@ def _make_delta_sink(context, stream_out):
 
     def sink(text_so_far, reasoning_so_far):
         async def apply():
-            if reasoning_so_far and not getattr(context, "exam_mode", False):
-                # 学习保护模式不直播推理，防止题解经推理内容提前泄漏。
+            if reasoning_so_far:
                 step = stream_out.get("reasoning_step")
                 if step is None:
                     step = cl.Step(name="model-reasoning", type="run", icon="brain")
@@ -1309,6 +1308,7 @@ def _make_delta_sink(context, stream_out):
                 await reply.stream_token(tail)
                 stream_out["streamed"] = len(text_so_far)
                 stream_out["text"] = text_so_far
+
 
         asyncio.run_coroutine_threadsafe(apply(), loop)
 
