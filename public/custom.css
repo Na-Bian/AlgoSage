@@ -2207,3 +2207,8 @@ body.eg-readme-open #eg-collapsed-bar {
   display: flex;
   align-items: center;
 }
+
+/* 用户消息气泡（含编辑态）：轻阴影，避免在浅色画布上过于扁平。 */
+main [data-step-type="user_message"] .bg-accent {
+  box-shadow: var(--eg-shadow-1);
+}
