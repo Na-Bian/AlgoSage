@@ -44,13 +44,19 @@
     });
   }
 
-  /* 思考过程自动展开：Chainlit 把步骤渲染成折叠态（aria-expanded=false，
-     只显示"已使用 思考过程"摘要），且正文晚于步骤头挂载——旧的
-     dataset/display 方案只在首帧生效、之后无人再展开，点击时还会和
-     Chainlit 自己的开关互相打架（弹出即收回）。改为驱动 Chainlit：
-     检测到折叠就模拟点击由它自己展开；用户手动收起（isTrusted 点击）
-     则记录并尊重，不再自动展开。展开期间跟随滚动到底部。 */
+  /* 思考过程自动展开/自动折叠：Chainlit 把步骤渲染成折叠态
+     （aria-expanded=false，只显示"已使用 思考过程"摘要），且正文晚于
+     步骤头挂载——旧的 dataset/display 方案只在首帧生效、之后无人再展开，
+     点击时还会和 Chainlit 自己的开关互相打架（弹出即收回）。改为驱动
+     Chainlit 自己的折叠机制：检测到折叠就模拟点击由它自己展开；正式
+     回答开始出字（= 思考必然已结束）就自动折叠一次；用户手动收起
+     （isTrusted 点击）则记录并尊重。展开期间跟随滚动到底部。 */
   const reasoningUserCollapsed = new Set();
+  const reasoningAutoCollapsed = new Set();
+  let reasoningTrackId = "";
+  let reasoningFinishedAtStart = false;
+  let reasoningLastLen = 0;
+  let reasoningStableAt = 0;
   document.addEventListener(
     "click",
     (event) => {
@@ -62,18 +68,42 @@
   );
   function ensureReasoningExpanded() {
     const button = document.querySelector('button[id$="model-reasoning"]');
-    if (!button || !button.isConnected) return;
-    if (
-      button.getAttribute("aria-expanded") === "false"
-      && !reasoningUserCollapsed.has(button.id)
-    ) {
+    if (!button || !button.isConnected) {
+      reasoningTrackId = "";
+      return;
+    }
+    if (button.id !== reasoningTrackId) {
+      // 新一轮思考：首次见到时审核步骤已存在 = 历史渲染，保持默认折叠。
+      reasoningTrackId = button.id;
+      reasoningFinishedAtStart = !!document.querySelector('button[id$="generation-safety-review"]');
+      reasoningLastLen = 0;
+      reasoningStableAt = 0;
+    }
+    const container = button.parentElement;
+    const gated =
+      reasoningUserCollapsed.has(button.id) || reasoningAutoCollapsed.has(button.id);
+    const expanded = button.getAttribute("aria-expanded") === "true";
+    if (reasoningFinishedAtStart || gated) return;
+    if (!expanded) {
       button.click();
       return;
     }
-    const container = button.parentElement;
     let body = container?.nextElementSibling;
-    if (body && !body.classList.contains("eg-reasoning-body")) {
+    if (!body) return;
+    if (!body.classList.contains("eg-reasoning-body")) {
       body.classList.add("eg-reasoning-body");
+    }
+    const len = (body.textContent || "").length;
+    const now = performance.now();
+    if (len !== reasoningLastLen) {
+      reasoningLastLen = len;
+      reasoningStableAt = now;
+    }
+    if (reasoningLastLen > 0 && now - reasoningStableAt > 3000) {
+      // 思考正文停更 3 秒 = 本轮思考已结束：自动折叠一次，之后交给用户。
+      reasoningAutoCollapsed.add(button.id);
+      button.click();
+      return;
     }
     while (body) {
       if (body.scrollHeight > body.clientHeight) {
