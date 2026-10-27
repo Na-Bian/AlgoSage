@@ -2208,9 +2208,24 @@ body.eg-readme-open #eg-collapsed-bar {
   align-items: center;
 }
 
-/* 用户消息气泡（含编辑态）：轻阴影，避免在浅色画布上过于扁平。 */
-main [data-step-type="user_message"] .bg-accent {
+/* 用户消息气泡：轻阴影，避免在浅色画布上过于扁平。
+   只作用于圆角外层；编辑态的内层 .bg-accent.flex.flex-col 保持透明，
+   否则会显现一个无圆角的同色直角内框。 */
+main [data-step-type="user_message"] .bg-accent.rounded-3xl {
   box-shadow: var(--eg-shadow-1);
+}
+main [data-step-type="user_message"] #edit-chat-input,
+main [data-step-type="user_message"] .bg-accent.flex.flex-col {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* 行 1194 的编辑态背景固化带 !important，需同强度反制才能让内层透明。
+   :has(#edit-chat-input) 提供与原规则相当（更高）的优先级。 */
+main [data-step-type="user_message"]:has(#edit-chat-input) .bg-accent.flex.flex-col {
+  background-color: transparent !important;
+  transition: none;
 }
 
 /* 编辑态内层输入框透明化：外层气泡已提供圆角与阴影，
