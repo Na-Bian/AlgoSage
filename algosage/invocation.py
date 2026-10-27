@@ -37,6 +37,21 @@ _current: ContextVar[TurnLedger | None] = ContextVar(
     "algosage_turn_ledger", default=None
 )
 _streaming: ContextVar[bool] = ContextVar("algosage_streaming_transport", default=False)
+_delta_sink: ContextVar = ContextVar("algosage_generation_delta_sink", default=None)
+
+
+@contextmanager
+def generation_delta_sink(callback):
+    """Register a live consumer for generation deltas (text and reasoning
+    accumulated so far). The callback runs on the caller's thread inside the
+    stream loop; it must not block for long. Audit still runs on the complete
+    text afterwards — the consumer is responsible for retracting the streamed
+    draft when the audit rejects it."""
+    token = _delta_sink.set(callback)
+    try:
+        yield
+    finally:
+        _delta_sink.reset(token)
 
 
 @contextmanager
@@ -121,6 +136,7 @@ def generate(
                 timeout=remaining,
                 sampling=sampling,
                 extra_body_overrides=extra_body_overrides,
+                on_delta=_delta_sink.get(),
             )
         elif hasattr(backend, "generate_with_options"):
             result = backend.generate_with_options(

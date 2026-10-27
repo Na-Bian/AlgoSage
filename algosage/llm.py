@@ -116,6 +116,7 @@ class OpenAICompatibleBackend:
         timeout=None,
         sampling=None,
         extra_body_overrides=None,
+        on_delta=None,
     ) -> LLMResult:
         effective_timeout = (
             min(self.settings.timeout, timeout)
@@ -179,6 +180,13 @@ class OpenAICompatibleBackend:
                     ) or getattr(delta, "reasoning", None)
                     if isinstance(reasoning_delta, str):
                         reasoning_parts.append(reasoning_delta)
+                if on_delta is not None and (parts or reasoning_parts):
+                    # 传累计全文而非单段增量：消费者可检测长度回退（重生成
+                    # 时文本重新开始）并整体重置自己的展示状态。
+                    try:
+                        on_delta("".join(parts), "".join(reasoning_parts))
+                    except Exception:  # noqa: BLE001 - 展示层异常不影响生成
+                        pass
             if time.monotonic() > deadline:
                 raise TimeoutError("流式响应超过本轮截止时间")
             if finish_reason != "stop":

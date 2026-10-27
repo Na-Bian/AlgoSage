@@ -29,7 +29,11 @@ from chainlit.input_widget import Select, Slider, Switch
 from algosage.config import Settings
 from algosage.service import TutorService, HISTORY_TURNS_KEPT
 from algosage.providers import ProviderRegistry, short_model_name
-from algosage.invocation import streaming_transport, timing_summary
+from algosage.invocation import (
+    generation_delta_sink,
+    streaming_transport,
+    timing_summary,
+)
 from algosage.runtime_paths import runtime_path
 from algosage.attachments import prepare_attachment_elements
 from algosage.runtime_security import configure_auth_cookies, install_origin_guard
@@ -745,12 +749,34 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             raise HTTPException(status_code=401, detail="Unauthorized")
         thread_id = str(payload.get("thread_id") or "").strip()
         selection = str(payload.get("selection") or "").strip()
-        if not thread_id or len(thread_id) > 128:
+        if len(thread_id) > 128:
             raise HTTPException(status_code=400, detail="Invalid thread")
         if not selection:
             raise HTTPException(status_code=400, detail="Model selection is required")
         service = get_service()
         try:
+            if not thread_id:
+                # 欢迎页（尚无线程）选模型：落为账号级默认，新对话由此继承。
+                principal = current_user.identifier
+                await asyncio.to_thread(
+                    service.select_provider_probe, selection, principal
+                )
+                preferences = await get_chat_store().load_user_app_preferences(
+                    principal
+                )
+                preferences["default_model_selection"] = selection
+                await get_chat_store().save_user_app_preferences(
+                    principal, preferences
+                )
+                settings = await asyncio.to_thread(
+                    service.select_provider_probe, selection, principal
+                )
+                return {
+                    "success": True,
+                    "selection": selection,
+                    "label": short_model_name(settings.model),
+                    "model": settings.model,
+                }
             async with model_selection_lock(thread_id):
                 context = await asyncio.to_thread(
                     service.new_context, thread_id, principal_id=current_user.identifier
@@ -1249,6 +1275,44 @@ async def deliver_response(
     await reply.send()
 
 
+def _make_delta_sink(context, stream_out):
+    """Live consumer for generation deltas (runs on the worker thread while
+    the upstream stream loop iterates). Schedules UI updates onto the main
+    event loop; the audited answer may still replace everything streamed."""
+    loop = asyncio.get_running_loop()
+
+    def sink(text_so_far, reasoning_so_far):
+        async def apply():
+            if reasoning_so_far and not getattr(context, "exam_mode", False):
+                # 学习保护模式不直播推理，防止题解经推理内容提前泄漏。
+                step = stream_out.get("reasoning_step")
+                if step is None:
+                    step = cl.Step(name="model-reasoning", type="run", icon="brain")
+                    await step.send()
+                    stream_out["reasoning_step"] = step
+                if reasoning_so_far != stream_out.get("reasoning", ""):
+                    step.output = reasoning_so_far
+                    await step.update()
+                    stream_out["reasoning"] = reasoning_so_far
+            reply = stream_out.get("reply")
+            if reply is None:
+                reply = cl.Message(content="")
+                stream_out["reply"] = reply
+            if len(text_so_far) < stream_out.get("streamed", 0):
+                # 重生成：文本从头开始，重置已播内容。
+                reply.content = ""
+                stream_out["streamed"] = 0
+            tail = text_so_far[stream_out.get("streamed", 0) :]
+            if tail:
+                await reply.stream_token(tail)
+                stream_out["streamed"] = len(text_so_far)
+                stream_out["text"] = text_so_far
+
+        asyncio.run_coroutine_threadsafe(apply(), loop)
+
+    return sink
+
+
 async def run_turn(
     service,
     context,
@@ -1257,8 +1321,10 @@ async def run_turn(
     msg_id="",
     edit_turn=None,
     attachments=(),
+    stream_out=None,
 ):
     started = time.perf_counter()
+    stream_out = stream_out if stream_out is not None else {}
     async with conversation_lock():
         # Every window reloads the latest private transcript before generating.
         context = await restore_conversation(service)
@@ -1281,7 +1347,9 @@ async def run_turn(
             name="generation-safety-review", type="run", icon="shield-check"
         ) as step:
             step.output = "正在生成并审核回答…"
-            with streaming_transport():
+            with streaming_transport(), generation_delta_sink(
+                _make_delta_sink(context, stream_out)
+            ):
                 if edit_turn is not None:
                     # 编辑重发：覆盖该轮用户内容并从此重新生成；
                     # 之前轮次的上下文保留（预算保守累计，只增不减）。
@@ -1312,6 +1380,13 @@ async def run_turn(
                 )
             await persist_backend_history(context)
             step.output = "审核已完成"
+            # 真流式路径收敛：审核结论与已直播内容不一致时（被拦截、触发
+            # 重生成等），立即把整条消息替换为最终答案——这就是"先直播、
+            # 被拦截再屏蔽"的屏蔽动作。一致则保持已播内容不动。
+            reply = stream_out.get("reply")
+            if reply is not None and response.answer != stream_out.get("text", ""):
+                reply.content = response.answer
+                await reply.update()
         try:
             await schedule_title(
                 service,
@@ -1477,11 +1552,24 @@ async def on_chat_end() -> None:
     pass
 
 
+async def _mask_or_reply(stream_out: dict, reply, content: str) -> None:
+    """生成中途出错或触达用量上限时，优先把已直播的草稿整体替换为提示
+    文案（即时屏蔽）；还没有直播过任何内容时才另发一条新消息。"""
+    streamed = stream_out.get("reply")
+    if streamed is not None:
+        streamed.content = content
+        await streamed.update()
+        return
+    reply.content = content
+    await reply.send()
+
+
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
     service = get_service()
     reply = cl.Message(content="")
     started = time.perf_counter()
+    stream_out: dict = {}
     try:
         question, code, attachments = prepare_message_inputs(
             message.content,
@@ -1500,33 +1588,45 @@ async def on_message(message: cl.Message) -> None:
             code,
             msg_id=message.id,
             attachments=attachments,
+            stream_out=stream_out,
         )
+        streamed_reply = stream_out.get("reply")
+        if response is None:
+            # 无提供商引导已由 run_turn 发出，无需再送达任何内容。
+            return
     except ValueError as error:
         reply.content = f"⚠️ 输入未通过校验：{error}"
         await reply.send()
         return
     except UsageLimitExceeded as error:
-        reply.content = f"⚠️ {error}"
-        await reply.send()
+        await _mask_or_reply(stream_out, reply, f"⚠️ {error}")
         return
     except Exception as error:  # noqa: BLE001 - 前端不向学生暴露堆栈细节
         logger.exception("处理消息失败 session=%s", cl.context.session.id)
-        reply.content = (
-            f"⚠️ 请求未完成（{type(error).__name__}）。请稍后重试或简化问题。"
+        await _mask_or_reply(
+            stream_out,
+            reply,
+            f"⚠️ 请求未完成（{type(error).__name__}）。请稍后重试或简化问题。",
         )
-        await reply.send()
         return
 
     latency_ms = int((time.perf_counter() - started) * 1000)
     delivery_started = time.perf_counter()
-    # 思考模型的推理过程：宽松演示模式下以独立可折叠 Step 展示
-    # （前端默认折叠）；学习保护模式下 pipeline 不返回 reasoning，
-    # 防止推理内容泄漏题解。
-    reasoning = (getattr(response, "reasoning", "") or "").strip()
-    if reasoning:
-        async with cl.Step(name="model-reasoning", type="run", icon="brain") as step:
-            step.output = reasoning
-    await deliver_response(reply, response.answer)
+    if streamed_reply is not None:
+        # 真流式路径：内容已在生成过程中直播；审核后不一致的部分
+        # 已在 run_turn 里整体替换为最终答案，这里只需把消息落库。
+        await streamed_reply.send()
+    else:
+        # 思考模型的推理过程：宽松演示模式下以独立可折叠 Step 展示
+        # （前端默认折叠）；学习保护模式下 pipeline 不返回 reasoning，
+        # 防止推理内容泄漏题解。
+        reasoning = (getattr(response, "reasoning", "") or "").strip()
+        if reasoning:
+            async with cl.Step(
+                name="model-reasoning", type="run", icon="brain"
+            ) as step:
+                step.output = reasoning
+        await deliver_response(reply, response.answer)
     logger.info(
         "Turn timing %s",
         json.dumps(

@@ -370,7 +370,11 @@
     updateButton();
     renderMenu();
     setStatus("正在切换模型…");
-    var threadId = currentThreadId();
+    // 欢迎页（尚无线程归属）：选择落为账号级默认，让即将创建的新对话继承；
+    // state.threadId 此时残留上一个线程的 id，绑定到它对新对话无效。
+    var threadId = document.getElementById("welcome-screen")
+      ? ""
+      : currentThreadId();
     try {
       var response = await fetch("/models/select", {
         method: "POST",
