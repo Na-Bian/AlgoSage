@@ -2212,3 +2212,12 @@ body.eg-readme-open #eg-collapsed-bar {
 main [data-step-type="user_message"] .bg-accent {
   box-shadow: var(--eg-shadow-1);
 }
+
+/* 编辑态内层输入框透明化：外层气泡已提供圆角与阴影，
+   textarea 自带的边框和背景会形成内嵌直角框。 */
+main [data-step-type="user_message"] #edit-chat-input {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
