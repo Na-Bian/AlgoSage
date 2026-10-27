@@ -118,11 +118,57 @@
     );
     button.classList.toggle("eg-model-loading", Boolean(state.loading));
     button.disabled = Boolean(state.switching);
+    publishModelLabel(none ? "未配置模型" : state.currentLabel || state.currentSelection || "选择模型");
   }
+
+  /* 重挂载窗口里真按钮缺位时，占位伪元素靠这个变量显示同样的模型名，
+     否则用户会看到模型名凭空变成"选择模型"，观感等同于按钮消失。 */
+  function publishModelLabel(labelText) {
+    try {
+      window.localStorage.setItem("algosage-model-label", labelText);
+    } catch (_) {}
+    document.documentElement.style.setProperty("--eg-model-label", `"${labelText}"`);
+  }
+  try {
+    document.documentElement.style.setProperty(
+      "--eg-model-label",
+      `"${window.localStorage.getItem("algosage-model-label") || "选择模型"}"`
+    );
+  } catch (_) {}
 
   var retryScheduled = false;
   var retryBudget = 0;
   var lastComposer = null;
+
+  /* UI 时序埋点：composer 注入的毫秒级时间线上报到 /debug/ui-trace（服务端
+     只写日志）。用于远程诊断"设置按钮在重挂载窗口消失"类帧时序问题。 */
+  var traceBuffer = [];
+  var traceTimer = 0;
+  function trace(name, detail) {
+    traceBuffer.push({ t: Math.round(performance.now()), name: name, d: detail || "" });
+    if (traceTimer) return;
+    traceTimer = window.setTimeout(flushTrace, 1200);
+  }
+  function flushTrace() {
+    traceTimer = 0;
+    if (!traceBuffer.length) return;
+    var events = traceBuffer.splice(0, traceBuffer.length);
+    var body = JSON.stringify({ events: events });
+    try {
+      if (navigator.sendBeacon
+        && navigator.sendBeacon("/debug/ui-trace", new Blob([body], { type: "application/json" }))) {
+        return;
+      }
+    } catch (_) {}
+    fetch("/debug/ui-trace", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: body,
+      keepalive: true,
+    }).catch(function () {});
+  }
+
   function scheduleComposerRetry() {
     // 水合期会把动作行短暂拆散/换父，此时注入必然失败。MutationObserver
     // 要等下一次 DOM 变动才会再跑，中间可能隔着多帧绘制——按钮肉眼可见地
@@ -143,6 +189,7 @@
       // 新一轮挂载重新给重试预算；同一节点只配额一次，防永久性失败空转。
       lastComposer = composer;
       retryBudget = 0;
+      trace("composer-mount");
     }
     var actionRow = composer.querySelector(":scope > .flex.items-center.justify-between");
     var rightGroup = actionRow?.querySelector(":scope > .flex.items-center:last-child");
@@ -156,10 +203,15 @@
     // unrelated mutation to re-trigger this observer.
     if (!actionRow || !rightGroup || !submit
       || submit.parentElement !== rightGroup || !rightGroup.isConnected || !composer.isConnected) {
+      trace("inject-defer",
+        !actionRow ? "no-row" : !rightGroup ? "no-group"
+          : !submit ? "no-submit" : submit.parentElement !== rightGroup ? "submit-detached"
+            : !rightGroup.isConnected ? "group-detached" : "composer-detached");
       scheduleComposerRetry();
       return;
     }
 
+    trace("injected", "budget=" + retryBudget);
     button = document.createElement("button");
     button.type = "button";
     button.id = "model-selector-button";

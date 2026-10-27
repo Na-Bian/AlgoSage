@@ -485,6 +485,27 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             )
         return list(groups.values())
 
+    @models_router.post("/debug/ui-trace", include_in_schema=False)
+    async def ui_trace(payload: dict, current_user: UserParam):
+        """前端 UI 时序埋点：composer 注入失败/成功的毫秒级时间线上报。
+
+        仅写本地日志，用于排查"设置按钮在重挂载窗口消失"这类与帧时序相关
+        的偶发问题；事件内容不含消息正文，只有 DOM 注入事件名与时间戳。
+        """
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        events = (payload or {}).get("events") or []
+        if not isinstance(events, list) or not events:
+            return {"ok": True}
+        try:
+            compact = json.dumps(events[:20], ensure_ascii=False, separators=(",", ":"))
+        except (TypeError, ValueError):
+            return {"ok": True}
+        logger.info(
+            "ui-trace principal=%s events=%s", current_user.identifier, compact[:800]
+        )
+        return {"ok": True}
+
     @models_router.get("/models/catalog", include_in_schema=False)
     async def read_model_catalog(thread_id: str = "", *, current_user: UserParam):
         if not current_user:

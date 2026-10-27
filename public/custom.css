@@ -620,12 +620,12 @@ body.eg-no-models #chat-submit {
 .eg-model-button.eg-model-loading { opacity: .68; }
 
 /* 新建对话会整体重挂载 composer，注入的模型按钮被 React 清掉后要等
-   MutationObserver 下一拍才回来。按钮缺位的那一两帧用等高的占位伪元素
-   顶住右组，避免"选择模型"凭空消失又出现。 */
-#message-composer
-  .flex.items-center.justify-between
-  > .flex.items-center:last-child:not(:has(> .eg-model-button))::before {
-  content: "选择模型";
+   MutationObserver 下一拍才回来。按钮缺位的那一两帧用占位伪元素顶住
+   submit 左侧：锚点是"#chat-submit 的直接父级"（不依赖 Tailwind 类名，
+   过渡期结构变体也能命中），文案取 --eg-model-label——model-picker
+   持久化的当前模型名，让缺位帧与真按钮显示完全一致，肉眼无切换。 */
+#message-composer :has(> #chat-submit):not(:has(.eg-model-button))::before {
+  content: var(--eg-model-label, "选择模型") " ⌄";
   display: inline-flex;
   align-items: center;
   height: 38px;
@@ -633,6 +633,7 @@ body.eg-no-models #chat-submit {
   border-radius: 12px;
   color: var(--color-text-secondary);
   font-size: .82rem;
+  white-space: nowrap;
   pointer-events: none;
 }
 

@@ -1,5 +1,14 @@
 /* Chainlit entrypoint: load theme transition first, then existing UI enhancements. */
 
+/* 模型名占位变量必须赶在 React 首帧之前：composer 重挂载窗口里注入按钮
+   缺位时，custom.css 的占位伪元素用同一文案顶住，避免模型名闪变。 */
+try {
+  document.documentElement.style.setProperty(
+    "--eg-model-label",
+    `"${window.localStorage.getItem("algosage-model-label") || "选择模型"}"`
+  );
+} catch (_) {}
+
 /* Socket.io 的 WebSocket 捕获：供设置面板即时保存直发 chat_settings_change
    事件（面板不关、无收起/重开闪烁）。本文件最先执行，必须赶在应用建连之前。
    前端在每次控件变更时都会全量 emit chat_settings_edit，借它维护设置镜像。 */
@@ -80,7 +89,7 @@
   loadScript("/public/theme-transition.js?v=20261026-refresh-all-1")
     .then(() => loadScript("/public/account-profile.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/user-preferences.js?v=20261026-refresh-all-1"))
-    .then(() => loadScript("/public/model-picker.js?v=20261027-composer-retry-1"))
+    .then(() => loadScript("/public/model-picker.js?v=20261027-composer-retry-2"))
     .then(() => loadScript("/public/chat-ui.js?v=20261027-reasoning-top-1"))
     .then(() => loadScript("/public/settings-autosave.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/chat-options.js?v=20261026-refresh-all-1"))
