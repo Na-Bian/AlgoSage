@@ -36,37 +36,52 @@
           node.textContent = node.textContent.replace(safeName, label);
         }
       });
-      // 思考过程：默认展开、自动滚动、置于正式回答上方；点击标题可收起。
+      // 置于正式回答上方；展开/收起交给 Chainlit 自己的折叠机制
+      //（见 ensureReasoningExpanded），这里只做标记。
       if (safeName === "model-reasoning") {
-        const container = button.parentElement;
-        if (container && !container.dataset.egReasoningCollapse) {
-          container.dataset.egReasoningCollapse = "open";
-          container.classList.add("eg-reasoning-step");
-          const apply = () => {
-            const collapsed =
-              container.dataset.egReasoningCollapse === "collapsed";
-            let body = container.nextElementSibling;
-            if (body && !body.classList.contains("eg-reasoning-body")) {
-              body.classList.add("eg-reasoning-body");
-            }
-            while (body) {
-              body.style.display = collapsed ? "none" : "";
-              if (!collapsed) body.scrollTop = body.scrollHeight;
-              body = body.nextElementSibling;
-              if (!body || body.querySelector?.('button[id^="step-"]')) break;
-            }
-          };
-          apply();
-          button.addEventListener("click", () => {
-            container.dataset.egReasoningCollapse =
-              container.dataset.egReasoningCollapse === "collapsed"
-                ? "open"
-                : "collapsed";
-            apply();
-          });
-        }
+        button.parentElement?.classList.add("eg-reasoning-step");
       }
     });
+  }
+
+  /* 思考过程自动展开：Chainlit 把步骤渲染成折叠态（aria-expanded=false，
+     只显示"已使用 思考过程"摘要），且正文晚于步骤头挂载——旧的
+     dataset/display 方案只在首帧生效、之后无人再展开，点击时还会和
+     Chainlit 自己的开关互相打架（弹出即收回）。改为驱动 Chainlit：
+     检测到折叠就模拟点击由它自己展开；用户手动收起（isTrusted 点击）
+     则记录并尊重，不再自动展开。展开期间跟随滚动到底部。 */
+  const reasoningUserCollapsed = new Set();
+  document.addEventListener(
+    "click",
+    (event) => {
+      const button = event.target?.closest?.('button[id$="model-reasoning"]');
+      if (!button || !event.isTrusted) return;
+      reasoningUserCollapsed.add(button.id);
+    },
+    true
+  );
+  function ensureReasoningExpanded() {
+    const button = document.querySelector('button[id$="model-reasoning"]');
+    if (!button || !button.isConnected) return;
+    if (
+      button.getAttribute("aria-expanded") === "false"
+      && !reasoningUserCollapsed.has(button.id)
+    ) {
+      button.click();
+      return;
+    }
+    const container = button.parentElement;
+    let body = container?.nextElementSibling;
+    if (body && !body.classList.contains("eg-reasoning-body")) {
+      body.classList.add("eg-reasoning-body");
+    }
+    while (body) {
+      if (body.scrollHeight > body.clientHeight) {
+        body.scrollTop = body.scrollHeight;
+      }
+      body = body.nextElementSibling;
+      if (!body || body.querySelector?.('button[id^="step-"]')) break;
+    }
   }
 
   const SIDEBAR_ICONS = {
@@ -910,6 +925,7 @@
       translateStepLabels();
       enhanceWelcome();
       enhanceReadmeDetails();
+      ensureReasoningExpanded();
       syncReasoningPlacement();
     });
   }
