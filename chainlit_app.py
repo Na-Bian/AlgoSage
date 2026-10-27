@@ -1253,8 +1253,10 @@ async def on_chat_resume(thread: dict) -> None:
     service = get_service()
     if not authenticated_principal_id() or thread["id"] != context_id():
         raise PermissionError("恢复对话需要对应工作区身份")
-    async with conversation_lock():
-        context = await restore_conversation(service)
+    # 不等待生成锁：回合进行中点侧边栏切换/恢复必须即时可用，
+    # 否则整个流式生成期间（可达一两分钟）会话切换都表现为"没反应"。
+    # 恢复只读历史并重发设置，与进行中的回合共享只读数据并无冲突。
+    context = await restore_conversation(service)
     await send_provider_settings(context)
     await send_model_catalog(context)
 
@@ -1325,6 +1327,8 @@ async def run_turn(
 ):
     started = time.perf_counter()
     stream_out = stream_out if stream_out is not None else {}
+    if conversation_lock().locked():
+        await cl.Message(content="⏳ 上一条回答仍在生成，本条已排队等待。").send()
     async with conversation_lock():
         # Every window reloads the latest private transcript before generating.
         context = await restore_conversation(service)
