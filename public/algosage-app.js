@@ -76,6 +76,41 @@ try {
 (function () {
   "use strict";
 
+  /* 头部设置齿轮占位：Chainlit 要等 chat settings 经 socket 到货才挂载
+     设置按钮（刷新后 ~530ms、新建对话后 ~220ms 缺口），期间"说明"和主题
+     按钮之间空一格、整行左移。本文件是最早执行的自定义脚本，观察器在
+     React 首帧前就位；插入与真按钮同宽的占位元素顶住原位，真按钮挂载
+     的同帧（微任务、绘制前）移除，布局零跳动。 */
+  function ensureHeaderGear() {
+    const readme = document.getElementById("readme-button");
+    if (!readme || !readme.isConnected) return;
+    const tools = readme.parentElement;
+    if (!tools) return;
+    const real = document.getElementById("chat-settings-header-button");
+    const placeholder = tools.querySelector(":scope > .eg-gear-placeholder");
+    if (real && real.isConnected) {
+      placeholder?.remove();
+      return;
+    }
+    if (!window.matchMedia("(pointer: fine)").matches || placeholder) return;
+    const span = document.createElement("span");
+    span.className = "eg-gear-placeholder";
+    span.setAttribute("aria-hidden", "true");
+    readme.insertAdjacentElement("afterend", span);
+  }
+  function watchHeaderGear() {
+    ensureHeaderGear();
+    new MutationObserver(ensureHeaderGear).observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", watchHeaderGear, { once: true });
+  } else {
+    watchHeaderGear();
+  }
+
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const script = document.createElement("script");
@@ -90,7 +125,7 @@ try {
     .then(() => loadScript("/public/account-profile.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/user-preferences.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/model-picker.js?v=20261027-composer-retry-2"))
-    .then(() => loadScript("/public/chat-ui.js?v=20261027-reasoning-top-1"))
+    .then(() => loadScript("/public/chat-ui.js?v=20261027-gear-hold-1"))
     .then(() => loadScript("/public/settings-autosave.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/chat-options.js?v=20261026-refresh-all-1"))
     .catch(() => {
