@@ -619,6 +619,23 @@ body.eg-no-models #chat-submit {
 }
 .eg-model-button.eg-model-loading { opacity: .68; }
 
+/* 新建对话会整体重挂载 composer，注入的模型按钮被 React 清掉后要等
+   MutationObserver 下一拍才回来。按钮缺位的那一两帧用等高的占位伪元素
+   顶住右组，避免"选择模型"凭空消失又出现。 */
+#message-composer
+  .flex.items-center.justify-between
+  > .flex.items-center:last-child:not(:has(> .eg-model-button))::before {
+  content: "选择模型";
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 8px;
+  border-radius: 12px;
+  color: var(--color-text-secondary);
+  font-size: .82rem;
+  pointer-events: none;
+}
+
 .eg-model-menu {
   position: fixed;
   z-index: 1300;
@@ -1903,17 +1920,23 @@ main div:has(> #welcome-screen) > div {
 }
 #chat-input::placeholder { color: var(--color-text-placeholder); opacity: 1; }
 
-#upload-button {
+/* Chainlit 在 composer 重挂载的加载窗口把附件按钮渲染成 #upload-button-loading
+   （默认 36px 盒 + 24px 图标），加载结束才换回 #upload-button。两个变体必须
+   同一尺寸，否则点新建对话的瞬间纸别针图标会先变大再缩回。 */
+#upload-button,
+#upload-button-loading {
   width: 40px !important;
   height: 40px !important;
   border-radius: 12px !important;
   color: hsl(var(--muted-foreground)) !important;
 }
-#upload-button:hover {
+#upload-button:hover,
+#upload-button-loading:hover {
   background: hsl(var(--accent)) !important;
   color: hsl(var(--accent-foreground)) !important;
 }
-#upload-button svg { width: 21px !important; height: 21px !important; }
+#upload-button svg,
+#upload-button-loading svg { width: 21px !important; height: 21px !important; }
 
 #chat-submit {
   width: 40px !important;
@@ -1941,6 +1964,7 @@ body.eg-chat-shell :is(
   #chat-settings-header-button svg,
   #theme-toggle svg,
   #upload-button svg,
+  #upload-button-loading svg,
   #chat-submit svg
 ) {
   width: 20px !important;
