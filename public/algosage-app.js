@@ -74,9 +74,12 @@ try {
   };
 
   /* 删除当前会话后回到新建对话页：Chainlit 的删除成功回调里虽然有
-     路由跳转，但实测不生效（URL 不变、消息留在页面上）。这里拦截
-     DELETE /project/thread：若删的是当前会话且删除成功，延迟触发
-     原生"新建对话"按钮，走完整的新会话流程（清空消息 + 回到 /）。 */
+     路由跳转，但实测不生效（URL 不变、消息留在页面上）。两层处理：
+     1) 点"确认"的瞬间（capture 阶段）安排一次 setTimeout：等确认处理器
+        把删除请求发出去之后，立刻触发原生"新建对话"按钮——切换与删除
+        响应并行，用户几乎看不到已删会话的残留帧；
+     2) 兜底拦截 DELETE /project/thread：若删的是当前会话且删除成功，
+        再补一次新建对话触发（覆盖未经侧栏菜单的删除路径）。 */
   const NativeFetch = window.fetch;
   window.fetch = async function (input, init) {
     const response = await NativeFetch.call(this, input, init);
@@ -85,9 +88,7 @@ try {
       const url = typeof input === "string" ? input : input?.url || "";
       if (method === "DELETE" && url.includes("/project/thread") && response.ok && init?.body) {
         const threadId = JSON.parse(init.body).threadId;
-        const here = decodeURIComponent(
-          location.pathname.match(/^\/thread\/([^/]+)/)?.[1] || ""
-        );
+        const here = (location.pathname.split("/thread/")[1] || "").split("?")[0];
         if (threadId && threadId === here) {
           setTimeout(() => {
             document.getElementById("new-chat-button")?.click();
@@ -97,6 +98,36 @@ try {
     } catch (_) {}
     return response;
   };
+
+  let egDeleteThreadId = "";
+  const currentThreadIdFromUrl = () =>
+    (location.pathname.split("/thread/")[1] || "").split("?")[0];
+  document.addEventListener(
+    "click",
+    (event) => {
+      const options = event.target?.closest?.("#thread-options");
+      if (options) {
+        const li = options.closest('li[id^="thread-"]');
+        egDeleteThreadId = li ? li.id.slice("thread-".length) : "";
+        return;
+      }
+      const dialog = event.target?.closest?.('[role="alertdialog"]');
+      if (!dialog || !/确认删除/.test(dialog.textContent || "")) return;
+      const isConfirmButton =
+        event.target?.closest?.("button")?.textContent.trim() === "确认";
+      const tracked = egDeleteThreadId;
+      egDeleteThreadId = "";
+      if (!isConfirmButton || !tracked || tracked !== currentThreadIdFromUrl()) return;
+      // 立即淡出主区域：新建对话流程需要数百毫秒，不能让已删会话的画面
+      // 在此期间闪现。淡出后由下方 setTimeout 真正切换并摘掉标记。
+      document.body.classList.add("eg-deleting");
+      setTimeout(() => {
+        document.getElementById("new-chat-button")?.click();
+        setTimeout(() => document.body.classList.remove("eg-deleting"), 800);
+      }, 0);
+    },
+    true
+  );
 })();
 (function () {
   "use strict";

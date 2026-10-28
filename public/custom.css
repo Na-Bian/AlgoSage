@@ -1973,6 +1973,14 @@ body.eg-chat-shell :is(
   stroke-width: 1.9;
 }
 
+/* 删除当前会话：点确认后新建对话流程需要数百毫秒完成，期间把主区域
+   快速淡出，避免已删除会话的内容闪现（algosage-app.js 加/摘标记）。 */
+body.eg-deleting main {
+  opacity: 0;
+  transition: opacity 110ms ease;
+}
+
+
 /* 头部设置齿轮的占位元素（algosage-app.js 在齿轮缺位窗口插入/移除）：
    与真按钮同宽同形（Chainlit 原版图标：齿轮主体 + 中心圆环两个 path），
    作为普通 flex 子项补在"说明"右侧，保证布局与真按钮在位时逐像素一致；
