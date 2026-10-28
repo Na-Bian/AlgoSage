@@ -1347,6 +1347,28 @@ async def deliver_response(
     await reply.send()
 
 
+_MATH_DISPLAY_RE = re.compile(r"\\\[(.+?)\\\]", re.DOTALL)
+_MATH_INLINE_RE = re.compile(r"\\\((.+?)\\\)", re.DOTALL)
+_CODE_FENCE_RE = re.compile(r"(```[\s\S]*?```|~~~[\s\S]*?~~~)", re.DOTALL)
+
+
+def normalize_math_delimiters(text: str) -> str:
+    """把模型输出的 \\[…\\] / \\[…\\) 定界符统一成 Chainlit 渲染器认识的
+    $$…$$ / $…$（Chainlit 的 KaTeX 管线不处理方括号/圆括号写法，公式会
+    以原文形式露出）。代码块内容保持原样。"""
+    if "\\" not in text:
+        return text
+
+    def convert(segment: str) -> str:
+        segment = _MATH_DISPLAY_RE.sub(r"$$\g<1>$$", segment)
+        return _MATH_INLINE_RE.sub(r"$\g<1>$", segment)
+
+    parts = _CODE_FENCE_RE.split(text)
+    return "".join(
+        part if i % 2 else convert(part) for i, part in enumerate(parts)
+    )
+
+
 def _make_delta_sink(context, stream_out):
     """Live consumer for generation deltas (runs on the worker thread while
     the upstream stream loop iterates). Schedules UI updates onto the main
@@ -1356,7 +1378,6 @@ def _make_delta_sink(context, stream_out):
     def sink(text_so_far, reasoning_so_far):
         async def apply():
             async with stream_out["ui_lock"]:
-                pass
                 if reasoning_so_far:
                     step = stream_out.get("reasoning_step")
                 if step is None:
@@ -1364,22 +1385,31 @@ def _make_delta_sink(context, stream_out):
                     await step.send()
                     stream_out["reasoning_step"] = step
                 if reasoning_so_far != stream_out.get("reasoning", ""):
-                    step.output = reasoning_so_far
+                    step.output = normalize_math_delimiters(reasoning_so_far)
                     await step.update()
                     stream_out["reasoning"] = reasoning_so_far
                 reply = stream_out.get("reply")
                 if reply is None:
                     reply = cl.Message(content="")
                     stream_out["reply"] = reply
-                if len(text_so_far) < stream_out.get("streamed", 0):
+                normalized = normalize_math_delimiters(text_so_far)
+                if len(normalized) < len(stream_out.get("streamed_text", "")):
                     # 重生成：文本从头开始，重置已播内容。
                     reply.content = ""
+                    stream_out["streamed_text"] = ""
                     stream_out["streamed"] = 0
-                tail = text_so_far[stream_out.get("streamed", 0) :]
+                # 尾部若是未完成的转义序列（如单独的反斜杠），留待更多
+                # 字符到达后再定形，避免定界符转换改动已播出的内容。
+                streamable = normalized
+                if streamable.endswith("\\"):
+                    streamable = streamable[:-1]
+                streamed_len = len(stream_out.get("streamed_text", ""))
+                tail = streamable[streamed_len:]
                 if tail:
                     await reply.stream_token(tail)
-                    stream_out["streamed"] = len(text_so_far)
-                    stream_out["text"] = text_so_far
+                    stream_out["streamed_text"] = streamable
+                    stream_out["streamed"] = streamed_len
+                    stream_out["text"] = normalized
 
 
         asyncio.run_coroutine_threadsafe(apply(), loop)
@@ -1707,7 +1737,9 @@ async def on_message(message: cl.Message) -> None:
     delivery_started = time.perf_counter()
     if streamed_reply is not None:
         # 真流式路径：内容已在生成过程中直播；审核后不一致的部分
-        # 已在 run_turn 里整体替换为最终答案，这里只需把消息落库。
+        # 已在 run_turn 里整体替换为最终答案，这里把最终内容（含
+        # 数学定界符规范化）整体落库并推平尾部留白的转义残余。
+        streamed_reply.content = normalize_math_delimiters(response.answer)
         await streamed_reply.send()
     else:
         # 思考模型的推理过程：宽松演示模式下以独立可折叠 Step 展示
@@ -1719,7 +1751,7 @@ async def on_message(message: cl.Message) -> None:
                 name="model-reasoning", type="run", icon="brain"
             ) as step:
                 step.output = reasoning
-        await deliver_response(reply, response.answer)
+        await deliver_response(reply, normalize_math_delimiters(response.answer))
     logger.info(
         "Turn timing %s",
         json.dumps(
