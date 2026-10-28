@@ -72,6 +72,31 @@ try {
       return Object.assign({}, mirror);
     },
   };
+
+  /* 删除当前会话后回到新建对话页：Chainlit 的删除成功回调里虽然有
+     路由跳转，但实测不生效（URL 不变、消息留在页面上）。这里拦截
+     DELETE /project/thread：若删的是当前会话且删除成功，延迟触发
+     原生"新建对话"按钮，走完整的新会话流程（清空消息 + 回到 /）。 */
+  const NativeFetch = window.fetch;
+  window.fetch = async function (input, init) {
+    const response = await NativeFetch.call(this, input, init);
+    try {
+      const method = String(init?.method || input?.method || "GET").toUpperCase();
+      const url = typeof input === "string" ? input : input?.url || "";
+      if (method === "DELETE" && url.includes("/project/thread") && response.ok && init?.body) {
+        const threadId = JSON.parse(init.body).threadId;
+        const here = decodeURIComponent(
+          location.pathname.match(/^\/thread\/([^/]+)/)?.[1] || ""
+        );
+        if (threadId && threadId === here) {
+          setTimeout(() => {
+            document.getElementById("new-chat-button")?.click();
+          }, 400);
+        }
+      }
+    } catch (_) {}
+    return response;
+  };
 })();
 (function () {
   "use strict";
