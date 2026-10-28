@@ -33,16 +33,57 @@
     return match ? match[1] : "new";
   }
 
+  var lastTypedKey = null;
   function saveDraft() {
     var input = document.getElementById("chat-input");
     if (!input) return;
     var prefs = readPreferences();
     var drafts = {};
     try { drafts = JSON.parse(localStorage.getItem("algosage-drafts") || "{}"); } catch (_) {}
-    if (input.value) drafts[threadKey()] = input.value;
-    else delete drafts[threadKey()];
+    var key = threadKey();
+    if (input.value) {
+      lastTypedKey = key;
+      drafts[key] = input.value;
+    } else {
+      // 发送后输入框被清空时，路由往往已切到新线程（threadKey 变了）。
+      // 按"输入时所在的页面"清理草稿，否则欢迎页草稿永远残留，下一次
+      // restoreDraft 会把旧问题注入新对话，标题也随之从旧草稿里提取。
+      delete drafts[lastTypedKey || key];
+      lastTypedKey = null;
+    }
     localStorage.setItem("algosage-drafts", JSON.stringify(drafts));
   }
+
+  function clearActiveDraft() {
+    // 欢迎页发出消息的瞬间清掉 "new" 草稿：必须赶在输入框被 React 清空
+    // 之前，否则 restoreDraft 的观察器会在清空窗口把旧草稿再注入一次
+    //（消息被拼接、标题从旧草稿里提取）。
+    if (threadKey() !== "new") return;
+    try {
+      var drafts = JSON.parse(localStorage.getItem("algosage-drafts") || "{}");
+      delete drafts["new"];
+      localStorage.setItem("algosage-drafts", JSON.stringify(drafts));
+    } catch (_) {}
+    lastTypedKey = null;
+  }
+  document.addEventListener(
+    "click",
+    function (event) {
+      if (event.target && event.target.closest && event.target.closest("#chat-submit")) {
+        clearActiveDraft();
+      }
+    },
+    true
+  );
+  document.addEventListener(
+    "keydown",
+    function (event) {
+      if (event.key === "Enter" && !event.shiftKey && event.target && event.target.id === "chat-input") {
+        clearActiveDraft();
+      }
+    },
+    true
+  );
 
   function restoreDraft() {
     if (!readPreferences().keep_drafts) return;
