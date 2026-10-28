@@ -1973,11 +1973,14 @@ body.eg-chat-shell :is(
   stroke-width: 1.9;
 }
 
-/* 删除当前会话：点确认后新建对话流程需要数百毫秒完成，期间把主区域
-   快速淡出，避免已删除会话的内容闪现（algosage-app.js 加/摘标记）。 */
+/* 删除当前会话：主区域淡出，欢迎页挂载后（algosage-app.js 摘标记）
+   再淡入——基础规则上的 opacity 过渡让"摘标记"的瞬间也平滑淡入，
+   两段衔接为一次交叉淡变，避免旧内容闪现或欢迎页突然弹入。 */
+body.eg-chat-shell main {
+  transition: opacity 150ms ease;
+}
 body.eg-deleting main {
   opacity: 0;
-  transition: opacity 110ms ease;
 }
 
 

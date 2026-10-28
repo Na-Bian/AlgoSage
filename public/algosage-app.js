@@ -81,6 +81,22 @@ try {
      一次触发兜底（覆盖请求瞬间按钮尚未挂载的极端情况）。任何删除入口
      （侧栏菜单、搜索对话框等）都经过这条请求，统一生效。 */
   const NativeFetch = window.fetch;
+  /* 淡出主区域并在欢迎页挂载的瞬间淡入：固定延时会留下一段全空白然后
+     欢迎页突然弹入（用户感知为"闪一下"）。轮询 welcome-screen 的挂载，
+     第一时间摘掉半透明标记，配 CSS 的 opacity 过渡即为平滑交叉淡变。 */
+  let egDeleteFadeTimer = 0;
+  function beginDeleteTransition() {
+    document.body.classList.add("eg-deleting");
+    if (egDeleteFadeTimer) return;
+    const started = Date.now();
+    egDeleteFadeTimer = setInterval(() => {
+      if (document.getElementById("welcome-screen") || Date.now() - started > 2000) {
+        clearInterval(egDeleteFadeTimer);
+        egDeleteFadeTimer = 0;
+        document.body.classList.remove("eg-deleting");
+      }
+    }, 40);
+  }
   window.fetch = async function (input, init) {
     try {
       const method = String(init?.method || input?.method || "GET").toUpperCase();
@@ -89,10 +105,9 @@ try {
         const threadId = JSON.parse(init.body).threadId;
         const here = (location.pathname.split("/thread/")[1] || "").split("?")[0];
         if (threadId && threadId === here) {
-          document.body.classList.add("eg-deleting");
+          beginDeleteTransition();
           setTimeout(() => {
             document.getElementById("new-chat-button")?.click();
-            setTimeout(() => document.body.classList.remove("eg-deleting"), 800);
           }, 0);
         }
       }
@@ -105,6 +120,7 @@ try {
         const threadId = JSON.parse(init.body).threadId;
         const here = (location.pathname.split("/thread/")[1] || "").split("?")[0];
         if (threadId && threadId === here && location.pathname !== "/") {
+          beginDeleteTransition();
           setTimeout(() => {
             document.getElementById("new-chat-button")?.click();
           }, 400);
@@ -135,8 +151,7 @@ try {
       if (!isConfirmButton || !tracked || tracked !== currentThreadIdFromUrl()) return;
       // 确认瞬间先淡出主区域；真正的切换由上方 fetch 入口在删除请求
       // 发出的瞬间完成（这里可能早于请求几百毫秒，只做视觉准备）。
-      document.body.classList.add("eg-deleting");
-      setTimeout(() => document.body.classList.remove("eg-deleting"), 800);
+      beginDeleteTransition();
     },
     true
   );
