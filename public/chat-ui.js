@@ -58,6 +58,22 @@
   let reasoningLastLen = 0;
   let reasoningStableAt = 0;
   let reasoningAnswersAtStart = 0;
+  let reasoningFollowPaused = false;
+  /* 用户在思考正文里向上滚轮 = 想回看，暂停自动跟随；向下滚轮（含回到
+     底部）= 恢复跟随。没有这个开关，自动滚动会把手动滚动立刻拉回底部，
+     思考正文无法独立查看。 */
+  document.addEventListener(
+    "wheel",
+    (event) => {
+      const container = document.querySelector(".eg-reasoning-step");
+      if (!container) return;
+      const body = container.nextElementSibling;
+      if (!body || !(event.target === body || body.contains(event.target))) return;
+      if (event.deltaY < 0) reasoningFollowPaused = true;
+      else if (event.deltaY > 0) reasoningFollowPaused = false;
+    },
+    { capture: true, passive: true }
+  );
   document.addEventListener(
     "click",
     (event) => {
@@ -77,6 +93,7 @@
       // 新一轮思考：首次见到时审核步骤已存在 = 历史渲染，保持默认折叠。
       // 回答元素数量记为基线——思考期间没有回答元素，它一出现即思考结束。
       reasoningTrackId = button.id;
+      reasoningFollowPaused = false;
       reasoningFinishedAtStart = !!document.querySelector('button[id$="generation-safety-review"]');
       reasoningAnswersAtStart = document.querySelectorAll('[data-step-type="assistant_message"]').length;
       reasoningLastLen = 0;
@@ -113,7 +130,8 @@
       return;
     }
     while (body) {
-      if (body.scrollHeight > body.clientHeight) {
+      const fromBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
+      if (!reasoningFollowPaused && fromBottom > 4) {
         body.scrollTop = body.scrollHeight;
       }
       body = body.nextElementSibling;

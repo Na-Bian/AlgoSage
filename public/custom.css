@@ -2223,14 +2223,28 @@ main div:has(> #messages) { overflow: visible; }
 
 /* ---------- 思考过程 Step：默认折叠、弱化样式 ---------- */
 .eg-reasoning-step button[id^="step-"] { opacity: .78; }
-.eg-reasoning-body {
+/* 思考正文：限高、独立滚动。Chainlit 的折叠包装层自带 overflow-hidden
+   工具类，特异性同为单类名、且可能排在自定义样式之后——用 main 前缀
+   提升特异性并 !important 兜底，保证限高与滚动不被覆盖。 */
+main .eg-reasoning-body {
   opacity: .72;
   font-size: .88em;
   border-left: 2px solid hsl(var(--border));
   padding-left: 12px;
   margin: 4px 0 8px;
-  max-height: 280px;
-  overflow-y: auto;
+  max-height: 280px !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+}
+main .eg-reasoning-body::-webkit-scrollbar {
+  width: 6px;
+}
+main .eg-reasoning-body::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+main .eg-reasoning-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* 模型菜单里自定义模型行的能力文字（弱化、不抢焦点）。 */
