@@ -1313,8 +1313,16 @@ async def schedule_title(
 @cl.on_chat_resume
 async def on_chat_resume(thread: dict) -> None:
     service = get_service()
+    logger.info(
+        "resume-check thread=%s context_id=%s principal=%s",
+        thread.get("id"),
+        context_id(),
+        authenticated_principal_id(),
+    )
     if not authenticated_principal_id() or thread["id"] != context_id():
+        logger.info("resume DENIED")
         raise PermissionError("恢复对话需要对应工作区身份")
+    logger.info("resume OK")
     # 不等待生成锁：回合进行中点侧边栏切换/恢复必须即时可用，
     # 否则整个流式生成期间（可达一两分钟）会话切换都表现为"没反应"。
     # 恢复只读历史并重发设置，与进行中的回合共享只读数据并无冲突。
@@ -1348,6 +1356,7 @@ def _make_delta_sink(context, stream_out):
     def sink(text_so_far, reasoning_so_far):
         async def apply():
             async with stream_out["ui_lock"]:
+                pass
                 if reasoning_so_far:
                     step = stream_out.get("reasoning_step")
                 if step is None:
@@ -1396,6 +1405,7 @@ async def run_turn(
     # 覆盖前先捕获上一回合的中断事件：若用户刚点过停止，本次获取会话锁
     # 时应静默等待旧回合收尾，而不是显示排队提示。
     previous_abort_event = _turn_abort_events.get(context_id())
+    socket_at_start = getattr(cl.context.session, "socket_id", None)
     abort_event = threading.Event()
     _turn_abort_events[context_id()] = abort_event
     async with _turn_lock_quiet_if_stopping(previous_abort_event):
@@ -1725,6 +1735,18 @@ async def on_message(message: cl.Message) -> None:
         ),
     )
 
+    # 回合进行中页面被刷新/重连过（socket id 变化）时，把含最终答案的
+    # 完整线程状态推送给当前连接——否则最终答案只送到了已断开的旧连接，
+    # 用户在生成中新建对话再点回来会永远看不到答案。
+    if getattr(cl.context.session, 'socket_id', None) != socket_before_turn:
+        try:
+            thread = await get_chat_store().get_thread(context_id())
+            if thread:
+                await cl.context.emitter.resume_thread(thread)
+        except Exception as error:  # noqa: BLE001 - 推送失败不影响主流程
+            logger.info(
+                "Live session refresh skipped error_type=%s", type(error).__name__
+            )
     meta = TutorService.display_metadata(response)
     async with cl.Step(
         name="security-audit-policy", type="run", icon="shield-check"

@@ -81,58 +81,145 @@ try {
      一次触发兜底（覆盖请求瞬间按钮尚未挂载的极端情况）。任何删除入口
      （侧栏菜单、搜索对话框等）都经过这条请求，统一生效。 */
   const NativeFetch = window.fetch;
-  /* 淡出主区域并在欢迎页挂载的瞬间淡入：固定延时会留下一段全空白然后
-     欢迎页突然弹入（用户感知为"闪一下"）。轮询 welcome-screen 的挂载，
-     第一时间摘掉半透明标记，配 CSS 的 opacity 过渡即为平滑交叉淡变。 */
   let egDeleteFadeTimer = 0;
-  function beginDeleteTransition() {
-    document.body.classList.add("eg-deleting");
-    if (egDeleteFadeTimer) return;
+  let egDeleteNavigationTimer = 0;
+  let egDeleteThreadId = "";
+
+  const currentThreadIdFromUrl = () => {
+    const match = location.pathname.match(/^\/thread\/([^/]+)/);
+    if (!match) return "";
+    try {
+      return decodeURIComponent(match[1]);
+    } catch (_) {
+      return match[1];
+    }
+  };
+
+  function parseDeleteBody(body) {
+    if (!body || typeof body !== "string") return "";
+    try {
+      return JSON.parse(body).threadId || "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  async function readDeleteRequest(input, init) {
+    const method = String(init?.method || input?.method || "GET").toUpperCase();
+    const rawUrl = typeof input === "string" ? input : input?.url || "";
+    const url = (() => {
+      try {
+        return new URL(rawUrl, location.href).pathname;
+      } catch (_) {
+        return rawUrl;
+      }
+    })();
+    let body = init?.body;
+    if (body == null && typeof Request !== "undefined" && input instanceof Request) {
+      try {
+        body = await input.clone().text();
+      } catch (_) {}
+    }
+    return { method, url, threadId: parseDeleteBody(body) };
+  }
+
+  function isVisibleControl(control) {
+    return Boolean(control && (control.offsetWidth || control.offsetHeight));
+  }
+
+  function findNewChatControl() {
+    const enhanced = document.querySelector(
+      '.eg-new-chat-action[aria-label="新建对话"], .eg-sidebar-icon-button[aria-label="新建对话"]'
+    );
+    if (isVisibleControl(enhanced)) return enhanced;
+    const native = document.getElementById("new-chat-button");
+    return isVisibleControl(native) ? native : null;
+  }
+
+  function stopDeleteNavigation() {
+    if (egDeleteNavigationTimer) {
+      clearTimeout(egDeleteNavigationTimer);
+      egDeleteNavigationTimer = 0;
+    }
+  }
+
+  function finishDeleteTransition() {
+    stopDeleteNavigation();
+    if (egDeleteFadeTimer) {
+      clearInterval(egDeleteFadeTimer);
+      egDeleteFadeTimer = 0;
+    }
+    document.body.classList.remove("eg-deleting");
+    egDeleteThreadId = "";
+  }
+
+  function waitForNewChatReady(threadId) {
+    if (egDeleteFadeTimer) clearInterval(egDeleteFadeTimer);
     const started = Date.now();
     egDeleteFadeTimer = setInterval(() => {
-      if (document.getElementById("welcome-screen") || Date.now() - started > 2000) {
-        clearInterval(egDeleteFadeTimer);
-        egDeleteFadeTimer = 0;
-        document.body.classList.remove("eg-deleting");
+      const leftThread = currentThreadIdFromUrl() !== threadId;
+      const welcomeMounted = Boolean(document.getElementById("welcome-screen"));
+      if (
+        (leftThread && welcomeMounted) ||
+        (leftThread && Date.now() - started > 450) ||
+        Date.now() - started > 2200
+      ) {
+        finishDeleteTransition();
       }
     }, 40);
   }
+
+  function requestNewChat(threadId) {
+    if (!threadId || egDeleteThreadId !== threadId) return;
+    stopDeleteNavigation();
+    const started = Date.now();
+    let lastClick = 0;
+    const attempt = () => {
+      if (currentThreadIdFromUrl() !== threadId) {
+        waitForNewChatReady(threadId);
+        return;
+      }
+      const now = Date.now();
+      const control = findNewChatControl();
+      if (control && now - lastClick >= 120) {
+        lastClick = now;
+        control.click();
+      }
+      if (now - started < 2200) {
+        egDeleteNavigationTimer = setTimeout(attempt, 60);
+      } else {
+        egDeleteNavigationTimer = 0;
+      }
+    };
+    attempt();
+  }
+
+  function beginDeleteTransition(threadId) {
+    if (!threadId || currentThreadIdFromUrl() !== threadId) return;
+    egDeleteThreadId = threadId;
+    document.body.classList.add("eg-deleting");
+    requestNewChat(threadId);
+  }
+
   window.fetch = async function (input, init) {
-    try {
-      const method = String(init?.method || input?.method || "GET").toUpperCase();
-      const url = typeof input === "string" ? input : input?.url || "";
-      if (method === "DELETE" && url.includes("/project/thread") && init?.body) {
-        const threadId = JSON.parse(init.body).threadId;
-        const here = (location.pathname.split("/thread/")[1] || "").split("?")[0];
-        if (threadId && threadId === here) {
-          beginDeleteTransition();
-          setTimeout(() => {
-            document.getElementById("new-chat-button")?.click();
-          }, 0);
-        }
-      }
-    } catch (_) {}
+    const deleteRequest = await readDeleteRequest(input, init);
+    const isCurrentDelete =
+      deleteRequest.method === "DELETE" &&
+      deleteRequest.url.includes("/project/thread") &&
+      deleteRequest.threadId &&
+      deleteRequest.threadId === currentThreadIdFromUrl();
+    if (isCurrentDelete) beginDeleteTransition(deleteRequest.threadId);
+
     const response = await NativeFetch.call(this, input, init);
-    try {
-      const method = String(init?.method || input?.method || "GET").toUpperCase();
-      const url = typeof input === "string" ? input : input?.url || "";
-      if (method === "DELETE" && url.includes("/project/thread") && response.ok && init?.body) {
-        const threadId = JSON.parse(init.body).threadId;
-        const here = (location.pathname.split("/thread/")[1] || "").split("?")[0];
-        if (threadId && threadId === here && location.pathname !== "/") {
-          beginDeleteTransition();
-          setTimeout(() => {
-            document.getElementById("new-chat-button")?.click();
-          }, 400);
-        }
+    if (isCurrentDelete) {
+      if (response.ok) {
+        requestNewChat(deleteRequest.threadId);
+      } else {
+        finishDeleteTransition();
       }
-    } catch (_) {}
+    }
     return response;
   };
-
-  let egDeleteThreadId = "";
-  const currentThreadIdFromUrl = () =>
-    (location.pathname.split("/thread/")[1] || "").split("?")[0];
   document.addEventListener(
     "click",
     (event) => {
