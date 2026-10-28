@@ -19,6 +19,8 @@ import json
 import logging
 import os
 import re
+from contextlib import asynccontextmanager, contextmanager
+import threading
 import time
 from pathlib import Path
 from weakref import WeakValueDictionary
@@ -30,6 +32,9 @@ from algosage.config import Settings
 from algosage.service import TutorService, HISTORY_TURNS_KEPT
 from algosage.providers import ProviderRegistry, short_model_name
 from algosage.invocation import (
+    GenerationAborted,
+    generation_abort_requested,
+    generation_abort_scope,
     generation_delta_sink,
     streaming_transport,
     timing_summary,
@@ -90,6 +95,42 @@ def conversation_lock():
         lock = asyncio.Lock()
         _conversation_locks[key] = lock
     return lock
+
+
+# 当前回合的中断事件（thread_id -> threading.Event）。@cl.on_stop 置位，
+# run_turn 的 worker 线程轮询它以掐断上游流式请求。
+_turn_abort_events: dict[str, threading.Event] = {}
+
+
+def request_turn_abort() -> None:
+    event = _turn_abort_events.get(context_id())
+    if event is not None:
+        event.set()
+
+
+@asynccontextmanager
+async def _turn_lock_quiet_if_stopping(previous_abort_event):
+    """会话锁获取：若上一回合已被用户停止（中断事件已置位），静默等待
+    其收尾（秒级）而不显示排队提示；超时才回落为排队提示。"""
+    lock = conversation_lock()
+    if lock.locked():
+        abort_event = previous_abort_event
+        if abort_event is None or not abort_event.is_set():
+            await cl.Message(content="⏳ 上一条回答仍在生成，本条已排队等待。").send()
+            await lock.acquire()
+        else:
+            # 上一回合已被用户停止：静默等待其中断收尾（秒级），不排队提示。
+            try:
+                await asyncio.wait_for(lock.acquire(), timeout=8)
+            except asyncio.TimeoutError:
+                await cl.Message(content="⏳ 上一条回答仍在生成，本条已排队等待。").send()
+                await lock.acquire()
+    else:
+        await lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 async def restore_conversation(service):
@@ -1352,9 +1393,12 @@ async def run_turn(
     # 流式 UI 更新串行锁：思考/正文增量回调从 worker 线程调度到主循环，
     # await 期间后续回调若并发执行会在 Step 创建前重复创建（4ms 内 4 条）。
     stream_out.setdefault("ui_lock", asyncio.Lock())
-    if conversation_lock().locked():
-        await cl.Message(content="⏳ 上一条回答仍在生成，本条已排队等待。").send()
-    async with conversation_lock():
+    # 覆盖前先捕获上一回合的中断事件：若用户刚点过停止，本次获取会话锁
+    # 时应静默等待旧回合收尾，而不是显示排队提示。
+    previous_abort_event = _turn_abort_events.get(context_id())
+    abort_event = threading.Event()
+    _turn_abort_events[context_id()] = abort_event
+    async with _turn_lock_quiet_if_stopping(previous_abort_event):
         # Every window reloads the latest private transcript before generating.
         context = await restore_conversation(service)
         if not context.provider_selection:
@@ -1376,8 +1420,10 @@ async def run_turn(
             name="generation-safety-review", type="run", icon="shield-check"
         ) as step:
             step.output = "正在生成并审核回答…"
-            with streaming_transport(), generation_delta_sink(
-                _make_delta_sink(context, stream_out)
+            with (
+                streaming_transport(),
+                generation_delta_sink(_make_delta_sink(context, stream_out)),
+                generation_abort_scope(abort_event),
             ):
                 if edit_turn is not None:
                     # 编辑重发：覆盖该轮用户内容并从此重新生成；
@@ -1433,6 +1479,14 @@ async def run_turn(
                 "Sidebar title not scheduled error_type=%s", type(error).__name__
             )
     return response
+
+@cl.on_stop
+async def on_stop() -> None:
+    """用户点停止：置位当前回合的中断事件。worker 线程在下一个流式
+    chunk 边界掐断上游请求并立刻让出会话锁——被取消的 on_message 任务
+    因 to_thread 不可强杀、会等生成自然结束，这正是此前停止后新消息
+    仍显示"排队等待"的根源。"""
+    request_turn_abort()
 
 
 def authenticated_principal_id() -> str | None:

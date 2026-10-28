@@ -5,6 +5,7 @@ from typing import Protocol
 from urllib.parse import urlparse
 from .config import Settings
 from .schemas import LLMResult
+from .invocation import GenerationAborted, generation_abort_requested
 
 
 class ChatBackend(Protocol):
@@ -68,6 +69,8 @@ class OpenAICompatibleBackend:
         sampling=None,
         extra_body_overrides=None,
     ) -> LLMResult:
+        if generation_abort_requested():
+            raise GenerationAborted("用户停止了本轮生成")
         kwargs = {
             "model": self.settings.model,
             "messages": messages,
@@ -148,6 +151,8 @@ class OpenAICompatibleBackend:
         if extra:
             kwargs["extra_body"] = extra
 
+        if generation_abort_requested():
+            raise GenerationAborted("用户停止了本轮生成")
         deadline = time.monotonic() + effective_timeout
         stream = self.client.chat.completions.create(**kwargs)
         parts = []
@@ -158,6 +163,8 @@ class OpenAICompatibleBackend:
         accumulated_chars = 0
         try:
             for event in stream:
+                if generation_abort_requested():
+                    raise GenerationAborted("用户停止了本轮生成")
                 if time.monotonic() > deadline:
                     raise TimeoutError("流式响应超过本轮截止时间")
                 model = getattr(event, "model", None) or model

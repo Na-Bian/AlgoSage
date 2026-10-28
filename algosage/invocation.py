@@ -38,6 +38,33 @@ _current: ContextVar[TurnLedger | None] = ContextVar(
 )
 _streaming: ContextVar[bool] = ContextVar("algosage_streaming_transport", default=False)
 _delta_sink: ContextVar = ContextVar("algosage_generation_delta_sink", default=None)
+_abort_event: ContextVar[threading.Event | None] = ContextVar(
+    "algosage_generation_abort", default=None
+)
+
+
+class GenerationAborted(BaseException):
+    """用户主动停止当前回合。
+
+    继承 BaseException（语义同 CancelledError）：pipeline 各层与 llm 的
+    异常兜底不得捕获它做重试/降级——停止就是停止。"""
+
+
+def generation_abort_requested() -> bool:
+    event = _abort_event.get()
+    return bool(event and event.is_set())
+
+
+@contextmanager
+def generation_abort_scope(event: threading.Event):
+    """Register the current turn's abort event (visible in the worker thread
+    through the to_thread context copy). The streaming loop polls it so a
+    user-initiated stop cancels the upstream request within one chunk."""
+    token = _abort_event.set(event)
+    try:
+        yield
+    finally:
+        _abort_event.reset(token)
 
 
 @contextmanager
