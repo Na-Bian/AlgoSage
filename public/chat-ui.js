@@ -57,6 +57,7 @@
   let reasoningFinishedAtStart = false;
   let reasoningLastLen = 0;
   let reasoningStableAt = 0;
+  let reasoningAnswersAtStart = 0;
   document.addEventListener(
     "click",
     (event) => {
@@ -74,8 +75,10 @@
     }
     if (button.id !== reasoningTrackId) {
       // 新一轮思考：首次见到时审核步骤已存在 = 历史渲染，保持默认折叠。
+      // 回答元素数量记为基线——思考期间没有回答元素，它一出现即思考结束。
       reasoningTrackId = button.id;
       reasoningFinishedAtStart = !!document.querySelector('button[id$="generation-safety-review"]');
+      reasoningAnswersAtStart = document.querySelectorAll('[data-step-type="assistant_message"]').length;
       reasoningLastLen = 0;
       reasoningStableAt = 0;
     }
@@ -99,8 +102,12 @@
       reasoningLastLen = len;
       reasoningStableAt = now;
     }
-    if (reasoningLastLen > 0 && now - reasoningStableAt > 3000) {
-      // 思考正文停更 3 秒 = 本轮思考已结束：自动折叠一次，之后交给用户。
+    const answerStarted =
+      document.querySelectorAll('[data-step-type="assistant_message"]').length
+        > reasoningAnswersAtStart;
+    const stalled = reasoningLastLen > 0 && now - reasoningStableAt > 3000;
+    if ((answerStarted || stalled) && !reasoningAutoCollapsed.has(button.id)) {
+      // 思考结束（回答元素随首 token 创建）或生成异常停更 3 秒：折叠一次。
       reasoningAutoCollapsed.add(button.id);
       button.click();
       return;
