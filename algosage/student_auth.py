@@ -445,13 +445,23 @@ def install_profile_routes(
             "register": "注册 · AlgoSage",
             "reset": "找回密码 · AlgoSage",
         }
-        return HTMLResponse(
-            html.replace('data-view="login"', f'data-view="{mode}"')
-            .replace(">登录 AlgoSage</h1>", f">{titles[mode]}</h1>")
-            .replace(
-                "<title>登录 · AlgoSage</title>", f"<title>{page_title[mode]}</title>"
-            )
+        # ICP 备案号：备案通过后配置 SAGE_ICP_NUMBER，页脚自动展示；空则隐藏。
+        icp = os.environ.get("SAGE_ICP_NUMBER", "").strip()
+        icp_html = (
+            f'<a href="https://beian.miit.gov.cn" target="_blank" rel="noopener">'
+            f'{icp}</a>'
+            if icp
+            else ""
         )
+        rendered = html.replace('data-view="login"', f'data-view="{mode}"')
+        rendered = rendered.replace(
+            ">登录 AlgoSage</h1>", f">{titles[mode]}</h1>"
+        ).replace("<title>登录 · AlgoSage</title>", f"<title>{page_title[mode]}</title>")
+        rendered = rendered.replace(
+            '<footer class="auth-icp" data-icp-slot hidden>',
+            f'<footer class="auth-icp" data-icp-slot{" hidden" if not icp_html else ""}>{icp_html}</footer>',
+        )
+        return HTMLResponse(rendered)
 
     @router.get("/login", include_in_schema=False)
     async def custom_login_page(request: Request):
