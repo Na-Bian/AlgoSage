@@ -34,12 +34,13 @@ def valid_title(text: str, source: str) -> str | None:
 
     # Even a prompt-injected title model may only select existing input text,
     # never introduce a solution, an algorithm choice, or a private instruction.
+    # containment 按字符集合判断（允许模型重排、省略词序），仍禁止引入新字。
     def compact(s):
         return "".join(c.lower() for c in s if c.isalnum())
 
     wanted = compact(title)
-    remaining = iter(compact(source))
-    if not wanted or not all(any(c == char for c in remaining) for char in wanted):
+    source_chars = set(compact(source))
+    if not wanted or not set(wanted).issubset(source_chars):
         return None
     return title
 

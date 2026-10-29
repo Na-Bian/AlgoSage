@@ -97,6 +97,8 @@ def conversation_lock():
     return lock
 
 
+# 进行中的回合（thread_id -> stream_out）：供恢复页面时快照推送在途回答
+_turn_streams: dict[str, dict] = {}
 # 当前回合的中断事件（thread_id -> threading.Event）。@cl.on_stop 置位，
 # run_turn 的 worker 线程轮询它以掐断上游流式请求。
 _turn_abort_events: dict[str, threading.Event] = {}
@@ -503,6 +505,27 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         except Exception as error:  # noqa: BLE001 - 刷新失败不影响操作本身
             logger.info(
                 "provider views refresh skipped error_type=%s", type(error).__name__
+            )
+
+    @_chainlit_sio.on("chat_settings_change")
+    async def handle_chat_settings_change(
+        sid: str, payload: dict | None = None
+    ) -> None:
+        """Persist partial settings updates sent by the autosave UI.
+
+        The browser keeps the settings drawer open by sending a small delta over
+        the current Socket.IO connection.  It must enter the same callback as
+        Chainlit's native confirm action; otherwise controls appear to change
+        locally but account defaults (especially ``model_catalog``) disappear
+        when the drawer is reopened.
+        """
+        try:
+            init_ws_context(sid)
+            if isinstance(payload, dict):
+                await on_settings_update(payload)
+        except Exception as error:  # noqa: BLE001 - UI autosave must not kill ws
+            logger.info(
+                "chat settings change skipped error_type=%s", type(error).__name__
             )
 
     def _catalog_groups(service, options):
@@ -1323,6 +1346,18 @@ async def on_chat_resume(thread: dict) -> None:
         logger.info("resume DENIED")
         raise PermissionError("恢复对话需要对应工作区身份")
     logger.info("resume OK")
+    # 回合进行中恢复页面时，把在途回答的当前快照推流给刚恢复的界面：
+    # 前端会在同一消息 id 上继续追加后续增量，实现“接续生成一半的状态”。
+    stream = _turn_streams.get(thread["id"])
+    if stream is not None and stream.get("reply") is not None and stream.get("text"):
+        try:
+            await cl.context.emitter.emit(
+                "stream_token", {"id": stream["reply"].id, "token": stream["text"]}
+            )
+        except Exception as error:  # noqa: BLE001 - 快照推送失败不影响主流程
+            logger.info(
+                "Resume stream snapshot skipped error_type=%s", type(error).__name__
+            )
     # 不等待生成锁：回合进行中点侧边栏切换/恢复必须即时可用，
     # 否则整个流式生成期间（可达一两分钟）会话切换都表现为"没反应"。
     # 恢复只读历史并重发设置，与进行中的回合共享只读数据并无冲突。
@@ -1438,6 +1473,7 @@ async def run_turn(
     socket_at_start = getattr(cl.context.session, "socket_id", None)
     abort_event = threading.Event()
     _turn_abort_events[context_id()] = abort_event
+    _turn_streams[context_id()] = stream_out
     async with _turn_lock_quiet_if_stopping(previous_abort_event):
         # Every window reloads the latest private transcript before generating.
         context = await restore_conversation(service)
@@ -1770,6 +1806,7 @@ async def on_message(message: cl.Message) -> None:
     # 回合进行中页面被刷新/重连过（socket id 变化）时，把含最终答案的
     # 完整线程状态推送给当前连接——否则最终答案只送到了已断开的旧连接，
     # 用户在生成中新建对话再点回来会永远看不到答案。
+    _turn_streams.pop(context_id(), None)
     if getattr(cl.context.session, 'socket_id', None) != socket_before_turn:
         try:
             thread = await get_chat_store().get_thread(context_id())
