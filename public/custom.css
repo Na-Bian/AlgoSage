@@ -1263,7 +1263,7 @@ body.eg-sidebar-restoring :is(
 
 
 :root [data-panel]:has(#chat-settings-sidebar-title) {
-  max-width: 320px;
+  max-width: 380px;
   transform: none;
   animation: eg-drawer-right-in var(--eg-motion-enter) var(--eg-motion-ease) both;
   transition: flex-grow var(--eg-motion-enter) var(--eg-motion-ease);
