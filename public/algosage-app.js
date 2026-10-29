@@ -234,11 +234,10 @@ try {
       const isConfirmButton =
         event.target?.closest?.("button")?.textContent.trim() === "确认";
       const tracked = egDeleteThreadId;
-      egDeleteThreadId = "";
       if (!isConfirmButton || !tracked || tracked !== currentThreadIdFromUrl()) return;
-      // 确认瞬间先淡出主区域；真正的切换由上方 fetch 入口在删除请求
-      // 发出的瞬间完成（这里可能早于请求几百毫秒，只做视觉准备）。
-      beginDeleteTransition();
+      // 确认瞬间先遮住旧内容；fetch 入口会用同一个 thread id 接管并反复
+      // 尝试切换，避免确认处理器与侧栏重绘发生竞态。
+      beginDeleteTransition(tracked);
     },
     true
   );

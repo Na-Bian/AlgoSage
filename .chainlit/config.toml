@@ -143,7 +143,7 @@ custom_css = "/public/custom.css?v=20261028-reasoning-scroll-1"
 
 # Specify a JavaScript file that can be used to customize the user interface.
 # The JavaScript file can be served from the public directory.
-custom_js = "/public/algosage-app.js?v=20261028-delete-nav-5"
+custom_js = "/public/algosage-app.js?v=20261028-delete-nav-6"
 
 # The style of alert boxes. Can be "classic" or "modern".
 alert_style = "classic"
