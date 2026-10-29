@@ -41,13 +41,11 @@
   }
 
   function initializeStandalone() {
-    applyPreference(storedPreference());
-    systemMedia.addEventListener("change", () => {
-      if (storedPreference() === "system") applyPreference("system");
-    });
-    window.addEventListener("storage", (event) => {
-      if (event.key === THEME_KEY) applyPreference(storedPreference());
-    });
+    // 独立页面（登录/注册/找回等，html 带 data-theme-default）始终跟随
+    // 系统主题：忽略浏览器里保存的手动偏好，系统切换时实时跟随；也不
+    // 提供切换入口——应用内的手动选择只作用于登录后的界面。
+    applyPreference("system");
+    systemMedia.addEventListener("change", () => applyPreference("system"));
   }
 
   function originFromElement(element) {

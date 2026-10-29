@@ -1,8 +1,6 @@
 (() => {
   "use strict";
 
-  window.AlgoSageTheme?.mountFloatingButton();
-
   const body = document.body;
   const view = body.dataset.view || "login";
   const statusNode = document.getElementById("auth-status");
