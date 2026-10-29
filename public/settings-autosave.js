@@ -54,9 +54,8 @@
         if (mirror && Object.keys(mirror).length) {
           var delta = {};
           if (!lastSent) {
-            // 基线未建：首发改全量（幂等合并）。model_catalog 由打开面板
-            // 时的选择承担，不掺进采样偏好提交，避免误触发默认模型分支。
-            for (var k in mirror) if (k !== "model_catalog") delta[k] = mirror[k];
+            // 基线未建：首发改全量（幂等合并），包括默认模型。
+            for (var k in mirror) delta[k] = mirror[k];
           } else {
             for (var key in mirror) {
               if (mirror[key] !== lastSent[key]) delta[key] = mirror[key];
