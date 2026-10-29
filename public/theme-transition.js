@@ -9,6 +9,7 @@
   const systemMedia = window.matchMedia("(prefers-color-scheme: dark)");
   const root = document.documentElement;
   let transitionBusy = false;
+  let standaloneOverride = null;
 
   function storedPreference() {
     try {
@@ -41,11 +42,18 @@
   }
 
   function initializeStandalone() {
-    // 独立页面（登录/注册/找回等，html 带 data-theme-default）始终跟随
-    // 系统主题：忽略浏览器里保存的手动偏好，系统切换时实时跟随；也不
-    // 提供切换入口——应用内的手动选择只作用于登录后的界面。
+    // 独立页面（登录/注册/找回等，html 带 data-theme-default）每次请求都先
+    // 跟随系统主题：不读取浏览器里保存的手动偏好。页面提供悬浮按钮供临时
+    // 切换，选择只写入本地浏览器（登录后由应用内偏好接管），不触碰服务器
+    // 全局配置；系统主题变化时，未被手动覆盖则继续实时跟随。
     applyPreference("system");
-    systemMedia.addEventListener("change", () => applyPreference("system"));
+    systemMedia.addEventListener("change", () => applyPreference(standaloneOverride ?? "system"));
+    // 本脚本在 <head> 同步执行，body 尚未就绪时等 DOM 挂载完再放按钮。
+    if (document.body) {
+      mountFloatingButton();
+    } else {
+      document.addEventListener("DOMContentLoaded", mountFloatingButton, { once: true });
+    }
   }
 
   function originFromElement(element) {
@@ -147,6 +155,7 @@
     `;
     button.addEventListener("click", (event) => {
       const next = root.classList.contains("dark") ? "light" : "dark";
+      standaloneOverride = next;
       setPreference(next, originFromElement(button));
     });
     document.body.appendChild(button);

@@ -290,7 +290,7 @@ try {
     });
   }
 
-  loadScript("/public/theme-transition.js?v=20261026-refresh-all-1")
+  loadScript("/public/theme-transition.js?v=20261029-auth-toggle-1")
     .then(() => loadScript("/public/account-profile.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/user-preferences.js?v=20261028-draft-clear-2"))
     .then(() => loadScript("/public/model-picker.js?v=20261027-composer-retry-2"))

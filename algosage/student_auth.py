@@ -7,6 +7,7 @@ import hmac
 import io
 import asyncio
 import json
+import logging
 import os
 import re
 import secrets
@@ -27,6 +28,8 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from .emailer import EmailMessage, EmailSender
 from .runtime_paths import protect_runtime_file
+
+logger = logging.getLogger("algosage.student_auth")
 
 _HUST_PATTERN = re.compile(r"^U202[0-9]1[0-9]{4}$")
 _CODE_ALPHABET = "0123456789"
