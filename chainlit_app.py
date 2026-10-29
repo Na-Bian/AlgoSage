@@ -1807,7 +1807,7 @@ async def on_message(message: cl.Message) -> None:
     # 完整线程状态推送给当前连接——否则最终答案只送到了已断开的旧连接，
     # 用户在生成中新建对话再点回来会永远看不到答案。
     _turn_streams.pop(context_id(), None)
-    if getattr(cl.context.session, 'socket_id', None) != socket_before_turn:
+    if getattr(cl.context.session, 'socket_id', None) != socket_at_start:
         try:
             thread = await get_chat_store().get_thread(context_id())
             if thread:
