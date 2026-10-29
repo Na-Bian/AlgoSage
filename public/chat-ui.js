@@ -51,17 +51,29 @@
      Chainlit 自己的折叠机制：检测到折叠就模拟点击由它自己展开；正式
      回答开始出字（= 思考必然已结束）就自动折叠一次；用户手动收起
      （isTrusted 点击）则记录并尊重。展开期间跟随滚动到底部。 */
-  const reasoningUserCollapsed = new Set();
-  const reasoningAutoCollapsed = new Set();
-  let reasoningTrackId = "";
-  let reasoningFinishedAtStart = false;
-  let reasoningLastLen = 0;
-  let reasoningStableAt = 0;
-  let reasoningAnswersAtStart = 0;
+  /* 思考过程自动展开/折叠（驱动 Chainlit 自身的折叠机制）：
+     - 页面首轮扫描时已存在的思考步骤 = 历史回合，保持 Chainlit 默认折叠
+       （刷新正在生成的页面属于此列，重载后不自动展开是可接受降级）；
+     - 之后新出现的思考步骤节点 = 新回合：自动展开并跟随滚动；正式回答
+       元素出现（思考必然结束）或思考停更 3 秒时自动折叠一次；
+     - 用户手动收起（isTrusted 点击）永远优先，不再自动展开。 */
+  const reasoningUserCollapsed = new WeakSet();
+  const reasoningAutoFolded = new WeakSet();
+  const reasoningSeenNodes = new WeakSet();
+  const reasoningHistoricalNodes = new WeakSet();
+  const reasoningMeta = new WeakMap();
+  let reasoningScanDone = false;
   let reasoningFollowPaused = false;
-  /* 用户在思考正文里向上滚轮 = 想回看，暂停自动跟随；向下滚轮（含回到
-     底部）= 恢复跟随。没有这个开关，自动滚动会把手动滚动立刻拉回底部，
-     思考正文无法独立查看。 */
+  document.addEventListener(
+    "click",
+    (event) => {
+      const button = event.target?.closest?.('button[id$="model-reasoning"]');
+      if (!button || !event.isTrusted) return;
+      reasoningUserCollapsed.add(button);
+    },
+    true
+  );
+  // 思考正文里向上滚轮 = 回看，暂停自动跟随；向下滚轮 = 恢复跟随。
   document.addEventListener(
     "wheel",
     (event) => {
@@ -74,68 +86,59 @@
     },
     { capture: true, passive: true }
   );
-  document.addEventListener(
-    "click",
-    (event) => {
-      const button = event.target?.closest?.('button[id$="model-reasoning"]');
-      if (!button || !event.isTrusted) return;
-      reasoningUserCollapsed.add(button.id);
-    },
-    true
-  );
   function ensureReasoningExpanded() {
-    const button = document.querySelector('button[id$="model-reasoning"]');
-    if (!button || !button.isConnected) {
-      reasoningTrackId = "";
-      return;
+    const buttons = [...document.querySelectorAll('button[id$="model-reasoning"]')];
+    if (!reasoningScanDone) {
+      // 页面加载后的首轮扫描：现存按钮都视为历史渲染
+      buttons.forEach((b) => {
+        reasoningSeenNodes.add(b);
+        reasoningHistoricalNodes.add(b);
+      });
+      reasoningScanDone = true;
     }
-    if (button.id !== reasoningTrackId) {
-      // 新一轮思考：首次见到时审核步骤已存在 = 历史渲染，保持默认折叠。
-      // 回答元素数量记为基线——思考期间没有回答元素，它一出现即思考结束。
-      reasoningTrackId = button.id;
-      reasoningFollowPaused = false;
-      reasoningFinishedAtStart = !!document.querySelector('button[id$="generation-safety-review"]');
-      reasoningAnswersAtStart = document.querySelectorAll('[data-step-type="assistant_message"]').length;
-      reasoningLastLen = 0;
-      reasoningStableAt = 0;
-    }
+    const button = buttons[buttons.length - 1];
+    if (!button) return;
     const container = button.parentElement;
-    const gated =
-      reasoningUserCollapsed.has(button.id) || reasoningAutoCollapsed.has(button.id);
-    const expanded = button.getAttribute("aria-expanded") === "true";
-    if (reasoningFinishedAtStart || gated) return;
-    if (!expanded) {
+    const body = container?.nextElementSibling;
+    if (!reasoningSeenNodes.has(button)) {
+      // 新节点 = 新回合的思考步骤：恢复自动跟随
+      reasoningSeenNodes.add(button);
+      reasoningFollowPaused = false;
+    }
+    if (reasoningHistoricalNodes.has(button)) return;
+    if (reasoningUserCollapsedNodes.has(button)) return;
+    const len = body ? (body.textContent || "").length : 0;
+    const now = performance.now();
+    let meta = reasoningMeta.get(button);
+    if (!meta) {
+      meta = { lastLen: len, stableAt: now, answersAtStart: document.querySelectorAll('[data-step-type="assistant_message"]').length };
+      reasoningMeta.set(button, meta);
+    }
+    if (len !== meta.lastLen) {
+      meta.lastLen = len;
+      meta.stableAt = now;
+    }
+    if (button.getAttribute("aria-expanded") === "false") {
       button.click();
       return;
-    }
-    let body = container?.nextElementSibling;
-    if (!body) return;
-    if (!body.classList.contains("eg-reasoning-body")) {
-      body.classList.add("eg-reasoning-body");
-    }
-    const len = (body.textContent || "").length;
-    const now = performance.now();
-    if (len !== reasoningLastLen) {
-      reasoningLastLen = len;
-      reasoningStableAt = now;
     }
     const answerStarted =
       document.querySelectorAll('[data-step-type="assistant_message"]').length
-        > reasoningAnswersAtStart;
-    const stalled = reasoningLastLen > 0 && now - reasoningStableAt > 3000;
-    if ((answerStarted || stalled) && !reasoningAutoCollapsed.has(button.id)) {
-      // 思考结束（回答元素随首 token 创建）或生成异常停更 3 秒：折叠一次。
-      reasoningAutoCollapsed.add(button.id);
+        > meta.answersAtStart;
+    const stalled = meta.lastLen > 0 && now - meta.stableAt > 3000;
+    if ((answerStarted || stalled) && !reasoningAutoFolded.has(button)) {
+      reasoningAutoFolded.add(button);
       button.click();
       return;
     }
-    while (body) {
-      const fromBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
+    let sib = body;
+    while (sib) {
+      const fromBottom = sib.scrollHeight - sib.scrollTop - sib.clientHeight;
       if (!reasoningFollowPaused && fromBottom > 4) {
-        body.scrollTop = body.scrollHeight;
+        sib.scrollTop = sib.scrollHeight;
       }
-      body = body.nextElementSibling;
-      if (!body || body.querySelector?.('button[id^="step-"]')) break;
+      sib = sib.nextElementSibling;
+      if (!sib || sib.querySelector?.('button[id^="step-"]')) break;
     }
   }
 

@@ -294,8 +294,8 @@ try {
     .then(() => loadScript("/public/account-profile.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/user-preferences.js?v=20261028-draft-clear-2"))
     .then(() => loadScript("/public/model-picker.js?v=20261027-composer-retry-2"))
-    .then(() => loadScript("/public/chat-ui.js?v=20261028-reasoning-scroll-2"))
-    .then(() => loadScript("/public/settings-autosave.js?v=20261026-refresh-all-1"))
+    .then(() => loadScript("/public/chat-ui.js?v=20261028-reasoning-newturn-1"))
+    .then(() => loadScript("/public/settings-autosave.js?v=20261029-model-default-1"))
     .then(() => loadScript("/public/chat-options.js?v=20261026-refresh-all-1"))
     .catch(() => {
       // Existing behavior remains usable even if optional enhancements fail.
