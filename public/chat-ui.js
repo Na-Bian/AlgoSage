@@ -104,6 +104,9 @@
       // 新节点 = 新回合的思考步骤：恢复自动跟随
       reasoningSeenNodes.add(button);
       reasoningFollowPaused = false;
+      // 刷新页面后点回会话：Chainlit 会整页重载，加载持久化历史时
+      // 需要重新展开（新页面视为新回合）
+      reasoningScanDone = true;
     }
     if (reasoningHistoricalNodes.has(button)) return;
     if (reasoningUserCollapsedNodes.has(button)) return;
