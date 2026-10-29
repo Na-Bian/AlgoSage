@@ -1394,6 +1394,11 @@ def install_student_auth(app: Any, service_factory) -> None:
         if not account or account.get("status") != "active" or actual != expected:
             from fastapi.responses import RedirectResponse
 
+            logger.info(
+                "auth-middleware reject path=%s expected=%s actual=%s has_account=%s",
+                path, expected, actual, bool(account),
+            )
+
             response = RedirectResponse(url="/login", status_code=303)
             response.delete_cookie("access_token", path="/")
             response.headers["Cache-Control"] = "no-store"
