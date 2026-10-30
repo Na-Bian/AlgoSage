@@ -403,6 +403,11 @@ body.eg-profile-page input[readonly] {
 }
 
 body.eg-profile-page .password-field { position: relative; }
+/* Edge/IE 原生「显示密码」眼睛会与 .eye-button 重叠，隐藏之。 */
+body.eg-profile-page input[type="password"]::-ms-reveal,
+body.eg-profile-page input[type="password"]::-ms-clear {
+  display: none;
+}
 body.eg-profile-page .input-shell { position: relative; display: block; }
 body.eg-profile-page .input-shell input { padding-right: 50px; background: var(--pg-input); }
 body.eg-profile-page .eye-button {

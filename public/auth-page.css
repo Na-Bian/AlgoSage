@@ -218,6 +218,13 @@ body[data-view="register"] .auth-main {
   color: var(--auth-placeholder);
 }
 
+/* Edge/IE 在密码框右侧自带「显示密码」眼睛（输入聚焦时出现），
+   会与 .eye-button 重叠；页面已提供统一的切换按钮，隐藏原生控件。 */
+.input-shell input::-ms-reveal,
+.input-shell input::-ms-clear {
+  display: none;
+}
+
 .input-shell.compact input {
   padding-left: 16px;
   letter-spacing: .12em;
