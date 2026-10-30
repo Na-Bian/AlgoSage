@@ -28,6 +28,7 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from .emailer import EmailMessage, EmailSender
 from .runtime_paths import protect_runtime_file
+from .runtime_security import auth_cookie_name
 
 logger = logging.getLogger("algosage.student_auth")
 
@@ -272,7 +273,7 @@ def install_profile_routes(
         account = student_auth().store.get_account(_student_id(current_user))
         if not account:
             response = RedirectResponse(url="/login", status_code=303)
-            response.delete_cookie("access_token", path="/")
+            response.delete_cookie(auth_cookie_name(), path="/")
             return response
         return HTMLResponse(profile_html_path.read_text(encoding="utf-8"))
 
@@ -284,7 +285,7 @@ def install_profile_routes(
         account = student_auth().store.get_account(_student_id(current_user))
         if not account:
             response = RedirectResponse(url="/login", status_code=303)
-            response.delete_cookie("access_token", path="/")
+            response.delete_cookie(auth_cookie_name(), path="/")
             return response
         return HTMLResponse(security_html_path.read_text(encoding="utf-8"))
 
@@ -403,7 +404,7 @@ def install_profile_routes(
         except PermissionError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         response = JSONResponse(result)
-        response.delete_cookie("access_token", path="/")
+        response.delete_cookie(auth_cookie_name(), path="/")
         return response
 
     @router.patch("/auth/profile")
@@ -1381,7 +1382,7 @@ def install_student_auth(app: Any, service_factory) -> None:
             from fastapi.responses import RedirectResponse
 
             response = RedirectResponse(url="/login", status_code=303)
-            response.delete_cookie("access_token", path="/")
+            response.delete_cookie(auth_cookie_name(), path="/")
             response.headers["Cache-Control"] = "no-store"
             return response
         if not identifier.startswith("student:"):
@@ -1403,7 +1404,7 @@ def install_student_auth(app: Any, service_factory) -> None:
             )
 
             response = RedirectResponse(url="/login", status_code=303)
-            response.delete_cookie("access_token", path="/")
+            response.delete_cookie(auth_cookie_name(), path="/")
             response.headers["Cache-Control"] = "no-store"
             return response
         return await call_next(request)

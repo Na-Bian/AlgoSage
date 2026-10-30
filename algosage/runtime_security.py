@@ -9,6 +9,16 @@ def _flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def auth_cookie_name() -> str:
+    """Session cookie name; changing it abandons stale cookies users cannot
+    clear from a downgraded (non-HTTPS) origin, e.g. a leftover Secure cookie
+    that makes browsers silently drop every new login Set-Cookie."""
+    name = os.environ.get("SAGE_AUTH_COOKIE_NAME", "access_token").strip()
+    if not name or len(name) > 64 or not all(c.isalnum() or c in "-_" for c in name):
+        raise ValueError("SAGE_AUTH_COOKIE_NAME must be 1-64 chars of [A-Za-z0-9_-]")
+    return name
+
+
 def _normalise_origin(origin: str) -> str:
     return origin.strip().rstrip("/")
 
@@ -40,6 +50,7 @@ def configure_auth_cookies() -> None:
         raise ValueError("CHAINLIT_COOKIE_SAMESITE must be strict, lax, or none")
     cookie._cookie_samesite = same_site  # type: ignore[attr-defined]
     cookie._cookie_secure = _flag("SAGE_SECURE_COOKIES")  # type: ignore[attr-defined]
+    cookie._auth_cookie_name = auth_cookie_name()  # type: ignore[attr-defined]
 
 
 def install_origin_guard(app) -> None:
