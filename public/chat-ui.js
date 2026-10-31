@@ -109,7 +109,7 @@
       reasoningScanDone = true;
     }
     if (reasoningHistoricalNodes.has(button)) return;
-    if (reasoningUserCollapsedNodes.has(button)) return;
+    if (reasoningUserCollapsed.has(button)) return;
     const len = body ? (body.textContent || "").length : 0;
     const now = performance.now();
     let meta = reasoningMeta.get(button);

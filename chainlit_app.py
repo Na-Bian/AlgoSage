@@ -1413,13 +1413,12 @@ def _make_delta_sink(context, stream_out):
     def sink(text_so_far, reasoning_so_far):
         async def apply():
             async with stream_out["ui_lock"]:
-                if reasoning_so_far:
-                    step = stream_out.get("reasoning_step")
-                if step is None:
+                step = stream_out.get("reasoning_step")
+                if reasoning_so_far and step is None:
                     step = cl.Step(name="model-reasoning", type="run", icon="brain")
                     await step.send()
                     stream_out["reasoning_step"] = step
-                if reasoning_so_far != stream_out.get("reasoning", ""):
+                if step is not None and reasoning_so_far != stream_out.get("reasoning", ""):
                     step.output = normalize_math_delimiters(reasoning_so_far)
                     await step.update()
                     stream_out["reasoning"] = reasoning_so_far
