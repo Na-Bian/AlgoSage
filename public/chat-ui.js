@@ -833,9 +833,9 @@
     const aMsg = document.querySelector('[data-step-type="assistant_message"]');
     if (!aMsg) return;
     const aContainer = aMsg.parentElement;
+    const aMsgRow = aMsg.closest(".step") || aMsg;
     if (row.parentElement === aContainer) {
       // 同容器：确保思考行紧邻回答行之前即可。
-      const aMsgRow = aMsg.closest(".step") || aMsg;
       if (row.nextElementSibling === aMsgRow) return;
       aContainer.insertBefore(row, aMsgRow);
       return;
