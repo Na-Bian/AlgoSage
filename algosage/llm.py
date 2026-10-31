@@ -196,9 +196,14 @@ class OpenAICompatibleBackend:
                         pass
             if time.monotonic() > deadline:
                 raise TimeoutError("流式响应超过本轮截止时间")
-            if finish_reason != "stop":
-                raise RuntimeError("流式响应不完整：缺少 stop 结束标记或被截断/过滤")
             text = "".join(parts)
+            if finish_reason != "stop":
+                # 触顶截断（finish_reason=length）且正文有内容：思考模型的
+                # reasoning 也计入 completion 预算，正文被截断是常见情况，
+                # 照常送审交付比整轮报错更有用；其余中止原因（内容过滤/
+                # 工具调用/缺失标记）不可交付。
+                if finish_reason != "length" or not text.strip():
+                    raise RuntimeError("流式响应不完整：缺少 stop 结束标记或被截断/过滤")
             return LLMResult(
                 text=text,
                 model=model,
