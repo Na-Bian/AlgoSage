@@ -69,7 +69,14 @@
     (event) => {
       const button = event.target?.closest?.('button[id$="model-reasoning"]');
       if (!button || !event.isTrusted) return;
-      reasoningUserCollapsed.add(button);
+      // 捕获阶段先于 Chainlit 的开关执行，aria-expanded 仍是点击前的状态：
+      // 折叠态被点开 = 用户想回看，暂停自动跟随防止立即被拉回底部；
+      // 展开态被点合 = 用户手动收起，记录并永远尊重。
+      if (button.getAttribute("aria-expanded") === "false") {
+        reasoningFollowPaused = true;
+      } else {
+        reasoningUserCollapsed.add(button);
+      }
     },
     true
   );
@@ -127,7 +134,11 @@
       meta.stableAt = now;
     }
     if (button.getAttribute("aria-expanded") === "false") {
-      button.click();
+      // 自动折叠造成的折叠态不能重新展开（否则两个分支互相打架，
+      // 思考过程会在回答开始后反复弹开）；只有新回合的初始折叠才展开。
+      if (!reasoningAutoFolded.has(button)) {
+        button.click();
+      }
       return;
     }
     const answerStarted =
