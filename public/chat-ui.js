@@ -100,6 +100,11 @@
     if (!button) return;
     const container = button.parentElement;
     const body = container?.nextElementSibling;
+    // 思考正文的限高/独立滚动样式挂在 .eg-reasoning-body 上；正文晚于
+    // 步骤头挂载，所以每个 tick 幂等补挂（重写节点跟踪时曾把这个赋值弄丢）。
+    if (body && !body.classList.contains("eg-reasoning-body")) {
+      body.classList.add("eg-reasoning-body");
+    }
     if (!reasoningSeenNodes.has(button)) {
       // 新节点 = 新回合的思考步骤：恢复自动跟随
       reasoningSeenNodes.add(button);
