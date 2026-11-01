@@ -1072,9 +1072,10 @@
           clearInterval(threadSwitchWatch);
           location.assign(location.href);
         }
-        if (performance.now() - startedAt > 5000) {
+        if (performance.now() - startedAt > 2000) {
+          // 迟迟无内容（socket/前端未就绪的首次点击等）：整页重试自愈。
           clearInterval(threadSwitchWatch);
-          removeThreadLoadingMask();
+          location.assign(location.href);
         }
       }, 100);
     },
