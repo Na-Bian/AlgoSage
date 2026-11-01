@@ -1669,28 +1669,58 @@ def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
     )
 
 
-def welcome_markdown(service) -> str:
+def welcome_markdown(service, model_display: str | None = None) -> str:
     settings = service.settings
     mode_label = "学习保护" if settings.exam_mode else "宽松演示"
     return WELCOME_TMPL.format(
         mode_label=mode_label,
         switch_note="服务端固定",
         backend=settings.mode,
-        model=settings.model,
+        model=model_display or settings.model,
         classifier=settings.classifier_mode,
     )
+
+
+async def _current_model_display(service, user_identifier: str | None) -> str | None:
+    """当前会话默认模型的显示名：用户选择优先，回退环境默认。"""
+    if not user_identifier:
+        return None
+    try:
+        selection = await user_default_selection(service, user_identifier)
+        if not selection:
+            return None
+        if selection.startswith("custom:"):
+            entry = next(
+                (
+                    e
+                    for e in service.list_custom_providers(user_identifier)
+                    if e["selection"] == selection
+                ),
+                None,
+            )
+            if entry:
+                return short_model_name(entry["model"]) or entry["label"]
+            return None
+        model = selection.split("::", 1)[-1]
+        return short_model_name(model) if model else None
+    except Exception:  # noqa: BLE001 - 欢迎屏配置显示失败不影响建档
+        logger.info("welcome model display resolution failed", exc_info=True)
+        return None
 
 
 @cl.set_chat_profiles
 async def chat_profiles(_current_user=None, _language=None):
     # /project/settings supplies this before the WebSocket connects. One
     # default profile renders the welcome natively without a profile selector.
+    service = get_service()
+    identifier = getattr(_current_user, "identifier", None)
+    model_display = await _current_model_display(service, identifier)
     return [
         cl.ChatProfile(
             name="AlgoSage",
             default=True,
             icon="/favicon",
-            markdown_description=welcome_markdown(get_service()),
+            markdown_description=welcome_markdown(service, model_display),
         )
     ]
 
