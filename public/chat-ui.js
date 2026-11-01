@@ -1015,11 +1015,13 @@
     attributeFilter: ["data-state", "class"],
   });
 
-  /* 会话切换改走整页导航：Chainlit 在 SPA 内切换线程时先 clear_session 再
+  /* 会话切换竞态兜底：Chainlit 在 SPA 内切换线程时先 clear_session 再
      立即重连，两个 socket 的事件可能乱序到达——服务端把重连恢复到旧会话
-     （新线程 id 被丢弃），于是走“新对话”分支而不恢复历史，界面空白直到
-     下次刷新。整页导航让旧 socket 先断开、新连接带着目标线程 id 走完整
-     的 on_chat_resume，代价只是切换时多一次页面加载。 */
+     （新线程 id 被丢弃），于是走“新对话”分支而不恢复历史，界面空白。
+     处理：点击瞬间先把地址栏更新为目标线程（让重连握手尽量带上正确
+     threadId），保留 SPA 原生切换；若竞态仍然输掉（2.5 秒内目标线程没有
+     渲染出任何消息且不在生成中），再退回整页导航强制恢复。 */
+  let threadSwitchTimer = 0;
   document.addEventListener(
     "click",
     (event) => {
@@ -1027,9 +1029,21 @@
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = event.target?.closest?.('a[href^="/thread/"]');
       if (!link || !link.href) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      location.assign(link.href);
+      const target = new URL(link.href, location.href).pathname;
+      if (location.pathname === target) return;
+      try {
+        history.pushState(history.state, "", link.href);
+      } catch (_) {
+        return;
+      }
+      clearTimeout(threadSwitchTimer);
+      threadSwitchTimer = setTimeout(() => {
+        // 生成中（发送键被停止键替代）不算失败，等回合结束后再判定。
+        if (document.getElementById("chat-submit")) return;
+        if (location.pathname !== target) return;
+        if (document.querySelectorAll("[data-step-type]").length > 0) return;
+        location.assign(target);
+      }, 2500);
     },
     true
   );
