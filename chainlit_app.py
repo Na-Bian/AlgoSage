@@ -1734,6 +1734,7 @@ async def _cleanup_failed_turn_steps(stream_out: dict) -> None:
     if not steps:
         return
     data_layer = get_chat_store()
+    print(f"[eg-clean] cleanup start steps={len(steps)} dl={type(data_layer).__name__}", flush=True)
     for step in steps:
         try:
             step_dict = step.to_dict()
@@ -1745,8 +1746,9 @@ async def _cleanup_failed_turn_steps(stream_out: dict) -> None:
             pass
         try:
             await data_layer.delete_step(step_dict["id"])
-        except Exception:
-            pass
+            print(f"[eg-clean] deleted {step_dict['id']}", flush=True)
+        except Exception as e:
+            print(f"[eg-clean] delete failed {step_dict.get('id')}: {type(e).__name__} {e}", flush=True)
     stream_out["turn_steps"] = []
     stream_out.pop("reasoning_step", None)
 
