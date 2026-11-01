@@ -1015,11 +1015,30 @@
     attributeFilter: ["data-state", "class"],
   });
 
-  /* 会话切换走整页导航：Chainlit 的 SPA 内切换有无法在前端修复的时序
-     缺陷——“当前线程”状态在重连之后才更新，重连握手永远带着旧线程 id，
-     服务端会话恢复必然竞态（随机空白）。整页导航让旧 socket 先断开、新
-     连接从 URL 拿到目标线程走完整的 on_chat_resume。闪现的欢迎屏用加载
-     遮罩盖住：/thread/* 页面在首批消息渲染前显示遮罩，渲染后淡出。 */
+  /* 会话切换：优先走 Chainlit 原生 SPA 切换（快、不重刷侧栏），但原生
+     流程有低概率竞态——重连握手与 clear_session 乱序时，服务端恢复到旧
+     会话并走“新对话”分支，点击后闪现欢迎屏且历史不渲染（真网络延迟下
+     概率明显更高）。处理：点击立即盖品牌遮罩（与首帧引导同款），随后
+     以 100ms 粒度监听结果——历史 steps 渲染 = 成功，摘除遮罩；/thread/*
+     上出现欢迎屏 = 竞态失败，立即整页导航重试（遮罩无缝衔接新页面的
+     首帧引导，无闪屏）。 */
+  let threadSwitchWatch = 0;
+  function showSwitchMask() {
+    let mask = document.getElementById("eg-thread-loading");
+    if (!mask) {
+      mask = document.createElement("div");
+      mask.id = "eg-thread-loading";
+      mask.innerHTML =
+        '<div class="eg-thread-loading-inner">' +
+        '<img class="eg-boot-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">' +
+        '<img class="eg-boot-logo-light" src="/public/brand-logo-light.png" alt="">' +
+        '<div class="eg-boot-spinner"></div>' +
+        '<div class="eg-boot-text">正在打开会话…</div>' +
+        "</div>";
+      document.documentElement.appendChild(mask);
+    }
+    return mask;
+  }
   document.addEventListener(
     "click",
     (event) => {
@@ -1027,9 +1046,37 @@
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = event.target?.closest?.('a[href^="/thread/"]');
       if (!link || !link.href) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      location.assign(link.href);
+      const target = new URL(link.href, location.href).pathname;
+      if (location.pathname === target) return;
+      const mask = showSwitchMask();
+      clearInterval(threadSwitchWatch);
+      const startedAt = performance.now();
+      threadSwitchWatch = setInterval(() => {
+        if (location.pathname !== target) {
+          clearInterval(threadSwitchWatch);
+          return;
+        }
+        if (document.querySelector("[data-step-type]")) {
+          // 目标线程已渲染：原生切换成功，摘除遮罩。
+          clearInterval(threadSwitchWatch);
+          mask.classList.add("eg-thread-loading-done");
+          setTimeout(() => mask.remove(), 240);
+          return;
+        }
+        if (
+          document.getElementById("welcome-screen") &&
+          performance.now() - startedAt > 350
+        ) {
+          // 竞态失败（服务端走了新对话分支）：整页导航重试；遮罩留在
+          // 原文档，新页面的首帧引导脚本会创建同款遮罩无缝衔接。
+          clearInterval(threadSwitchWatch);
+          location.assign(location.href);
+        }
+        if (performance.now() - startedAt > 5000) {
+          clearInterval(threadSwitchWatch);
+          removeThreadLoadingMask();
+        }
+      }, 100);
     },
     true
   );
