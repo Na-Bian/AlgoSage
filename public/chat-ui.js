@@ -1037,17 +1037,14 @@
   function removeThreadLoadingMask() {
     document.getElementById("eg-thread-loading")?.remove();
   }
-  if (location.pathname.startsWith("/thread/")) {
-    const mask = document.createElement("div");
-    mask.id = "eg-thread-loading";
-    mask.innerHTML =
-      '<div class="eg-thread-loading-inner"><div class="eg-spinner"></div><span>正在打开会话…</span></div>';
-    document.documentElement.appendChild(mask);
-    // 首条消息渲染即移除；8 秒兜底防止极端情况下遮罩卡死。
+  // 遮罩由 run_app.py 注入的首帧引导脚本提前创建（品牌样式随主题）；
+  // 这里只负责接管移除：内容渲染即淡出，5 秒兜底防卡死。
+  const earlyMask = document.getElementById("eg-thread-loading");
+  if (earlyMask) {
     const maskObserver = new MutationObserver(() => {
-      if (document.querySelector("#messages, [data-step-type], main [class*='message']")) {
+      if (document.querySelector("[data-step-type]")) {
         maskObserver.disconnect();
-        mask.classList.add("eg-thread-loading-done");
+        earlyMask.classList.add("eg-thread-loading-done");
         setTimeout(removeThreadLoadingMask, 220);
       }
     });
@@ -1055,6 +1052,6 @@
     setTimeout(() => {
       maskObserver.disconnect();
       removeThreadLoadingMask();
-    }, 3000);
+    }, 5000);
   }
 })();

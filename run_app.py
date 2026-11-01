@@ -33,6 +33,75 @@ logging.basicConfig(
 )
 
 
+# 应用外壳（/ 与 /thread/*）的首帧引导片段：在浏览器第一次绘制前完成
+# ① 主题 class（深色模式不再闪白）② /thread/* 的品牌加载遮罩。样式必须
+# 内联——外部 CSS 到达晚于首帧。遮罩由 chat-ui.js 在内容渲染后接管移除。
+APP_SHELL_BOOT_SNIPPET = """
+    <style id="eg-early-boot-style">
+      #eg-thread-loading {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background: #ffffff;
+        transition: opacity 200ms ease;
+      }
+      html.dark #eg-thread-loading { background: #0e1320; }
+      #eg-thread-loading.eg-thread-loading-done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .eg-boot-logo-light, .eg-boot-logo-dark { display: none; width: 132px; }
+      :not(.dark) > #eg-thread-loading .eg-boot-logo-dark { display: block; }
+      html.dark #eg-thread-loading .eg-boot-logo-light { display: block; }
+      .eg-thread-loading-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+      }
+      .eg-boot-spinner {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 3px solid rgba(121, 61, 245, .22);
+        border-top-color: #793df5;
+        animation: eg-boot-spin 0.8s linear infinite;
+      }
+      .eg-boot-text {
+        color: #5b6472;
+        font: 500 14px/1 Inter, system-ui, sans-serif;
+      }
+      html.dark .eg-boot-text { color: #8b93a1; }
+      @keyframes eg-boot-spin { to { transform: rotate(360deg); } }
+    </style>
+    <script id="eg-early-boot-script">
+      (function () {
+        try {
+          var theme = localStorage.getItem("vite-ui-theme") || "system";
+          var dark =
+            theme === "dark" ||
+            (theme !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {}
+        if (location.pathname.indexOf("/thread/") !== 0) return;
+        var mask = document.createElement("div");
+        mask.id = "eg-thread-loading";
+        mask.innerHTML =
+          '<div class="eg-thread-loading-inner">' +
+          '<img class="eg-boot-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">' +
+          '<img class="eg-boot-logo-light" src="/public/brand-logo-light.png" alt="">' +
+          '<div class="eg-boot-spinner"></div>' +
+          '<div class="eg-boot-text">正在打开会话…</div>' +
+          "</div>";
+        (document.body || document.documentElement).appendChild(mask);
+      })();
+    </script>
+"""
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="AlgoSage Chainlit launcher (no nest_asyncio)"
@@ -130,6 +199,32 @@ def main() -> None:
         return response
 
     app.add_middleware(BaseHTTPMiddleware, dispatch=html_no_cache)
+
+    async def inject_app_shell_boot(request, call_next):
+        # 应用外壳首帧引导：主题 class 与 /thread/* 品牌遮罩必须在浏览器第
+        # 一次绘制前就位——外部 CSS/JS 的到达晚于首帧，深色模式下会先闪白。
+        # 仅缓冲 / 与 /thread/* 的 HTML（体量 <3KB），其余请求直通。
+        path = request.url.path
+        if path != "/" and not path.startswith("/thread/"):
+            return await call_next(request)
+        response = await call_next(request)
+        if not response.headers.get("content-type", "").startswith("text/html"):
+            return response
+        body = b""
+        async for chunk in response.body_iterator:
+            body += chunk
+        html = body.decode("utf-8", "ignore")
+        if "<head>" in html and "eg-early-boot-script" not in html:
+            html = html.replace("<head>", "<head>" + APP_SHELL_BOOT_SNIPPET, 1)
+        from starlette.responses import HTMLResponse
+
+        return HTMLResponse(
+            html,
+            status_code=response.status_code,
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    app.add_middleware(BaseHTTPMiddleware, dispatch=inject_app_shell_boot)
 
     uvicorn.run(
         app,
