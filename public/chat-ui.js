@@ -1032,7 +1032,13 @@
       const target = new URL(link.href, location.href).pathname;
       if (location.pathname === target) return;
       try {
+        // 先推地址栏并派发 popstate，让 React Router 在 Chainlit 处理点击
+        // 之前就完成路由切换——此后重连握手才会带上目标 threadId，服务端
+        // （跨线程恢复拒绝补丁）走正常 on_chat_resume。只改 URL 不通知
+        // Router 是不够的：v6 不监听外来 pushState，auth 里 threadId 仍为
+        // 空，竞态照输，只能靠整页兜底（表现为闪一下新建对话页）。
         history.pushState(history.state, "", link.href);
+        window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
       } catch (_) {
         return;
       }
