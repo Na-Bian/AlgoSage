@@ -41,6 +41,7 @@ from algosage.invocation import (
 )
 from algosage.runtime_paths import runtime_path
 from algosage.attachments import prepare_attachment_elements
+from algosage.leakage_guard import fallback_texts
 from algosage.runtime_security import configure_auth_cookies, install_origin_guard
 from algosage.state_store import UsageLimitExceeded
 
@@ -1734,7 +1735,10 @@ async def _cleanup_failed_turn_steps(stream_out: dict) -> None:
     if not steps:
         return
     data_layer = get_chat_store()
-    print(f"[eg-clean] cleanup start steps={len(steps)} dl={type(data_layer).__name__}", flush=True)
+    logger.info(
+        "Failed-turn cleanup removing steps=%s",
+        [getattr(s, "id", "?") for s in steps],
+    )
     for step in steps:
         try:
             step_dict = step.to_dict()
@@ -1746,9 +1750,11 @@ async def _cleanup_failed_turn_steps(stream_out: dict) -> None:
             pass
         try:
             await data_layer.delete_step(step_dict["id"])
-            print(f"[eg-clean] deleted {step_dict['id']}", flush=True)
-        except Exception as e:
-            print(f"[eg-clean] delete failed {step_dict.get('id')}: {type(e).__name__} {e}", flush=True)
+        except Exception as error:
+            logger.info(
+                "Failed-turn cleanup store delete skipped id=%s error=%s",
+                step_dict.get("id"), type(error).__name__,
+            )
     stream_out["turn_steps"] = []
     stream_out.pop("reasoning_step", None)
 
