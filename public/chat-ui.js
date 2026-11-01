@@ -223,18 +223,23 @@
 
     const refsChanged = !sidebarRefs || !sidebarRefs.trigger.isConnected
       || !sidebarRefs.search.isConnected || !sidebarRefs.new.isConnected;
-    if (refsChanged) {
-      const collapseControl = makeIconControl(
-      !mobile && group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏",
-      SIDEBAR_ICONS.panel,
-      () => sidebarRefs?.trigger.click()
-    );
-    sidebarRefs = {
-      trigger: sourceTrigger,
-      search: sourceSearch,
-      new: sourceNew,
-      collapseControl,
-    };
+    // 呈现层可能被 React 重渲染单独移除（弹窗关闭等），与源按钮是否变化
+    // 无关——两种情况都要重建。
+    const presentationMissing = !header.querySelector(".eg-sidebar-presentation");
+    if (refsChanged || presentationMissing) {
+      if (refsChanged) {
+        const collapseControl = makeIconControl(
+        !mobile && group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏",
+        SIDEBAR_ICONS.panel,
+        () => sidebarRefs?.trigger.click()
+      );
+      sidebarRefs = {
+        trigger: sourceTrigger,
+        search: sourceSearch,
+        new: sourceNew,
+        collapseControl,
+      };
+      }
       // Native header controls stay in React's tree, but are represented by
       // themed controls. Clicks are delegated back to the source buttons.
       header.classList.add("eg-original-sidebar-header");
