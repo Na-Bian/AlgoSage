@@ -1058,6 +1058,23 @@
     attributes: true,
     attributeFilter: ["data-state", "class"],
   });
+  // 弹窗关闭等触发的 React 重渲染会移除自定义侧栏呈现层（品牌 logo、
+  // 图标与「新建对话」）。rAF 去抖的恢复与重渲染相位不对齐时会绘制出
+  // 空窗（侧栏闪成裸列表）——在同一 mutation 批次里同步重建，浏览器
+  // 不会绘制中间态。
+  new MutationObserver(function () {
+    const sidebar = document.querySelector('[data-sidebar="sidebar"]');
+    const header = sidebar?.querySelector(
+      '[data-sidebar="header"] > .flex.items-center.justify-between'
+    );
+    if (
+      header &&
+      header.querySelector("#sidebar-trigger-button") &&
+      !header.querySelector(".eg-sidebar-presentation")
+    ) {
+      enhanceSidebar();
+    }
+  }).observe(document.body, { childList: true, subtree: true });
 
   /* 会话切换走整页导航：Chainlit 的 SPA 内切换存在无法在前端修复的时序
      缺陷——“当前线程”状态在重连之后才更新，重连握手带着旧线程 id，会话
