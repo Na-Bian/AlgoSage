@@ -1851,11 +1851,14 @@ async def on_message(message: cl.Message) -> None:
                 "Live session refresh skipped error_type=%s", type(error).__name__
             )
     meta = TutorService.display_metadata(response)
-    async with cl.Step(
-        name="security-audit-policy", type="run", icon="shield-check"
-    ) as step:
-        step.output = render_audit_markdown(meta, latency_ms)
-        stream_out.setdefault("turn_steps", []).append(step)
+    try:
+        async with cl.Step(
+            name="security-audit-policy", type="run", icon="shield-check"
+        ) as step:
+            step.output = render_audit_markdown(meta, latency_ms)
+            stream_out.setdefault("turn_steps", []).append(step)
+    except Exception:
+        logger.exception("AUDIT-STEP-BLOCK failed")
     logger.info(
         "Fallback verdict answer_repr=%.60r match=%s",
         response.answer,
