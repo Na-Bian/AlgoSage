@@ -2309,3 +2309,38 @@ main [data-step-type="user_message"] #edit-chat-input {
   border-radius: 0;
   box-shadow: none;
 }
+
+/* ---------- 会话切换加载遮罩：盖住整页导航后恢复完成前的欢迎屏 ---------- */
+#eg-thread-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  background: hsl(var(--background));
+  opacity: 1;
+  transition: opacity 200ms ease;
+}
+#eg-thread-loading.eg-thread-loading-done {
+  opacity: 0;
+  pointer-events: none;
+}
+.eg-thread-loading-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: hsl(var(--muted-foreground));
+  font-size: 14px;
+}
+.eg-spinner {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 3px solid hsl(var(--border));
+  border-top-color: hsl(var(--foreground));
+  animation: eg-spin 0.8s linear infinite;
+}
+@keyframes eg-spin {
+  to { transform: rotate(360deg); }
+}

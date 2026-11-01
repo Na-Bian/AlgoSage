@@ -1015,13 +1015,11 @@
     attributeFilter: ["data-state", "class"],
   });
 
-  /* 会话切换竞态兜底：Chainlit 在 SPA 内切换线程时先 clear_session 再
-     立即重连，两个 socket 的事件可能乱序到达——服务端把重连恢复到旧会话
-     （新线程 id 被丢弃），于是走“新对话”分支而不恢复历史，界面空白。
-     处理：点击瞬间先把地址栏更新为目标线程（让重连握手尽量带上正确
-     threadId），保留 SPA 原生切换；若竞态仍然输掉（2.5 秒内目标线程没有
-     渲染出任何消息且不在生成中），再退回整页导航强制恢复。 */
-  let threadSwitchTimer = 0;
+  /* 会话切换走整页导航：Chainlit 的 SPA 内切换有无法在前端修复的时序
+     缺陷——“当前线程”状态在重连之后才更新，重连握手永远带着旧线程 id，
+     服务端会话恢复必然竞态（随机空白）。整页导航让旧 socket 先断开、新
+     连接从 URL 拿到目标线程走完整的 on_chat_resume。闪现的欢迎屏用加载
+     遮罩盖住：/thread/* 页面在首批消息渲染前显示遮罩，渲染后淡出。 */
   document.addEventListener(
     "click",
     (event) => {
@@ -1029,28 +1027,34 @@
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = event.target?.closest?.('a[href^="/thread/"]');
       if (!link || !link.href) return;
-      const target = new URL(link.href, location.href).pathname;
-      if (location.pathname === target) return;
-      try {
-        // 先推地址栏并派发 popstate，让 React Router 在 Chainlit 处理点击
-        // 之前就完成路由切换——此后重连握手才会带上目标 threadId，服务端
-        // （跨线程恢复拒绝补丁）走正常 on_chat_resume。只改 URL 不通知
-        // Router 是不够的：v6 不监听外来 pushState，auth 里 threadId 仍为
-        // 空，竞态照输，只能靠整页兜底（表现为闪一下新建对话页）。
-        history.pushState(history.state, "", link.href);
-        window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
-      } catch (_) {
-        return;
-      }
-      clearTimeout(threadSwitchTimer);
-      threadSwitchTimer = setTimeout(() => {
-        // 生成中（发送键被停止键替代）不算失败，等回合结束后再判定。
-        if (document.getElementById("chat-submit")) return;
-        if (location.pathname !== target) return;
-        if (document.querySelectorAll("[data-step-type]").length > 0) return;
-        location.assign(target);
-      }, 2500);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      location.assign(link.href);
     },
     true
   );
+
+  function removeThreadLoadingMask() {
+    document.getElementById("eg-thread-loading")?.remove();
+  }
+  if (location.pathname.startsWith("/thread/")) {
+    const mask = document.createElement("div");
+    mask.id = "eg-thread-loading";
+    mask.innerHTML =
+      '<div class="eg-thread-loading-inner"><div class="eg-spinner"></div><span>正在打开会话…</span></div>';
+    document.documentElement.appendChild(mask);
+    // 首条消息渲染即移除；8 秒兜底防止极端情况下遮罩卡死。
+    const maskObserver = new MutationObserver(() => {
+      if (document.querySelector("#messages, [data-step-type], main [class*='message']")) {
+        maskObserver.disconnect();
+        mask.classList.add("eg-thread-loading-done");
+        setTimeout(removeThreadLoadingMask, 220);
+      }
+    });
+    maskObserver.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => {
+      maskObserver.disconnect();
+      removeThreadLoadingMask();
+    }, 3000);
+  }
 })();
