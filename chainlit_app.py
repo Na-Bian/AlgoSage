@@ -1856,6 +1856,11 @@ async def on_message(message: cl.Message) -> None:
     ) as step:
         step.output = render_audit_markdown(meta, latency_ms)
         stream_out.setdefault("turn_steps", []).append(step)
+    logger.info(
+        "Fallback verdict answer_repr=%.60r match=%s",
+        response.answer,
+        response.answer in fallback_texts(),
+    )
     if response.answer in fallback_texts():
         # 送达的是兜底文案 = 失败回合：移除本回合的过程步骤（提示消息保留）。
         await _cleanup_failed_turn_steps(stream_out)
