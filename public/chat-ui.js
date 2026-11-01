@@ -227,12 +227,12 @@
     // 无关——两种情况都要重建。
     const presentationMissing = !header.querySelector(".eg-sidebar-presentation");
     if (refsChanged || presentationMissing) {
+      const collapseControl = makeIconControl(
+      !mobile && group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏",
+      SIDEBAR_ICONS.panel,
+      () => sidebarRefs?.trigger.click()
+    );
       if (refsChanged) {
-        const collapseControl = makeIconControl(
-        !mobile && group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏",
-        SIDEBAR_ICONS.panel,
-        () => sidebarRefs?.trigger.click()
-      );
       sidebarRefs = {
         trigger: sourceTrigger,
         search: sourceSearch,
