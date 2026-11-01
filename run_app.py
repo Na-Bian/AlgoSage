@@ -207,15 +207,36 @@ def main() -> None:
         path = request.url.path
         if path != "/" and not path.startswith("/thread/"):
             return await call_next(request)
+        # 剥离 Accept-Encoding：Chainlit 内层的 GZip 中间件会压缩响应体，
+        # 压缩流无法按明文注入（也不会含 <head> 标记）。无该头则下游不压缩。
+        request.scope["headers"] = [
+            (k, v)
+            for k, v in request.scope["headers"]
+            if k.lower() != b"accept-encoding"
+        ]
         response = await call_next(request)
-        if not response.headers.get("content-type", "").startswith("text/html"):
+        if (
+            not response.headers.get("content-type", "").startswith("text/html")
+            or response.headers.get("content-encoding")
+        ):
             return response
         body = b""
         async for chunk in response.body_iterator:
             body += chunk
         html = body.decode("utf-8", "ignore")
-        if "<head>" in html and "eg-early-boot-script" not in html:
-            html = html.replace("<head>", "<head>" + APP_SHELL_BOOT_SNIPPET, 1)
+        if "<head>" not in html or "eg-early-boot-script" in html:
+            # 注入点缺失或已注入：原样回放，避免重建损坏未压缩流。
+            from starlette.responses import Response as StarletteResponse
+
+            return StarletteResponse(
+                content=body,
+                status_code=response.status_code,
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Content-Type": "text/html; charset=utf-8",
+                },
+            )
+        html = html.replace("<head>", "<head>" + APP_SHELL_BOOT_SNIPPET, 1)
         from starlette.responses import HTMLResponse
 
         return HTMLResponse(
