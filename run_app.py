@@ -53,8 +53,8 @@ APP_SHELL_BOOT_SNIPPET = """
         pointer-events: none;
       }
       .eg-boot-logo-light, .eg-boot-logo-dark { display: none; width: 132px; }
-      :not(.dark) > #eg-thread-loading .eg-boot-logo-dark { display: block; }
-      html.dark #eg-thread-loading .eg-boot-logo-light { display: block; }
+      :not(.dark) > #eg-thread-loading .eg-boot-logo-light { display: block; }
+      html.dark #eg-thread-loading .eg-boot-logo-dark { display: block; }
       .eg-thread-loading-inner {
         display: flex;
         flex-direction: column;
