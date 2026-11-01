@@ -1722,6 +1722,35 @@ async def _mask_or_reply(stream_out: dict, reply, content: str) -> None:
     await reply.send()
 
 
+async def _cleanup_failed_turn_steps(stream_out: dict) -> None:
+    """失败回合只保留提示消息：本回合创建的过程步骤（生成与安全审核、
+    思考过程、安全审计与策略）从界面与数据库一并移除——没有回答的孤儿
+    芯片只会让学生困惑。删除失败不影响主流程。"""
+    steps = []
+    reasoning = stream_out.get("reasoning_step")
+    if reasoning is not None:
+        steps.append(reasoning)
+    steps.extend(s for s in stream_out.get("turn_steps", []) if s is not None)
+    if not steps:
+        return
+    data_layer = get_chat_store()
+    for step in steps:
+        try:
+            step_dict = step.to_dict()
+        except Exception:
+            continue
+        try:
+            await cl.context.emitter.delete_step(step_dict)
+        except Exception:
+            pass
+        try:
+            await data_layer.delete_step(step_dict["id"])
+        except Exception:
+            pass
+    stream_out["turn_steps"] = []
+    stream_out.pop("reasoning_step", None)
+
+
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
     service = get_service()
@@ -1760,6 +1789,7 @@ async def on_message(message: cl.Message) -> None:
         return
     except UsageLimitExceeded as error:
         await _mask_or_reply(stream_out, reply, f"⚠️ {error}")
+        await _cleanup_failed_turn_steps(stream_out)
         return
     except Exception as error:  # noqa: BLE001 - 前端不向学生暴露堆栈细节
         logger.exception("处理消息失败 session=%s", cl.context.session.id)
@@ -1768,6 +1798,7 @@ async def on_message(message: cl.Message) -> None:
             reply,
             f"⚠️ 请求未完成（{type(error).__name__}）。请稍后重试或简化问题。",
         )
+        await _cleanup_failed_turn_steps(stream_out)
         return
 
     latency_ms = int((time.perf_counter() - started) * 1000)
@@ -1822,3 +1853,7 @@ async def on_message(message: cl.Message) -> None:
         name="security-audit-policy", type="run", icon="shield-check"
     ) as step:
         step.output = render_audit_markdown(meta, latency_ms)
+        stream_out.setdefault("turn_steps", []).append(step)
+    if response.answer in fallback_texts():
+        # 送达的是兜底文案 = 失败回合：移除本回合的过程步骤（提示消息保留）。
+        await _cleanup_failed_turn_steps(stream_out)

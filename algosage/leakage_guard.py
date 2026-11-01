@@ -166,6 +166,12 @@ def fallback_message(reason: str) -> str:
     return _FALLBACK_MESSAGES.get(reason, GENERIC_FALLBACK)
 
 
+def fallback_texts() -> frozenset[str]:
+    """All user-facing fallback texts; a delivered answer matching one of
+    them marks the turn as failed (process steps should not linger)."""
+    return frozenset(_FALLBACK_MESSAGES.values()) | {GENERIC_FALLBACK}
+
+
 class OutputGuardProtocol(Protocol):
     def review(
         self,
