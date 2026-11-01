@@ -1014,4 +1014,23 @@
     attributes: true,
     attributeFilter: ["data-state", "class"],
   });
+
+  /* 会话切换改走整页导航：Chainlit 在 SPA 内切换线程时先 clear_session 再
+     立即重连，两个 socket 的事件可能乱序到达——服务端把重连恢复到旧会话
+     （新线程 id 被丢弃），于是走“新对话”分支而不恢复历史，界面空白直到
+     下次刷新。整页导航让旧 socket 先断开、新连接带着目标线程 id 走完整
+     的 on_chat_resume，代价只是切换时多一次页面加载。 */
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target?.closest?.('a[href^="/thread/"]');
+      if (!link || !link.href) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      location.assign(link.href);
+    },
+    true
+  );
 })();
