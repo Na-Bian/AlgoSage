@@ -1739,6 +1739,8 @@ async def on_message(message: cl.Message) -> None:
             context_id(),
             principal_id=authenticated_principal_id(),
         )
+        # 回合开始时的连接 id：收尾时对比（见下方 socket id 变化检测）。
+        socket_at_start = getattr(cl.context.session, "socket_id", None)
         response = await run_turn(
             service,
             context,
