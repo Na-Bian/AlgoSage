@@ -863,13 +863,20 @@
 
   // Only the readme covers the app. The settings panel must leave navigation
   // available. Use the trigger's dialog ID instead of treating any h1 as readme.
+  // 关闭判定不能只看元素移除：Radix 关闭会先进入 data-state=closed 的退出
+  // 动画（dialog 仍在 DOM 数百毫秒），期间 eg-readme-open 若持续挂着，侧栏
+  // 呈现层一直隐藏——表现为关闭说明后侧栏闪成裸列表。改为「不可见即复位」，
+  // 侧栏在退出动画期间就恢复显示。
   function syncReadmeVisibility() {
-    const dialogId = document.getElementById("readme-button")?.getAttribute("aria-controls");
-    const dialog = dialogId && document.getElementById(dialogId);
-    document.body.classList.toggle(
-      "eg-readme-open",
-      !!dialog && dialog.getAttribute("role") === "dialog"
-    );
+    const btn = document.getElementById("readme-button");
+    const dialogId = btn?.getAttribute("aria-controls");
+    const dialog = dialogId ? document.getElementById(dialogId) : null;
+    const open =
+      !!dialog &&
+      dialog.getAttribute("role") === "dialog" &&
+      getComputedStyle(dialog).display !== "none" &&
+      dialog.getAttribute("data-state") !== "closed";
+    document.body.classList.toggle("eg-readme-open", open);
   }
   /* 思考过程步骤：跨容器移到正式回答上方。
      首个思考增量到达时页面可能仍在欢迎视图，思考 Step 会渲染进欢迎

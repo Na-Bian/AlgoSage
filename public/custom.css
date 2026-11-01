@@ -2266,11 +2266,11 @@ main .eg-reasoning-body::-webkit-scrollbar-track {
   font-style: normal;
 }
 
-/* Only readme hides navigation. The JS marker covers its closing animation;
-   the trigger state handles the opening frame without waiting for an observer. */
-body:has(#readme-button[aria-expanded="true"]) [data-sidebar="sidebar"] .eg-original-sidebar-header,
+/* Only readme hides navigation. The eg-readme-open class is driven by
+   syncReadmeVisibility, which resets as soon as the dialog leaves the
+   visible state (including the Radix closing animation) - do not gate on
+   the trigger's aria-expanded here, it lags the closing animation. */
 body.eg-readme-open [data-sidebar="sidebar"] .eg-original-sidebar-header,
-body:has(#readme-button[aria-expanded="true"]) #eg-collapsed-bar,
 body.eg-readme-open #eg-collapsed-bar {
   display: none;
 }
