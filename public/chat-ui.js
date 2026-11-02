@@ -1103,6 +1103,7 @@
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
+      syncRouteFlag();
       enhanceMobileHeader();
       enhanceSidebar();
       enhanceStepStatusIcons();
@@ -1113,6 +1114,18 @@
       syncReasoningPlacement();
     });
   }
+
+  // 路由标记：/thread/* 时隐藏欢迎屏（它只属于首页“新建对话”视图）。
+  // SPA 切换线程时 Chainlit 会先渲染欢迎屏再渲染历史（数据未到的骨架），
+  // 深色主题下表现为闪现大字欢迎屏——这里按路由隐藏。
+  function syncRouteFlag() {
+    document.body.classList.toggle(
+      "eg-in-thread",
+      location.pathname.startsWith("/thread/")
+    );
+  }
+  syncRouteFlag();
+  window.addEventListener("popstate", syncRouteFlag);
 
   scheduleEnhance();
   new MutationObserver(scheduleEnhance).observe(document.body, {

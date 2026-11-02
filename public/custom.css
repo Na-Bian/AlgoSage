@@ -2339,3 +2339,7 @@ main [data-step-type="user_message"] #edit-chat-input {
   font-size: 13px;
 }
 
+
+/* 线程视图不显示欢迎屏：SPA 切换会话时 Chainlit 先渲染欢迎骨架再渲染
+   历史（数据未到），闪现的大字欢迎屏观感突兀。欢迎屏只属于首页。 */
+body.eg-in-thread #welcome-screen { visibility: hidden; }
