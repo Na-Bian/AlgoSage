@@ -58,6 +58,19 @@ class ServiceContext:
     _budget: SafetyBudget | None = field(default=None, repr=False)
 
 
+def normalize_help_level_cap(value):
+    """学生等级上限归一化：auto/空/非法 → None（自动跟随策略）；1/2/3 → int。"""
+    if isinstance(value, str):
+        value = value.strip().lower()
+    if value in (None, "", "auto"):
+        return None
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return None
+    return value if value in (1, 2, 3) else None
+
+
 def normalize_model_params(
     params: dict, settings: Settings
 ) -> dict[str, float | int | str]:
@@ -90,12 +103,15 @@ def normalize_model_params(
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)
 
+    help_level_cap = normalize_help_level_cap(raw.get("help_level_cap"))
+
     return {
         "temperature": bounded_float("temperature", 0.7, 0.0, 2.0),
         "top_p": bounded_float("top_p", 0.95, 0.0, 1.0),
         "frequency_penalty": bounded_float("frequency_penalty", 0.0, 0.0, 2.0),
         "presence_penalty": bounded_float("presence_penalty", 0.0, 0.0, 2.0),
         "max_output_tokens": max_output,
+        "help_level_cap": help_level_cap,
         "enter_behavior": (
             enter_behavior if enter_behavior in {"enter", "ctrl_enter"} else "enter"
         ),
@@ -109,6 +125,10 @@ def normalize_model_params(
         # 输入区生成选项（深度思考 / 联网搜索）：随账号偏好保存并透传生成请求。
         "deep_think": optional_bool("deep_think", False),
         "web_search": optional_bool("web_search", False),
+        # 分级辅助的学生上限（None=自动跟随策略；1/2/3=收紧到该级）。
+        "help_level_cap": normalize_help_level_cap(
+            raw.get("help_level_cap")
+        ),
     }
 
 
@@ -455,6 +475,11 @@ class TutorService:
             attachments=tuple(attachments),
             deep_think=bool(context.model_params.get("deep_think")),
             web_search=bool(context.model_params.get("web_search")),
+            help_level_cap=(
+                int(context.model_params["help_level_cap"])
+                if context.model_params.get("help_level_cap") is not None
+                else None
+            ),
         )
         return self._selected_tutor(context).respond(
             request,

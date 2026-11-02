@@ -1024,6 +1024,7 @@ class ChatDataLayer(BaseDataLayer):
             "default_model_selection",
             "deep_think",
             "web_search",
+            "help_level_cap",
         }
         provider_list_keys = {"disabled_providers", "deleted_providers"}
         clean = {

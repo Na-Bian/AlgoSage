@@ -46,6 +46,9 @@ class TutorRequest:
     # 每次会话的生成选项（用户在输入区切换）：思考模式与联网搜索透传。
     deep_think: bool = False
     web_search: bool = False
+    # 分级辅助：学生自选的帮助等级上限（1=概念 2=方向 3=局部诊断；None=自动）。
+    # 只能收紧策略判定（生效等级 = min(策略, 上限)），永不放宽。
+    help_level_cap: Optional[int] = None
 
     @property
     def attachment_text(self) -> str:

@@ -942,6 +942,17 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             if isinstance(payload, dict) and key in payload:
                 preferences[key] = bool(payload[key])
                 changed[key] = preferences[key]
+        # 分级辅助的学生上限："auto" 或 1/2/3；非法值拒绝。
+        if isinstance(payload, dict) and "help_level_cap" in payload:
+            cap = payload["help_level_cap"]
+            if isinstance(cap, str) and cap.strip().lower() == "auto":
+                cap = None
+            elif cap in (1, 2, 3, "1", "2", "3"):
+                cap = int(cap)
+            else:
+                raise HTTPException(status_code=400, detail="Invalid help level")
+            preferences["help_level_cap"] = cap
+            changed["help_level_cap"] = cap
         if not changed:
             raise HTTPException(status_code=400, detail="No options provided")
         await get_chat_store().save_user_app_preferences(
@@ -1142,6 +1153,12 @@ def _normalize_ui_settings(settings: dict, current: dict | None = None) -> dict:
             normalized[key] = bool(
                 normalized[key] if key in normalized else current[key]
             )
+    if "help_level_cap" in normalized or "help_level_cap" in current:
+        cap = normalized.get("help_level_cap", current.get("help_level_cap"))
+        if cap in (1, 2, 3):
+            normalized["help_level_cap"] = int(cap)
+        else:
+            normalized["help_level_cap"] = None
     for key in (
         "temperature",
         "frequency_penalty",

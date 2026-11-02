@@ -203,6 +203,15 @@ class AlgoSageTutor:
                     adjustment.level,
                     policy.reason + "；" + adjustment.reason,
                 )
+        # 分级辅助的学生上限：只能收紧（生效 = min(策略, 上限)），永不放宽；
+        # 越狱拒绝（0 级）不适用。上限进入审计理由，前端芯片可见。
+        cap = request.help_level_cap
+        if cap is not None and policy.max_help_level > cap:
+            policy = PolicyDecision(
+                result.intent,
+                cap,
+                policy.reason + f"；学生等级上限 L{cap}",
+            )
         # 越狱/提示注入在任何模式下都在生成前拦截：不请求模型、不产生候选回答。
         if result.intent == Intent.JAILBREAK:
             text = (
