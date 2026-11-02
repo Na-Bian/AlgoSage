@@ -1519,6 +1519,11 @@ def _make_delta_sink(context, stream_out):
     event loop; the audited answer may still replace everything streamed."""
     loop = asyncio.get_running_loop()
 
+    # 思考过程更新节流：step.update 是全量重发，思考越长每次传输与前端
+    # 重渲染代价越大（O(n²)），按时间限流到 ~600ms 一次；回合结束时有
+    # 最终补发，不丢尾部内容。
+    REASONING_UPDATE_INTERVAL = 0.6
+
     def sink(text_so_far, reasoning_so_far):
         async def apply():
             async with stream_out["ui_lock"]:
@@ -1527,10 +1532,17 @@ def _make_delta_sink(context, stream_out):
                     step = cl.Step(name="model-reasoning", type="run", icon="brain")
                     await step.send()
                     stream_out["reasoning_step"] = step
-                if step is not None and reasoning_so_far != stream_out.get("reasoning", ""):
+                now = time.monotonic()
+                last = stream_out.get("reasoning_last_update", 0.0)
+                if (
+                    step is not None
+                    and reasoning_so_far != stream_out.get("reasoning", "")
+                    and now - last >= REASONING_UPDATE_INTERVAL
+                ):
                     step.output = normalize_math_delimiters(reasoning_so_far)
                     await step.update()
                     stream_out["reasoning"] = reasoning_so_far
+                    stream_out["reasoning_last_update"] = now
                 reply = stream_out.get("reply")
                 if reply is None:
                     reply = cl.Message(content="")
@@ -1949,6 +1961,17 @@ async def on_message(message: cl.Message) -> None:
 
     latency_ms = int((time.perf_counter() - started) * 1000)
     delivery_started = time.perf_counter()
+    # 思考过程的最终补发：节流可能留下未推送的尾部，这里以完整推理收口
+    # （考试模式下 pipeline 不返回 reasoning，跳过即可）。
+    reasoning_step = stream_out.get("reasoning_step")
+    if reasoning_step is not None:
+        final_reasoning = normalize_math_delimiters(
+            (getattr(response, "reasoning", "") or "").strip()
+        )
+        if final_reasoning and final_reasoning != stream_out.get("reasoning", ""):
+            reasoning_step.output = final_reasoning
+            await reasoning_step.update()
+            stream_out["reasoning"] = final_reasoning
     if streamed_reply is not None:
         # 真流式路径：内容已在生成过程中直播；审核后不一致的部分
         # 已在 run_turn 里整体替换为最终答案，这里把最终内容（含

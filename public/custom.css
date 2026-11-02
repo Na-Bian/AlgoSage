@@ -2226,6 +2226,10 @@ main div:has(> #messages) { overflow: visible; }
 /* 思考正文：限高、独立滚动。Chainlit 的折叠包装层自带 overflow-hidden
    工具类，特异性同为单类名、且可能排在自定义样式之后——用 main 前缀
    提升特异性并 !important 兜底，保证限高与滚动不被覆盖。 */
+/* 思考正文限高不依赖 JS 挂类名的时序：结构性选择器让思考步骤的后继
+   元素在 DOM 出现的瞬间就被限高，避免思考期间页面高度瞬间膨胀、用户
+   被滚动到内容之外的空白区域。 */
+main .eg-reasoning-step + *,
 main .eg-reasoning-body {
   opacity: .72;
   font-size: .88em;
