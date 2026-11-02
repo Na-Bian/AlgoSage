@@ -19,6 +19,7 @@
   ];
   var levelCap = null; // null = 尚未载入；"auto"/1/2/3
   var levelMenu = null;
+  var levelPillEl = null;
 
   function levelLabel(value) {
     for (var i = 0; i < LEVELS.length; i++) {
@@ -28,10 +29,19 @@
   }
 
   function closeLevelMenu() {
-    if (levelMenu) {
-      levelMenu.remove();
-      levelMenu = null;
-    }
+    if (!levelMenu) return;
+    var closing = levelMenu;
+    levelMenu = null;
+    if (levelPillEl) levelPillEl.setAttribute("aria-expanded", "false");
+    // 与模型菜单一致：播放退出动画后再移除。
+    var duration = 0;
+    try {
+      duration = parseFloat(getComputedStyle(closing).animationDuration) || 0;
+      closing.classList.add("eg-menu-closing");
+    } catch (_) {}
+    var remove = function () { closing.remove(); };
+    if (duration > 0) setTimeout(remove, duration * 1000 + 30);
+    else remove();
   }
 
   function toggleLevelMenu(pill) {
@@ -39,32 +49,46 @@
       closeLevelMenu();
       return;
     }
+    levelPillEl = pill;
     var menu = document.createElement("div");
-    menu.className = "eg-level-menu";
+    menu.className = "eg-model-menu";
+    menu.setAttribute("role", "listbox");
+    menu.setAttribute("aria-label", "辅助等级");
+    menu.innerHTML =
+      '<div class="eg-model-menu-header"><div class="eg-model-menu-title">辅助等级</div></div>';
+    var list = document.createElement("div");
+    list.className = "eg-model-list";
     LEVELS.forEach(function (level) {
-      var item = document.createElement("button");
-      item.type = "button";
-      item.className = "eg-level-item";
-      if (String(level.value) === String(levelCap)) {
-        item.classList.add("eg-level-item-active");
-      }
-      item.innerHTML =
-        '<span>' + level.label + "</span>" +
-        '<span class="eg-level-check">' +
-        (String(level.value) === String(levelCap) ? "✓" : "") +
-        "</span>";
-      item.addEventListener("click", function (event) {
+      var option = document.createElement("button");
+      option.type = "button";
+      option.className = "eg-model-option";
+      option.setAttribute("role", "option");
+      var selected = String(level.value) === String(levelCap);
+      option.setAttribute("aria-selected", String(selected));
+      option.innerHTML =
+        '<span class="eg-model-option-name">' + level.label + "</span>" +
+        '<span class="eg-model-option-state">' + (selected ? "✓" : "") + "</span>";
+      option.addEventListener("click", function (event) {
         event.stopPropagation();
         setLevel(level.value);
         closeLevelMenu();
       });
-      menu.append(item);
+      list.append(option);
     });
+    menu.append(list);
     document.body.append(menu);
+    // 定位与模型菜单同款：锚点上方 8px，放不下落到下方。
     var rect = pill.getBoundingClientRect();
-    menu.style.left = Math.max(8, rect.left) + "px";
-    menu.style.bottom = window.innerHeight - rect.top + 8 + "px";
+    var width = Math.max(220, Math.min(300, window.innerWidth - 24));
+    menu.style.maxHeight = Math.min(320, window.innerHeight - 24) + "px";
+    var left = Math.min(Math.max(12, rect.left), window.innerWidth - width - 12);
+    var top = rect.top - (menu.offsetHeight || 200) - 8;
+    if (top < 12) top = Math.min(rect.bottom + 8, window.innerHeight - 220);
+    menu.style.left = Math.round(left) + "px";
+    menu.style.top = Math.round(Math.max(12, top)) + "px";
+    menu.style.width = Math.round(width) + "px";
     levelMenu = menu;
+    pill.setAttribute("aria-expanded", "true");
     setTimeout(function () {
       document.addEventListener("click", closeLevelMenu, { once: true });
     }, 0);
