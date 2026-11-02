@@ -2003,10 +2003,11 @@ async def on_message(message: cl.Message) -> None:
             stream_out.setdefault("turn_steps", []).append(step)
     except Exception:
         logger.exception("AUDIT-STEP-BLOCK failed")
+    # 只记录判定结果与答案长度：日志里不落学生内容。
     logger.info(
-        "Fallback verdict answer_repr=%.60r match=%s",
-        response.answer,
+        "Fallback verdict match=%s answer_len=%s",
         response.answer in fallback_texts(),
+        len(response.answer),
     )
     if response.answer in fallback_texts():
         # 送达的是兜底文案 = 失败回合：移除本回合的过程步骤（提示消息保留）。
