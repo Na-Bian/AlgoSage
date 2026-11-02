@@ -2335,6 +2335,3 @@ main [data-step-type="user_message"] #edit-chat-input {
   font-size: 13px;
 }
 
-
-/* 辅助等级 pill（与模型 pill 同款轮廓）的下拉箭头。 */
-.eg-level-pill .eg-level-chevron { width: 14px; height: 14px; }

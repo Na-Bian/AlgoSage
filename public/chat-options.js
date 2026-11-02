@@ -95,16 +95,16 @@
   }
 
   function levelPill() {
+    // 与模型选择控件同款：无框、无阴影，纯文字 + 下拉箭头，悬停浅底。
     var pill = document.createElement("button");
     pill.type = "button";
-    pill.className = "eg-option-pill eg-level-pill";
+    pill.className = "eg-model-button eg-level-pill";
     pill.dataset.option = "help_level_cap";
+    pill.setAttribute("aria-haspopup", "listbox");
+    pill.setAttribute("aria-expanded", "false");
     pill.innerHTML =
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">' +
-      '<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>' +
-      '<circle cx="12" cy="12" r="3.2"/>' +
-      "</svg><span>辅助等级：自动</span>" +
-      '<svg class="eg-level-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+      '<span class="eg-model-name">辅助等级</span>' +
+      '<svg class="eg-model-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
     pill.addEventListener("click", function (event) {
       event.stopPropagation();
       toggleLevelMenu(pill);
@@ -114,12 +114,8 @@
   }
 
   function updateLevelPill(pill) {
-    var span = pill.querySelector("span");
-    var shown = levelCap === null ? "自动" : levelLabel(levelCap);
-    if (span) span.textContent = shown;
-    var active = levelCap !== null && levelCap !== "auto";
-    pill.classList.toggle("eg-option-pill-on", active);
-    pill.setAttribute("aria-pressed", String(active));
+    var span = pill.querySelector(".eg-model-name");
+    if (span) span.textContent = "辅助等级：" + (levelCap === null ? "自动" : levelLabel(levelCap));
   }
 
   function currentThreadId() {
