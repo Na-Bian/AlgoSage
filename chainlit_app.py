@@ -158,6 +158,18 @@ async def restore_conversation(service):
             await _select_account_default(service, context, principal)
         preferences = await get_chat_store().load_user_app_preferences(principal)
         await asyncio.to_thread(service.set_model_params, context, preferences)
+        # 当前对话的辅助等级覆盖（composer 里设置，仅限本对话）优先于账号默认。
+        try:
+            thread_settings = await get_chat_store().load_thread_settings(
+                context_id(), principal
+            )
+            override = (thread_settings.get("model_params") or {}).get(
+                "help_level_cap"
+            )
+            if override is not None:
+                context.model_params["help_level_cap"] = override
+        except Exception:
+            pass  # 线程设置缺失/非本人：保留账号默认
     return context
 
 
@@ -928,6 +940,30 @@ try:  # pragma: no cover - exercised through the running Chainlit server
         )
         return {"success": True, "preferences": saved}
 
+    @preferences_router.get("/chat/options", include_in_schema=False)
+    async def get_chat_options(thread_id: str = "", current_user: UserParam = None):
+        """输入区 pill 的有效辅助等级：当前对话覆盖优先，否则账号默认。"""
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        account = (await get_chat_store().load_user_app_preferences(
+            current_user.identifier
+        )).get("help_level_cap")
+        effective = account
+        thread_id = thread_id.strip()
+        if thread_id:
+            try:
+                settings = await get_chat_store().load_thread_settings(
+                    thread_id, current_user.identifier
+                )
+                override = (settings.get("model_params") or {}).get(
+                    "help_level_cap"
+                )
+                if override is not None:
+                    effective = override
+            except Exception:
+                pass  # 线程不存在/非本人：按账号默认返回
+        return {"help_level_cap": effective, "help_level_cap_default": account}
+
     @preferences_router.post("/chat/options", include_in_schema=False)
     async def set_chat_options(payload: dict, current_user: UserParam):
         """输入区的生成选项（深度思考 / 联网搜索）：账号级即时保存。"""
@@ -942,7 +978,8 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             if isinstance(payload, dict) and key in payload:
                 preferences[key] = bool(payload[key])
                 changed[key] = preferences[key]
-        # 分级辅助的学生上限："auto" 或 1/2/3；非法值拒绝。
+        # 分级辅助："auto" 或 1/2/3；非法值拒绝。默认作用域是账号级默认
+        # （设置面板的「默认辅助等级」）；scope="thread" 时仅覆盖当前对话。
         if isinstance(payload, dict) and "help_level_cap" in payload:
             cap = payload["help_level_cap"]
             if isinstance(cap, str) and cap.strip().lower() == "auto":
@@ -951,8 +988,39 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                 cap = int(cap)
             else:
                 raise HTTPException(status_code=400, detail="Invalid help level")
-            preferences["help_level_cap"] = cap
-            changed["help_level_cap"] = cap
+            if payload.get("scope") == "thread":
+                thread_id = str(payload.get("thread_id") or "").strip()
+                if not thread_id:
+                    raise HTTPException(
+                        status_code=400, detail="thread_id required for thread scope"
+                    )
+                service = get_service()
+                try:
+                    context = await asyncio.to_thread(
+                        service.get_context, thread_id
+                    )
+                    await asyncio.to_thread(
+                        service.set_model_params,
+                        context,
+                        {**context.model_params, "help_level_cap": cap},
+                    )
+                    await asyncio.to_thread(
+                        get_chat_store().update_thread_model_params,
+                        thread_id,
+                        current_user.identifier,
+                        cap,
+                    )
+                except PermissionError:
+                    raise HTTPException(
+                        status_code=403, detail="Not the thread owner"
+                    )
+                except ValueError:
+                    raise HTTPException(status_code=404, detail="Thread not found")
+                changed["help_level_cap"] = cap
+                changed["scope"] = "thread"
+            else:
+                preferences["help_level_cap"] = cap
+                changed["help_level_cap"] = cap
         if not changed:
             raise HTTPException(status_code=400, detail="No options provided")
         await get_chat_store().save_user_app_preferences(
@@ -1081,6 +1149,17 @@ async def send_provider_settings(context) -> None:
                 initial=bool(params.get("audit_summary", True)),
             ),
             Select(
+                id="help_level_cap",
+                label="默认辅助等级",
+                initial_value=str(params.get("help_level_cap") or "auto"),
+                items={
+                    "自动（跟随审核）": "auto",
+                    "L1 · 只讲概念": "1",
+                    "L2 · 方向性提示": "2",
+                    "L3 · 局部代码诊断": "3",
+                },
+            ),
+            Select(
                 id="font_size",
                 label="字体大小",
                 initial_value=str(params.get("font_size", "standard")),
@@ -1171,6 +1250,18 @@ def _normalize_ui_settings(settings: dict, current: dict | None = None) -> dict:
         except (TypeError, ValueError):
             normalized.pop(key, None)
     normalized.pop("top_p", None)  # 面板已移除该控件；保留原值而非强改为 0
+    # 默认辅助等级：面板值是字符串（"auto"/"1"/"2"/"3"），归一化后存储。
+    if "help_level_cap" in settings:
+        cap = settings.get("help_level_cap")
+        if isinstance(cap, str) and cap.strip().lower() == "auto":
+            cap = None
+        try:
+            cap = int(cap)
+        except (TypeError, ValueError):
+            cap = None
+        normalized["help_level_cap"] = cap if cap in (1, 2, 3) else None
+    elif "help_level_cap" in (current or {}):
+        normalized["help_level_cap"] = current.get("help_level_cap")
     return normalized
 
 

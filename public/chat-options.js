@@ -12,19 +12,19 @@
   var state = { deep_think: false, web_search: false };
 
   var LEVELS = [
-    { value: "auto", label: "自动（跟随审核）" },
-    { value: 1, label: "L1 · 只讲概念" },
-    { value: 2, label: "L2 · 方向性提示" },
-    { value: 3, label: "L3 · 局部代码诊断" },
+    { value: "auto", label: "自动" },
+    { value: 1, label: "L1" },
+    { value: 2, label: "L2" },
+    { value: 3, label: "L3" },
   ];
-  var levelCap = "auto";
+  var levelCap = null; // null = 尚未载入；"auto"/1/2/3
   var levelMenu = null;
 
   function levelLabel(value) {
     for (var i = 0; i < LEVELS.length; i++) {
       if (String(LEVELS[i].value) === String(value)) return LEVELS[i].label;
     }
-    return "自动（跟随审核）";
+    return "自动";
   }
 
   function closeLevelMenu() {
@@ -48,7 +48,11 @@
       if (String(level.value) === String(levelCap)) {
         item.classList.add("eg-level-item-active");
       }
-      item.textContent = level.label;
+      item.innerHTML =
+        '<span>' + level.label + "</span>" +
+        '<span class="eg-level-check">' +
+        (String(level.value) === String(levelCap) ? "✓" : "") +
+        "</span>";
       item.addEventListener("click", function (event) {
         event.stopPropagation();
         setLevel(level.value);
@@ -87,21 +91,32 @@
 
   function updateLevelPill(pill) {
     var span = pill.querySelector("span");
-    if (span) span.textContent = "辅助等级：" + levelLabel(levelCap);
-    var active = levelCap !== "auto";
+    var shown = levelCap === null ? "自动" : levelLabel(levelCap);
+    if (span) span.textContent = shown;
+    var active = levelCap !== null && levelCap !== "auto";
     pill.classList.toggle("eg-option-pill-on", active);
     pill.setAttribute("aria-pressed", String(active));
+  }
+
+  function currentThreadId() {
+    var match = location.pathname.match(/^\/thread\/([0-9a-f-]{16,})/i);
+    return match ? match[1] : "";
   }
 
   function setLevel(value) {
     levelCap = value;
     var pill = document.querySelector(".eg-level-pill");
     if (pill) updateLevelPill(pill);
+    var threadId = currentThreadId();
     fetch("/chat/options", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ help_level_cap: value }),
+      body: JSON.stringify(
+        threadId
+          ? { help_level_cap: value, scope: "thread", thread_id: threadId }
+          : { help_level_cap: value, help_level_cap_default: value }
+      ),
     }).catch(function () {});
   }
 
@@ -173,12 +188,21 @@
         OPTIONS.forEach(function (option) {
           if (typeof prefs[option.key] === "boolean") state[option.key] = prefs[option.key];
         });
-        if (prefs.help_level_cap !== undefined) {
-          levelCap = prefs.help_level_cap === null ? "auto" : prefs.help_level_cap;
-          var levelPillEl = document.querySelector(".eg-level-pill");
-          if (levelPillEl) updateLevelPill(levelPillEl);
-        }
         syncPills();
+        // 有效辅助等级 = 当前对话覆盖 ?? 账号默认（"默认辅助等级"设置）。
+        fetch("/chat/options?thread_id=" + encodeURIComponent(currentThreadId()), {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        })
+          .then(function (response) { return response.json(); })
+          .then(function (opts) {
+            if (opts && "help_level_cap" in opts) {
+              levelCap = opts.help_level_cap === null ? "auto" : opts.help_level_cap;
+              var levelPillEl = document.querySelector(".eg-level-pill");
+              if (levelPillEl) updateLevelPill(levelPillEl);
+            }
+          })
+          .catch(function () {});
       })
       .catch(function () {});
   }

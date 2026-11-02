@@ -982,6 +982,36 @@ class ChatDataLayer(BaseDataLayer):
             else ([], "")
         )
 
+    async def update_thread_model_params(
+        self, thread_id: str, principal_id: str, help_level_cap: int | None
+    ) -> None:
+        """当前对话的辅助等级上限覆盖（仅写本线程 metadata，不动账号默认）。"""
+        with self._lock:
+            row = self._thread_row(thread_id)
+            if row is None:
+                raise ValueError("thread not found")
+            owner = row["user_identifier"] or row["user_id"]
+            if owner != principal_id:
+                raise PermissionError("thread owner mismatch")
+            metadata = _safe_thread_metadata(_decode(row["metadata"], {})) or {}
+            chat_settings = metadata.get("chat_settings")
+            if not isinstance(chat_settings, dict):
+                chat_settings = {}
+            model_params = chat_settings.get("model_params")
+            if not isinstance(model_params, dict):
+                model_params = {}
+            if help_level_cap is None:
+                model_params.pop("help_level_cap", None)
+            else:
+                model_params["help_level_cap"] = int(help_level_cap)
+            chat_settings["model_params"] = model_params
+            metadata["chat_settings"] = chat_settings
+            self._conn.execute(
+                "UPDATE threads SET metadata=? WHERE id=?",
+                (_json(metadata), thread_id),
+            )
+            self._conn.commit()
+
     async def load_thread_settings(self, thread_id: str, principal_id: str) -> dict:
         with self._lock:
             row = self._thread_row(thread_id)

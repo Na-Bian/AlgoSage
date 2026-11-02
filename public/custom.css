@@ -2364,3 +2364,15 @@ main [data-step-type="user_message"] #edit-chat-input {
   font-weight: 600;
 }
 .eg-level-pill .eg-level-chevron { width: 14px; height: 14px; }
+.eg-level-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.eg-level-check {
+  color: hsl(var(--primary));
+  font-weight: 600;
+  min-width: 16px;
+  text-align: right;
+}
