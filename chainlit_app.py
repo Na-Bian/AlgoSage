@@ -1873,6 +1873,57 @@ async def _mask_or_reply(stream_out: dict, reply, content: str) -> None:
     await reply.send()
 
 
+async def _sweep_orphan_turn_steps() -> None:
+    """清扫上一轮被中断（停止/断线/重启）留下的孤儿过程步骤。
+
+    一个“回合组”以 on_message 开始：若其后直到下一个 on_message 之前没有
+    assistant_message，说明该回合没有交付任何回答（用户取消或服务中断），
+    其中的生成审核/思考过程芯片都是孤儿，删除以免看起来像“思考被拆成两半”。
+    绝不触碰有回答的回合，也不触碰 user_message。
+    """
+    try:
+        thread_id = context_id()
+        store = get_chat_store()
+        steps = await store.list_thread_steps(thread_id)
+    except Exception:  # noqa: BLE001 - 清扫失败不影响新回合
+        return
+    orphan_ids: list[str] = []
+    group: list[str] = []
+    answered = False
+    for step in steps:
+        name = step["name"]
+        if name == "on_message":
+            # 结算上一组，然后以本轮 on_message 作为新组的起点。
+            if group and not answered:
+                orphan_ids.extend(group)
+            group = [step["id"]]
+            answered = False
+            continue
+        if step["type"] == "assistant_message":
+            answered = True
+            continue
+        if step["type"] == "run" and name in (
+            "generation-safety-review",
+            "model-reasoning",
+            "security-audit-policy",
+        ):
+            group.append(step["id"])
+    if group and not answered:
+        orphan_ids.extend(group)
+    if not orphan_ids:
+        return
+    logger.info("Orphan turn sweep removing steps=%s", orphan_ids)
+    for step_id in orphan_ids:
+        try:
+            await get_chat_store().delete_step(step_id)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            await cl.context.emitter.delete_step({"id": step_id})
+        except Exception:  # noqa: BLE001
+            pass
+
+
 async def _cleanup_failed_turn_steps(stream_out: dict) -> None:
     """失败回合只保留提示消息：本回合创建的过程步骤（生成与安全审核、
     思考过程、安全审计与策略）从界面与数据库一并移除——没有回答的孤儿
@@ -1926,8 +1977,11 @@ async def on_message(message: cl.Message) -> None:
             context_id(),
             principal_id=authenticated_principal_id(),
         )
-        # 回合开始时的连接 id：收尾时对比（见下方 socket id 变化检测）。
+            # 回合开始时的连接 id：收尾时对比（见下方 socket id 变化检测）。
         socket_at_start = getattr(cl.context.session, "socket_id", None)
+        # 上一轮若被中断（停止/断线/重启），它的过程步骤不会走正常收尾——
+        # 在新回合开始前清扫，避免孤儿思考芯片堆叠。
+        await _sweep_orphan_turn_steps()
         response = await run_turn(
             service,
             context,

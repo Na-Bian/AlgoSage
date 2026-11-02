@@ -615,6 +615,26 @@ class ChatDataLayer(BaseDataLayer):
             self._conn.execute("DELETE FROM steps WHERE id = ?", (step_id,))
             self._conn.commit()
 
+    async def list_thread_steps(self, thread_id: str) -> list[dict]:
+        """该线程的全部步骤（按创建时间），用于失败/中断回合的孤儿清扫。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, created_at, data FROM steps WHERE thread_id=? ORDER BY created_at",
+                (thread_id,),
+            ).fetchall()
+        out = []
+        for row in rows:
+            data = _decode(row["data"], {}) or {}
+            out.append(
+                {
+                    "id": row["id"],
+                    "created_at": row["created_at"],
+                    "type": data.get("type", ""),
+                    "name": data.get("name", ""),
+                }
+            )
+        return out
+
     async def get_thread_author(self, thread_id: str) -> str:
         with self._lock:
             row = self._thread_row(thread_id)
