@@ -37,46 +37,9 @@ logging.basicConfig(
 # ① 主题 class（深色模式不再闪白）② /thread/* 的品牌加载遮罩。样式必须
 # 内联——外部 CSS 到达晚于首帧。遮罩由 chat-ui.js 在内容渲染后接管移除。
 APP_SHELL_BOOT_SNIPPET = """
-    <style id="eg-early-boot-style">
-      #eg-thread-loading {
-        position: fixed;
-        inset: 0;
-        z-index: 9999;
-        display: grid;
-        place-items: center;
-        background: #ffffff;
-        transition: opacity 200ms ease;
-      }
-      html.dark #eg-thread-loading { background: #0e1320; }
-      #eg-thread-loading.eg-thread-loading-done {
-        opacity: 0;
-        pointer-events: none;
-      }
-      .eg-boot-logo-light, .eg-boot-logo-dark { display: none; width: 132px; }
-      :not(.dark) > #eg-thread-loading .eg-boot-logo-light { display: block; }
-      html.dark #eg-thread-loading .eg-boot-logo-dark { display: block; }
-      .eg-thread-loading-inner {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 18px;
-      }
-      .eg-boot-spinner {
-        width: 26px;
-        height: 26px;
-        border-radius: 50%;
-        border: 3px solid rgba(121, 61, 245, .22);
-        border-top-color: #793df5;
-        animation: eg-boot-spin 0.8s linear infinite;
-      }
-      .eg-boot-text {
-        color: #5b6472;
-        font: 500 14px/1 Inter, system-ui, sans-serif;
-      }
-      html.dark .eg-boot-text { color: #8b93a1; }
-      @keyframes eg-boot-spin { to { transform: rotate(360deg); } }
-    </style>
     <script id="eg-early-boot-script">
+      // 首帧同步应用主题，深色模式不再闪白。这里不再注入任何遮罩：
+      // 会话内容实测可直接呈现，遮罩只会让用户多盯一个静态页面。
       (function () {
         try {
           var theme = localStorage.getItem("vite-ui-theme") || "system";
@@ -86,29 +49,6 @@ APP_SHELL_BOOT_SNIPPET = """
               window.matchMedia("(prefers-color-scheme: dark)").matches);
           if (dark) document.documentElement.classList.add("dark");
         } catch (e) {}
-        if (location.pathname.indexOf("/thread/") !== 0) return;
-        // 正常路径不显示遮罩：首帧主题已同步，欢迎屏实测不出现，遮罩只会
-        // 让用户多盯一个静态页面。仅在内容迟迟未就绪（脚本加载失败等极端
-        // 情况）时才用兜底遮罩提示，避免真正卡死时看到空白。
-        window.__egShowBootMask = function () {
-          if (document.getElementById("eg-thread-loading")) return;
-          if (document.querySelector("[data-step-type]")) return;
-          var mask = document.createElement("div");
-          mask.id = "eg-thread-loading";
-          mask.innerHTML =
-            '<div class="eg-thread-loading-inner">' +
-            '<img class="eg-boot-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">' +
-            '<img class="eg-boot-logo-light" src="/public/brand-logo-light.png" alt="">' +
-            '<div class="eg-boot-spinner"></div>' +
-            '<div class="eg-boot-text">正在打开会话…</div>' +
-            "</div>";
-          (document.body || document.documentElement).appendChild(mask);
-        };
-        setTimeout(function () {
-          if (!document.querySelector("[data-step-type]")) {
-            window.__egShowBootMask();
-          }
-        }, 1500);
       })();
     </script>
 """

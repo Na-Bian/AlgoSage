@@ -1144,22 +1144,6 @@
      恢复随机竞态失败（实测约三成，真实网络延迟下更高），失败时闪现欢迎
      屏、历史不渲染，反而更慢。整页导航配合首帧引导遮罩：点击 → 旧页遮
      罩 → 新页同款遮罩无缝续上 → 内容渲染后淡出，全程无闪屏。 */
-  function showSwitchMask() {
-    let mask = document.getElementById("eg-thread-loading");
-    if (!mask) {
-      mask = document.createElement("div");
-      mask.id = "eg-thread-loading";
-      mask.innerHTML =
-        '<div class="eg-thread-loading-inner">' +
-        '<img class="eg-boot-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">' +
-        '<img class="eg-boot-logo-light" src="/public/brand-logo-light.png" alt="">' +
-        '<div class="eg-boot-spinner"></div>' +
-        '<div class="eg-boot-text">正在打开会话…</div>' +
-        "</div>";
-      document.documentElement.appendChild(mask);
-    }
-    return mask;
-  }
   document.addEventListener(
     "click",
     (event) => {
@@ -1176,23 +1160,5 @@
     true
   );
 
-  function removeThreadLoadingMask() {
-    document.getElementById("eg-thread-loading")?.remove();
-  }
-  // 兜底遮罩（run_app.py 在 1.5s 后仍无内容时才创建）：内容一到就淡出。
-  const earlyMask = document.getElementById("eg-thread-loading");
-  if (earlyMask) {
-    const maskObserver = new MutationObserver(() => {
-      if (document.querySelector("[data-step-type]")) {
-        maskObserver.disconnect();
-        earlyMask.classList.add("eg-thread-loading-done");
-        setTimeout(removeThreadLoadingMask, 220);
-      }
-    });
-    maskObserver.observe(document.body, { childList: true, subtree: true });
-    setTimeout(() => {
-      maskObserver.disconnect();
-      removeThreadLoadingMask();
-    }, 8000);
-  }
+
 })();
