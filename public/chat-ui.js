@@ -1139,26 +1139,9 @@
     }
   }).observe(document.body, { childList: true, subtree: true });
 
-  /* 会话切换走整页导航：Chainlit 的 SPA 内切换存在无法在前端修复的时序
-     缺陷——“当前线程”状态在重连之后才更新，重连握手带着旧线程 id，会话
-     恢复随机竞态失败（实测约三成，真实网络延迟下更高），失败时闪现欢迎
-     屏、历史不渲染，反而更慢。整页导航配合首帧引导遮罩：点击 → 旧页遮
-     罩 → 新页同款遮罩无缝续上 → 内容渲染后淡出，全程无闪屏。 */
-  document.addEventListener(
-    "click",
-    (event) => {
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const link = event.target?.closest?.('a[href^="/thread/"]');
-      if (!link || !link.href) return;
-      const target = new URL(link.href, location.href).pathname;
-      if (location.pathname === target) return;
-      // 不加遮罩：首帧主题已同步、会话恢复实测无欢迎屏闪现，直接导航即可。
-      // 若目标页内容迟迟不就绪，页面自己的兜底（1.5s 后）会显示提示。
-      location.assign(link.href);
-    },
-    true
-  );
+    /* 会话切换交由 Chainlit 原生 SPA 处理（配合服务端 v2 恢复补丁）。
+     压测见 commit 历史；如竞态复发再考虑回退整页导航。 */
+
 
 
 })();
