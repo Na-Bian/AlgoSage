@@ -37,9 +37,15 @@ logging.basicConfig(
 # ① 主题 class（深色模式不再闪白）② /thread/* 的品牌加载遮罩。样式必须
 # 内联——外部 CSS 到达晚于首帧。遮罩由 chat-ui.js 在内容渲染后接管移除。
 APP_SHELL_BOOT_SNIPPET = """
+    <style id="eg-early-theme-bg">
+      /* 首帧背景：颜色与 custom.css 的 --background 一致（浅 210 45% 98% /
+         深 228 36% 9%）。custom.css 到达前浏览器先画这层底色，避免刷新与
+         会话切换时出现一帧白底。 */
+      html { background-color: hsl(210 45% 98%); }
+      html.dark { background-color: hsl(228 36% 9%); }
+    </style>
     <script id="eg-early-boot-script">
-      // 首帧同步应用主题，深色模式不再闪白。这里不再注入任何遮罩：
-      // 会话内容实测可直接呈现，遮罩只会让用户多盯一个静态页面。
+      // 首帧同步应用主题（深色不再闪白）。只做这一件事，不注入任何遮罩。
       (function () {
         try {
           var theme = localStorage.getItem("vite-ui-theme") || "system";
