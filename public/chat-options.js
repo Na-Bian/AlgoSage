@@ -12,10 +12,10 @@
   var state = { deep_think: false, web_search: false };
 
   var LEVELS = [
-    { value: "auto", label: "自动" },
-    { value: 1, label: "L1" },
-    { value: 2, label: "L2" },
-    { value: 3, label: "L3" },
+    { value: "auto", short: "自动", label: "自动（跟随审核）" },
+    { value: 1, short: "L1", label: "L1 · 只讲概念" },
+    { value: 2, short: "L2", label: "L2 · 方向性提示" },
+    { value: 3, short: "L3", label: "L3 · 局部代码诊断" },
   ];
   var levelCap = null; // null = 尚未载入；"auto"/1/2/3
   var levelMenu = null;
@@ -24,6 +24,13 @@
   function levelLabel(value) {
     for (var i = 0; i < LEVELS.length; i++) {
       if (String(LEVELS[i].value) === String(value)) return LEVELS[i].label;
+    }
+    return "自动（跟随审核）";
+  }
+
+  function levelShort(value) {
+    for (var i = 0; i < LEVELS.length; i++) {
+      if (String(LEVELS[i].value) === String(value)) return LEVELS[i].short;
     }
     return "自动";
   }
@@ -68,6 +75,7 @@
       option.innerHTML =
         '<span class="eg-model-option-name">' + level.label + "</span>" +
         '<span class="eg-model-option-state">' + (selected ? "✓" : "") + "</span>";
+      option.title = level.label;
       option.addEventListener("click", function (event) {
         event.stopPropagation();
         setLevel(level.value);
@@ -115,8 +123,8 @@
 
   function updateLevelPill(pill) {
     var span = pill.querySelector(".eg-model-name");
-    // 只显示档位值（自动/L1/L2/L3），与模型控件同款的信息密度。
-    if (span) span.textContent = levelCap === null ? "自动" : levelLabel(levelCap);
+    // pill 只显示档位短值；完整说明在菜单里。
+    if (span) span.textContent = levelShort(levelCap);
   }
 
   function currentThreadId() {
