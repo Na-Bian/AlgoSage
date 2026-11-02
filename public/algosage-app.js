@@ -296,7 +296,7 @@ try {
     .then(() => loadScript("/public/model-picker.js?v=20261027-composer-retry-2"))
     .then(() => loadScript("/public/chat-ui.js?v=20261101-sidebar-gap-4"))
     .then(() => loadScript("/public/settings-autosave.js?v=20261029-model-default-1"))
-    .then(() => loadScript("/public/chat-options.js?v=20261102-levels-ui-1"))
+    .then(() => loadScript("/public/chat-options.js?v=20261102-levels-style-2"))
     .catch(() => {
       // Existing behavior remains usable even if optional enhancements fail.
       loadScript("/public/account-profile.js?v=20261026-refresh-all-1");

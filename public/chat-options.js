@@ -115,7 +115,8 @@
 
   function updateLevelPill(pill) {
     var span = pill.querySelector(".eg-model-name");
-    if (span) span.textContent = "辅助等级：" + (levelCap === null ? "自动" : levelLabel(levelCap));
+    // 只显示档位值（自动/L1/L2/L3），与模型控件同款的信息密度。
+    if (span) span.textContent = levelCap === null ? "自动" : levelLabel(levelCap);
   }
 
   function currentThreadId() {
