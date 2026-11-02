@@ -93,6 +93,46 @@
     },
     { capture: true, passive: true }
   );
+  // 本页会话里发起过提问、且该回合尚未收口 = 正在生成。历史会话（打开
+  // 历史对话、刷新后恢复）在本页从未发起提问，其中的思考步骤一律历史折叠。
+  // 用「是否发送过」而不是「停止按钮是否在」，避免按钮晚于步骤渲染的竞态
+  // 把实时回合误判成历史。
+  let liveTurnPending = false;
+  let liveTurnTimer = 0;
+  document.addEventListener(
+    "click",
+    (event) => {
+      const composer = document.getElementById("message-composer");
+      if (!composer) return;
+      const button = event.target?.closest?.("button");
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      // 输入区右下角的圆形发送键。
+      if (Math.round(rect.width) !== 40) return;
+      const box = composer.getBoundingClientRect();
+      if (rect.x < box.x + box.width - 220) return;
+      liveTurnPending = true;
+      clearTimeout(liveTurnTimer);
+      liveTurnTimer = setTimeout(() => { liveTurnPending = false; }, 15 * 60 * 1000);
+    },
+    true
+  );
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key !== "Enter" || event.shiftKey) return;
+      if (!event.target?.closest?.("#message-composer")) return;
+      liveTurnPending = true;
+      clearTimeout(liveTurnTimer);
+      liveTurnTimer = setTimeout(() => { liveTurnPending = false; }, 15 * 60 * 1000);
+    },
+    true
+  );
+
+  function turnInFlight() {
+    return liveTurnPending;
+  }
+
   function ensureReasoningExpanded() {
     const buttons = [...document.querySelectorAll('button[id$="model-reasoning"]')];
     if (!reasoningScanDone) {
@@ -113,14 +153,24 @@
       body.classList.add("eg-reasoning-body");
     }
     if (!reasoningSeenNodes.has(button)) {
-      // 新节点 = 新回合的思考步骤：恢复自动跟随
       reasoningSeenNodes.add(button);
-      reasoningFollowPaused = false;
-      // 刷新页面后点回会话：Chainlit 会整页重载，加载持久化历史时
-      // 需要重新展开（新页面视为新回合）
-      reasoningScanDone = true;
+      if (turnInFlight()) {
+        // 本回合正在生成：新出现的思考步骤自动展开并跟随。
+        reasoningFollowPaused = false;
+      } else {
+        // 打开历史会话（含会话恢复）时挂载的思考步骤：保持折叠。
+        reasoningHistoricalNodes.add(button);
+        reasoningScanDone = true;
+      }
     }
-    if (reasoningHistoricalNodes.has(button)) return;
+    if (reasoningHistoricalNodes.has(button)) {
+      // 历史步骤：若仍处于展开态（浏览器恢复的展开状态），收起它。
+      if (button.getAttribute("aria-expanded") === "true") {
+        reasoningAutoFolded.add(button);
+        button.click();
+      }
+      return;
+    }
     if (reasoningUserCollapsed.has(button)) return;
     const len = body ? (body.textContent || "").length : 0;
     const now = performance.now();
@@ -147,6 +197,7 @@
     const stalled = meta.lastLen > 0 && now - meta.stableAt > 3000;
     if ((answerStarted || stalled) && !reasoningAutoFolded.has(button)) {
       reasoningAutoFolded.add(button);
+      liveTurnPending = false;
       button.click();
       return;
     }
