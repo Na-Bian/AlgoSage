@@ -87,16 +87,28 @@ APP_SHELL_BOOT_SNIPPET = """
           if (dark) document.documentElement.classList.add("dark");
         } catch (e) {}
         if (location.pathname.indexOf("/thread/") !== 0) return;
-        var mask = document.createElement("div");
-        mask.id = "eg-thread-loading";
-        mask.innerHTML =
-          '<div class="eg-thread-loading-inner">' +
-          '<img class="eg-boot-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">' +
-          '<img class="eg-boot-logo-light" src="/public/brand-logo-light.png" alt="">' +
-          '<div class="eg-boot-spinner"></div>' +
-          '<div class="eg-boot-text">正在打开会话…</div>' +
-          "</div>";
-        (document.body || document.documentElement).appendChild(mask);
+        // 正常路径不显示遮罩：首帧主题已同步，欢迎屏实测不出现，遮罩只会
+        // 让用户多盯一个静态页面。仅在内容迟迟未就绪（脚本加载失败等极端
+        // 情况）时才用兜底遮罩提示，避免真正卡死时看到空白。
+        window.__egShowBootMask = function () {
+          if (document.getElementById("eg-thread-loading")) return;
+          if (document.querySelector("[data-step-type]")) return;
+          var mask = document.createElement("div");
+          mask.id = "eg-thread-loading";
+          mask.innerHTML =
+            '<div class="eg-thread-loading-inner">' +
+            '<img class="eg-boot-logo-dark" src="/public/brand-logo.png" alt="AlgoSage">' +
+            '<img class="eg-boot-logo-light" src="/public/brand-logo-light.png" alt="">' +
+            '<div class="eg-boot-spinner"></div>' +
+            '<div class="eg-boot-text">正在打开会话…</div>' +
+            "</div>";
+          (document.body || document.documentElement).appendChild(mask);
+        };
+        setTimeout(function () {
+          if (!document.querySelector("[data-step-type]")) {
+            window.__egShowBootMask();
+          }
+        }, 1500);
       })();
     </script>
 """

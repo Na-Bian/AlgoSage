@@ -1169,7 +1169,8 @@
       if (!link || !link.href) return;
       const target = new URL(link.href, location.href).pathname;
       if (location.pathname === target) return;
-      showSwitchMask();
+      // 不加遮罩：首帧主题已同步、会话恢复实测无欢迎屏闪现，直接导航即可。
+      // 若目标页内容迟迟不就绪，页面自己的兜底（1.5s 后）会显示提示。
       location.assign(link.href);
     },
     true
@@ -1178,8 +1179,7 @@
   function removeThreadLoadingMask() {
     document.getElementById("eg-thread-loading")?.remove();
   }
-  // 遮罩由 run_app.py 注入的首帧引导脚本提前创建（品牌样式随主题）；
-  // 这里只负责接管移除：内容渲染即淡出，5 秒兜底防卡死。
+  // 兜底遮罩（run_app.py 在 1.5s 后仍无内容时才创建）：内容一到就淡出。
   const earlyMask = document.getElementById("eg-thread-loading");
   if (earlyMask) {
     const maskObserver = new MutationObserver(() => {
@@ -1193,6 +1193,6 @@
     setTimeout(() => {
       maskObserver.disconnect();
       removeThreadLoadingMask();
-    }, 5000);
+    }, 8000);
   }
 })();
