@@ -19,7 +19,9 @@ def decide(
 ) -> PolicyDecision:
     policy = exam_policy or ExamPolicy.default()
     if not exam_mode:
-        return PolicyDecision(result.intent, policy.practice_mode_level, "练习演示模式")
+        return PolicyDecision(
+            result.intent, policy.practice_mode_level, "练习模式，不设额外限制"
+        )
     level = policy.max_level(result.intent, question_id)
     source = (
         "题目策略" if policy.has_override(question_id, result.intent) else "考试策略"
@@ -27,15 +29,15 @@ def decide(
     details = ""
     if HIGH_RISK_FLAGS.intersection(result.risk_flags):
         level = 0
-        details = "；检测到指令注入风险"
+        details = "；消息里有绕过考试规则的迹象"
     elif "uncertain" in result.risk_flags:
         level = min(level, 1)
-        details = "；分类不确定，仅提供一般概念"
+        details = "；问题意图没把握，先只讲概念"
     elif "full_solution_request" in result.risk_flags:
         level = min(level, 1)
-        details = "；完整解答请求仅提供一般概念"
+        details = "；看起来在要完整解答，先只讲概念"
     return PolicyDecision(
-        result.intent, level, f"{source}：最高帮助等级 {level}" + details
+        result.intent, level, f"{source}按这类问题最高给到 L{level}" + details
     )
 
 

@@ -1731,6 +1731,20 @@ def prepare_message_inputs(
     return question, code, attachments
 
 
+_INTENT_LABELS = {
+    "knowledge": "一般知识问答",
+    "debug": "代码调试",
+    "hint": "方向性提示",
+    "request_solution": "索取完整解答",
+    "jailbreak": "试图绕过规则",
+}
+
+
+def _intent_label(value) -> str:
+    label = _INTENT_LABELS.get(value)
+    return label if label else (str(value) if value else "未知")
+
+
 def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
     """把白名单元数据渲染为前端审计面板（纯函数，便于测试）。
 
@@ -1750,13 +1764,13 @@ def render_audit_markdown(meta: dict, latency_ms: int | None = None) -> str:
     session_risk = meta.get("session_risk")
 
     if os.environ.get("SAGE_UI_DETAIL", "full").strip().lower() == "brief":
-        parts = [f"意图 `{meta.get('intent')}`", badge, verdict]
+        parts = [_intent_label(meta.get("intent")), badge, verdict]
         if session_risk is not None and float(session_risk) > 0:
             parts.append(f"会话累计风险 {float(session_risk):.2f}")
         return " · ".join(parts)
 
     rows = [
-        ("请求意图", f"`{meta.get('intent')}`（{meta.get('classify_method')}）"),
+        ("请求意图", _intent_label(meta.get("intent"))),
         ("允许帮助等级", badge),
         ("审核结论", verdict.replace("审核放行", "放行")),
         ("模型", f"`{meta.get('model')}`"),

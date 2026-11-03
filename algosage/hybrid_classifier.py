@@ -29,6 +29,15 @@ from .intent_classifier import (
 )
 from .llm import ChatBackend
 from .schemas import Classification, Intent, TutorRequest
+
+# 学生可见的意图中文名（审计表与分类依据使用，不暴露英文枚举值）。
+INTENT_ZH = {
+    Intent.KNOWLEDGE: "一般知识问答",
+    Intent.DEBUG: "代码调试",
+    Intent.HINT: "方向性提示",
+    Intent.SOLUTION: "索取完整解答",
+    Intent.JAILBREAK: "试图绕过规则",
+}
 from .invocation import generate
 from .exam_policy import ExamPolicy
 from .visual_context import select_images, with_images

@@ -144,22 +144,22 @@ def classify(
     flags = extract_risk_flags(text, request.existing_code)
     if _JAILBREAK.search(text):
         return Classification(
-            Intent.JAILBREAK, "regex-v0", "检测到典型规则绕过措辞", risk_flags=flags
+            Intent.JAILBREAK, "regex-v0", "消息里有绕过考试规则的措辞", risk_flags=flags
         )
     if _SOLUTION.search(text):
         return Classification(
-            Intent.SOLUTION, "regex-v0", "检测到直接索取完整解答", risk_flags=flags
+            Intent.SOLUTION, "regex-v0", "在直接索要完整解答", risk_flags=flags
         )
     if _DEBUG.search(text):
         return Classification(
-            Intent.DEBUG, "regex-v0", "检测到调试或错误分析需求", risk_flags=flags
+            Intent.DEBUG, "regex-v0", "在调试代码或分析报错", risk_flags=flags
         )
     if _HINT.search(text):
         return Classification(
-            Intent.HINT, "regex-v0", "检测到方向性提示需求", risk_flags=flags
+            Intent.HINT, "regex-v0", "只要方向性提示", risk_flags=flags
         )
     return Classification(
-        Intent.KNOWLEDGE, "regex-v0", "按普通知识问答处理", risk_flags=flags
+        Intent.KNOWLEDGE, "regex-v0", "一般的算法概念问题", risk_flags=flags
     )
 
 
