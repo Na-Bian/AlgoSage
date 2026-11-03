@@ -202,10 +202,10 @@
       });
       wrap.append(pill);
     });
-    // 等级控件不留在 pills 行：由 model-picker 把它放进模型按钮左侧
-    // （与模型选择相邻）。此处只放深度思考/联网搜索两个 pill。
     attach.insertAdjacentElement("afterend", wrap);
     syncPills(wrap);
+    // 等级控件单独创建（它自行放置到模型按钮左侧的右组）。
+    levelPill();
     return wrap;
   }
 
