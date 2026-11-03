@@ -2346,3 +2346,31 @@ main [data-step-type="user_message"] #edit-chat-input {
 /* 线程视图不显示欢迎屏：SPA 切换会话时 Chainlit 先渲染欢迎骨架再渲染
    历史（数据未到），闪现的大字欢迎屏观感突兀。欢迎屏只属于首页。 */
 body.eg-in-thread #welcome-screen { visibility: hidden; }
+
+/* ---------- 顶部提示 toast 的关闭按钮 ---------- */
+[data-sonner-toast] {
+  position: relative;
+}
+.eg-toast-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: hsl(var(--foreground) / .65);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+.eg-toast-close:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+.eg-toast-close svg {
+  width: 14px;
+  height: 14px;
+}

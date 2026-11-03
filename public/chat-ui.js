@@ -1157,6 +1157,31 @@
     subtree: true,
     attributes: true,
   });
+  /* 顶部 toast（如“对话已删除”）加一个 ✕ 关闭钮：sonner 由框架渲染，
+     不带关闭按钮，用户只能干等自动消失。观察到新 toast 时注入按钮，
+     点击立即移除该 toast（sonner 会同步清理对应状态）。 */
+  const toastCloseObserver = new MutationObserver(() => {
+    document.querySelectorAll("[data-sonner-toast]").forEach((toast) => {
+      if (toast.querySelector(".eg-toast-close")) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "eg-toast-close";
+      button.setAttribute("aria-label", "关闭提示");
+      button.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toast.style.transition = "opacity 150ms ease, translate 150ms ease";
+        toast.style.opacity = "0";
+        setTimeout(() => {
+          toast.remove();
+        }, 160);
+      });
+      toast.append(button);
+    });
+  });
+  toastCloseObserver.observe(document.body, { childList: true, subtree: true });
+
   scheduleEnhance();
   new MutationObserver(scheduleEnhance).observe(document.body, {
     childList: true,
