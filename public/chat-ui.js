@@ -66,20 +66,17 @@
   const reasoningHistoricalNodes = new WeakSet();
   const reasoningMeta = new WeakMap();
   let reasoningScanDone = false;
+  const reasoningHistoricalCollapsed = new WeakSet();
   let reasoningFollowPaused = false;
   document.addEventListener(
     "click",
     (event) => {
       const button = event.target?.closest?.('button[id$="model-reasoning"]');
       if (!button || !event.isTrusted) return;
-      // 捕获阶段先于 Chainlit 的开关执行，aria-expanded 仍是点击前的状态：
-      // 折叠态被点开 = 用户想回看，暂停自动跟随防止立即被拉回底部；
-      // 展开态被点合 = 用户手动收起，记录并永远尊重。
-      if (button.getAttribute("aria-expanded") === "false") {
-        reasoningFollowPaused = true;
-      } else {
-        reasoningUserCollapsed.add(button);
-      }
+      // 用户真实点击：意图就是切换折叠态（展开回看 / 收起）。暂停自动跟随
+      // 防止思考期被拉回底部；并从自动折叠豁免表中移除，允许再次自动收口。
+      reasoningFollowPaused = true;
+      reasoningAutoFolded.delete(button);
     },
     true
   );
@@ -167,9 +164,13 @@
       }
     }
     if (reasoningHistoricalNodes.has(button)) {
-      // 历史步骤：若仍处于展开态（浏览器恢复的展开状态），收起它。
-      if (button.getAttribute("aria-expanded") === "true") {
-        reasoningAutoFolded.add(button);
+      // 历史步骤：初始挂载时若为展开态（恢复的旧状态）收起一次；之后完全
+      // 交还给 Chainlit 与用户——用户点击展开的历史思考必须保持展开。
+      if (
+        button.getAttribute("aria-expanded") === "true" &&
+        !reasoningHistoricalCollapsed.has(button)
+      ) {
+        reasoningHistoricalCollapsed.add(button);
         button.click();
       }
       return;
