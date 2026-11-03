@@ -23,11 +23,14 @@
     "security-audit-policy": "安全审计与策略",
     "model-reasoning": "思考过程",
   };
+  // 动态思考标题（服务端实时推送“思考中 · N 字 / 思考完成”）原样保留。
+  const DYNAMIC_REASONING_RE = /^(思考中 · \d+ 字|思考完成)$/;
 
   function translateStepLabels() {
     document.querySelectorAll('main button[id^="step-"]').forEach((button) => {
       const safeName = decodeURIComponent(button.id.slice("step-".length));
-      const label = STEP_LABELS[safeName];
+      const label = STEP_LABELS[safeName] ||
+        (DYNAMIC_REASONING_RE.test(safeName) ? safeName : null);
       if (!label || button.dataset.egStepLabel === label) return;
 
       button.dataset.egStepLabel = label;

@@ -1540,6 +1540,9 @@ def _make_delta_sink(context, stream_out):
                     and now - last >= REASONING_UPDATE_INTERVAL
                 ):
                     step.output = normalize_math_delimiters(reasoning_so_far)
+                    # 标题带实时思考进度（字数），阶段感清晰：思考仍在推进，
+                    # 不是卡住。
+                    step.name = f"思考中 · {len(reasoning_so_far)} 字"
                     await step.update()
                     stream_out["reasoning"] = reasoning_so_far
                     stream_out["reasoning_last_update"] = now
@@ -2024,6 +2027,7 @@ async def on_message(message: cl.Message) -> None:
         )
         if final_reasoning and final_reasoning != stream_out.get("reasoning", ""):
             reasoning_step.output = final_reasoning
+            reasoning_step.name = "思考完成"
             await reasoning_step.update()
             stream_out["reasoning"] = final_reasoning
     if streamed_reply is not None:

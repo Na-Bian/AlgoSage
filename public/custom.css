@@ -2239,6 +2239,9 @@ main .eg-reasoning-body {
   max-height: 280px !important;
   overflow-y: auto !important;
   overscroll-behavior: contain;
+  /* 思考内容超长时父级滚动容器也不能被撑开：min-height 钳制为 0，
+     页面主滚动条保持停在内容底部，用户不会滚进空白区。 */
+  min-height: 0;
 }
 main .eg-reasoning-body::-webkit-scrollbar {
   width: 6px;
