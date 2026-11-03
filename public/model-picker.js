@@ -230,6 +230,12 @@
       event.stopPropagation();
       toggleMenu();
     });
+    // 辅助等级控件（chat-options.js 挂在同一个 rightGroup）保持在模型
+    // 按钮左侧：先放等级钮，再放模型钮，最后才是发送键。
+    const levelControl = document.querySelector(".eg-level-pill");
+    if (levelControl && levelControl.parentElement !== rightGroup) {
+      rightGroup.insertBefore(levelControl, submit);
+    }
     rightGroup.insertBefore(button, submit);
     updateButton();
   }
