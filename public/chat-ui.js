@@ -1138,6 +1138,25 @@
   syncRouteFlag();
   window.addEventListener("popstate", syncRouteFlag);
 
+  /* 编辑历史消息时隐藏输入区的附件上传：Chainlit 的编辑提交只发送文字
+     （edit_message 仅携带 message.output），选了附件也会被静默丢弃——
+     与其让学生以为附件已随编辑发出，不如直接隐藏入口。监听编辑态
+     composer 出现（消息气泡内嵌输入框），对底部上传按钮置灰并提示。 */
+  const editUploadObserver = new MutationObserver(() => {
+    const editing = !!document.getElementById("edit-chat-input");
+    const upload = document.getElementById("upload-button");
+    if (!upload || upload.disabled === editing) return;
+    upload.disabled = editing;
+    upload.title = editing
+      ? "编辑消息暂不支持添加附件；附件请作为新消息发送"
+      : "";
+    upload.style.opacity = editing ? ".45" : "";
+  });
+  editUploadObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+  });
   scheduleEnhance();
   new MutationObserver(scheduleEnhance).observe(document.body, {
     childList: true,
