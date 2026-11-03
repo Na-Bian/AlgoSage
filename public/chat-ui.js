@@ -67,16 +67,22 @@
   const reasoningMeta = new WeakMap();
   let reasoningScanDone = false;
   const reasoningHistoricalCollapsed = new WeakSet();
+  const reasoningUserControlled = new WeakSet();
   let reasoningFollowPaused = false;
   document.addEventListener(
     "click",
     (event) => {
       const button = event.target?.closest?.('button[id$="model-reasoning"]');
       if (!button || !event.isTrusted) return;
-      // 用户真实点击：意图就是切换折叠态（展开回看 / 收起）。暂停自动跟随
-      // 防止思考期被拉回底部；并从自动折叠豁免表中移除，允许再次自动收口。
-      reasoningFollowPaused = true;
+      // 用户真实点击过 = 该步骤由用户掌管：自动展开/收起一律退场。
+      // （否则“每帧一次的强制收起”会覆盖用户刚展开的历史思考。）
+      reasoningUserControlled.add(button);
       reasoningAutoFolded.delete(button);
+      reasoningHistoricalCollapsed.add(button);
+      // 展开回看时暂停自动跟随，防止思考期被拉回底部。
+      if (button.getAttribute("aria-expanded") === "false") {
+        reasoningFollowPaused = true;
+      }
     },
     true
   );
@@ -163,6 +169,7 @@
         reasoningScanDone = true;
       }
     }
+    if (reasoningUserControlled.has(button)) return;
     if (reasoningHistoricalNodes.has(button)) {
       // 历史步骤：初始挂载时若为展开态（恢复的旧状态）收起一次；之后完全
       // 交还给 Chainlit 与用户——用户点击展开的历史思考必须保持展开。
