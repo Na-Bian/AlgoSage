@@ -283,7 +283,6 @@ main div:has(> #welcome-screen) {
   animation: eg-brand-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-
 #welcome-screen.eg-empty-welcome #message-composer {
   grid-row: 2;
   margin: 0;
@@ -1260,8 +1259,6 @@ body.eg-sidebar-restoring :is(
   box-shadow: var(--chat-focus-ring), var(--eg-shadow-1);
 }
 
-
-
 :root [data-panel]:has(#chat-settings-sidebar-title) {
   max-width: 380px;
   transform: none;
@@ -1983,7 +1980,6 @@ body.eg-deleting main {
   opacity: 0;
 }
 
-
 /* 头部设置齿轮的占位元素（algosage-app.js 在齿轮缺位窗口插入/移除）：
    与真按钮同宽同形（Chainlit 原版图标：齿轮主体 + 中心圆环两个 path），
    作为普通 flex 子项补在"说明"右侧，保证布局与真按钮在位时逐像素一致；
@@ -2049,15 +2045,6 @@ body.eg-deleting main {
 
 /* Runtime details were removed from the empty state but stay available in the
    existing Readme dialog. */
-.eg-readme-runtime {
-  margin-top: 32px;
-  padding-top: 20px;
-  border-top: 1px solid hsl(var(--border));
-}
-.eg-readme-runtime > h2 {
-  margin: 0 0 12px !important;
-  font-size: 1.25rem !important;
-}
 /* Footer stays visually attached to the welcome composer. */
 #welcome-screen::after {
   margin-top: -18px !important;
@@ -2317,31 +2304,10 @@ main [data-step-type="user_message"] #edit-chat-input {
   box-shadow: none;
 }
 
-
-/* 说明弹窗的动态运行配置卡片（chainlit.md 无静态表格时注入） */
-.eg-config-card-dynamic table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.eg-config-card-dynamic td {
-  padding: 6px 10px;
-  border-bottom: 1px solid hsl(var(--border));
-  vertical-align: top;
-}
-.eg-config-card-dynamic td:first-child {
-  color: hsl(var(--muted-foreground));
-  white-space: nowrap;
-  padding-right: 18px;
-}
-.eg-config-card-dynamic td:last-child {
-  font-weight: 500;
-}
 .eg-config-loading {
   color: hsl(var(--muted-foreground));
   font-size: 13px;
 }
-
 
 /* 线程视图不显示欢迎屏：SPA 切换会话时 Chainlit 先渲染欢迎骨架再渲染
    历史（数据未到），闪现的大字欢迎屏观感突兀。欢迎屏只属于首页。 */

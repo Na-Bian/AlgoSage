@@ -555,72 +555,10 @@
     return true;
   }
 
+  // 说明弹窗不再注入“当前运行配置”卡片：运行配置已在设置面板与输入区
+  // 控件上直接可见，弹窗只保留说明文案。
   function enhanceReadmeDetails() {
-    const dialog = Array.from(document.querySelectorAll('[role="dialog"]')).find(
-      (node) => node.querySelector(':scope > div > div > h2')?.textContent.trim() === "说明"
-    );
-    if (!dialog || dialog.dataset.egRuntimeDetails === "1") return false;
-
-    const source = document.querySelector(
-      '#welcome-screen.eg-empty-welcome > div:first-child'
-    );
-    const prose = dialog.querySelector(':scope > div > .prose');
-    if (!prose) return false;
-
-    const section = document.createElement("section");
-    section.className = "eg-readme-runtime";
-    const title = document.createElement("h2");
-    title.textContent = "当前运行配置";
-    const configCard = source?.querySelector(".eg-config-card");
-    if (configCard) {
-      // chainlit.md 仍提供静态配置表格时按原样克隆。
-      section.append(title, configCard.cloneNode(true));
-      prose.append(section);
-      dialog.dataset.egRuntimeDetails = "1";
-      return true;
-    }
-    // chainlit.md 已无硬编码配置表格：动态注入真实运行配置（当前模型、
-    // 提供商与可用性来自 /models/catalog 的运行数据）。
-    const card = document.createElement("div");
-    card.className = "eg-config-card eg-config-card-dynamic";
-    card.innerHTML =
-      '<p class="eg-config-loading">正在读取运行配置…</p>';
-    section.append(title, card);
-    prose.append(section);
-    dialog.dataset.egRuntimeDetails = "1";
-    fetch("/models/catalog", { headers: { Accept: "application/json" } })
-      .then((response) => response.json())
-      .then((catalog) => {
-        const live = dialog.querySelector(".eg-config-card-dynamic");
-        if (!live || !catalog) return;
-        const model =
-          catalog.current_label ||
-          catalog.current_selection ||
-          "未配置模型";
-        const provider = (catalog.providers || []).find((p) =>
-          (p.models || []).some((m) => m.selection === catalog.current_selection)
-        );
-        const available = catalog.current_available;
-        const rows = [
-          ["当前模型", model],
-          ["模型提供商", provider ? provider.label : "未配置"],
-          ["模型可用", available ? "正常" : "暂不可用"],
-        ];
-        const table = document.createElement("table");
-        table.innerHTML = rows
-          .map(
-            ([k, v]) =>
-              "<tr><td>" + k + "</td><td><strong>" + v + "</strong></td></tr>"
-          )
-          .join("");
-        live.innerHTML = "";
-        live.append(table);
-      })
-      .catch(() => {
-        const live = dialog.querySelector(".eg-config-card-dynamic");
-        if (live) live.innerHTML = '<p class="eg-config-loading">运行配置读取失败，可在「设置」中查看。</p>';
-      });
-    return true;
+    return false;
   }
 
   buildCollapsedBar();
