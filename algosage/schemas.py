@@ -128,6 +128,8 @@ class TutorResponse:
     regenerations: int = 0
     # P3 起新增：本会话该题的累计风险与已披露元素（无 SessionGuard 时为 None/空）。
     session_risk: Optional[float] = None
+    # 当前模型不支持视觉而用户上传了图片时的用户提示（None=不提示）。
+    vision_notice: Optional[str] = None
     session_disclosures: tuple[str, ...] = ()
     # Developer-side evidence only; never include these fields in student metadata.
     call_trace: tuple[dict, ...] = ()

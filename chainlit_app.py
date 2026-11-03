@@ -2054,11 +2054,18 @@ async def on_message(message: cl.Message) -> None:
             reasoning_step.name = "思考完成"
             await reasoning_step.update()
             stream_out["reasoning"] = final_reasoning
+    vision_note = getattr(response, "vision_notice", None)
+    if vision_note:
+        vision_note = f"⚠️ {vision_note}"
     if streamed_reply is not None:
         # 真流式路径：内容已在生成过程中直播；审核后不一致的部分
         # 已在 run_turn 里整体替换为最终答案，这里把最终内容（含
         # 数学定界符规范化）整体落库并推平尾部留白的转义残余。
-        streamed_reply.content = normalize_math_delimiters(response.answer)
+        streamed_reply.content = (
+            f"{vision_note}\n\n{normalize_math_delimiters(response.answer)}"
+            if vision_note
+            else normalize_math_delimiters(response.answer)
+        )
         await streamed_reply.send()
     else:
         # 思考模型的推理过程：宽松演示模式下以独立可折叠 Step 展示
@@ -2070,7 +2077,10 @@ async def on_message(message: cl.Message) -> None:
                 name="model-reasoning", type="run", icon="brain"
             ) as step:
                 step.output = reasoning
-        await deliver_response(reply, normalize_math_delimiters(response.answer))
+        delivered = normalize_math_delimiters(response.answer)
+        if vision_note:
+            delivered = f"{vision_note}\n\n{delivered}"
+        await deliver_response(reply, delivered)
     logger.info(
         "Turn timing %s",
         json.dumps(

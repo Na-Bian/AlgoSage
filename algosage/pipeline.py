@@ -258,7 +258,17 @@ class AlgoSageTutor:
                 + request.attachment_text
             )
         image_names = [item.name for item in request.attachments if item.image_data_url]
+        vision_notice = None
         if image_names:
+            # 能力感知提醒：当前模型不支持视觉（多模态）时，图片内容进不了
+            # 模型上下文。回答仍按可见文本生成，但要告知用户图片未参与。
+            caps = getattr(self.settings, "capabilities", None) or {}
+            if not caps.get("multimodal"):
+                vision_notice = (
+                    f"当前模型（{self.settings.model}）不支持图像输入，上传的图片"
+                    f"（{'、'.join(image_names)}）内容未参与本次回答。"
+                    "请在「设置」中切换到支持视觉的模型后再上传图片。"
+                )
             user_text += (
                 "\n\n学生同时上传了图片："
                 + "、".join(image_names)
@@ -419,11 +429,13 @@ class AlgoSageTutor:
             summary,
             regenerations,
             evidence,
+            vision_notice=vision_notice,
         )
 
     @staticmethod
     def _response(
-        answer, result, policy, audit, model, ledger, summary, regenerations, evidence
+        answer, result, policy, audit, model, ledger, summary, regenerations, evidence,
+        vision_notice=None,
     ):
         # 思考模型的推理过程仅在宽松演示模式返回；学习保护模式下推理可能
         # 包含题解片段，一律不下发（result 可能是 Classification，无该属性）。
@@ -439,6 +451,7 @@ class AlgoSageTutor:
             regenerations=regenerations,
             session_risk=summary.get("risk") if summary else None,
             session_disclosures=summary.get("disclosures", ()) if summary else (),
+            vision_notice=vision_notice,
             call_trace=tuple(dict(c) for c in ledger.calls),
             audit_attempts=tuple(evidence),
             reasoning=reasoning,
