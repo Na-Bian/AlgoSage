@@ -118,7 +118,27 @@
       toggleLevelMenu(pill);
     });
     updateLevelPill(pill);
+    placeLevelPill(pill);
     return pill;
+  }
+
+  function placeLevelPill(pill) {
+    // 插到模型选择按钮左侧（同一右组，提交键最右）。模型按钮未挂载时
+    // 挂到 composer 的动作行右组末尾，model-picker 挂载时会重新归位。
+    var composer = document.getElementById("message-composer");
+    if (!composer) return;
+    var actionRow = composer.querySelector(":scope > .flex.items-center.justify-between");
+    var rightGroup = actionRow?.querySelector(":scope > .flex.items-center:last-child");
+    var submit = document.getElementById("chat-submit");
+    var modelBtn = document.querySelector(".eg-model-button");
+    if (!rightGroup) return;
+    if (modelBtn && modelBtn.parentElement === rightGroup) {
+      rightGroup.insertBefore(pill, modelBtn);
+    } else if (submit && submit.parentElement === rightGroup) {
+      rightGroup.insertBefore(pill, submit);
+    } else {
+      rightGroup.append(pill);
+    }
   }
 
   function updateLevelPill(pill) {
@@ -182,7 +202,8 @@
       });
       wrap.append(pill);
     });
-    wrap.append(levelPill());
+    // 等级控件不留在 pills 行：由 model-picker 把它放进模型按钮左侧
+    // （与模型选择相邻）。此处只放深度思考/联网搜索两个 pill。
     attach.insertAdjacentElement("afterend", wrap);
     syncPills(wrap);
     return wrap;
