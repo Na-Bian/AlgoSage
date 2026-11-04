@@ -208,12 +208,16 @@ def main() -> None:
     # Chainlit 的 Cookie OAuth2 scheme 缺 fastapi openapi 构建所需的 model
     # 属性：任何 /openapi.json 请求都会抛 AttributeError，且异常发生在
     # 事件循环线程里可把服务拖死（2026-11-03 宕机根因）。课程部署不需要
-    # API 文档，直接禁用 openapi 路由。
-    from chainlit.server import app as _chainlit_app
+    # API 文档：中间件直接拦截（先于路由），并禁用 openapi 路由。
 
-    _chainlit_app.openapi_url = None
-    _chainlit_app.docs_url = None
-    _chainlit_app.redoc_url = None
+    async def _reject_openapi(request, call_next):
+        if request.url.path in {"/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect"}:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+        return await call_next(request)
+
+    app.add_middleware(BaseHTTPMiddleware, dispatch=_reject_openapi)
 
     uvicorn.run(
         app,
