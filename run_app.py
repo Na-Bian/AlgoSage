@@ -205,6 +205,16 @@ def main() -> None:
 
     app.add_middleware(BaseHTTPMiddleware, dispatch=inject_app_shell_boot)
 
+    # Chainlit 的 Cookie OAuth2 scheme 缺 fastapi openapi 构建所需的 model
+    # 属性：任何 /openapi.json 请求都会抛 AttributeError，且异常发生在
+    # 事件循环线程里可把服务拖死（2026-11-03 宕机根因）。课程部署不需要
+    # API 文档，直接禁用 openapi 路由。
+    from chainlit.server import app as _chainlit_app
+
+    _chainlit_app.openapi_url = None
+    _chainlit_app.docs_url = None
+    _chainlit_app.redoc_url = None
+
     uvicorn.run(
         app,
         host=args.host,
