@@ -12,5 +12,3 @@ python-docx>=1.1,<2        # DOCX 附件文本提取
 python-pptx>=1,<2          # PPTX 附件文本提取
 openpyxl>=3.1,<4           # XLSX 附件文本提取
 
-# 旧 Streamlit 界面（回退方案，保留至 Chainlit 版稳定）
-streamlit>=1.36,<2

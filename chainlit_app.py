@@ -9,7 +9,6 @@
   全部经由 algosage.service.TutorService 完成（业务逻辑与前端解耦）。
 - API Key 只存在于服务端进程；浏览器仅收到白名单元数据。
 - 学习保护策略默认由服务端 EXAM_MODE 决定；学生界面只提供模型选择，不可关闭保护。
-- 旧 Streamlit 界面 app.py 保留为回退方案。
 """
 
 from __future__ import annotations

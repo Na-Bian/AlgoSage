@@ -37,8 +37,6 @@ APP_MODE=mock python run_app.py
 
 API 模式在本地未跟踪的 `.env` 里设 `APP_MODE=api`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`。模型可用性以服务商账号为准。密钥不要写进源码、日志、截图或提交包。
 
-`app.py`（Streamlit）是保留的旧入口，走同一个 TutorService；`SAGE_ALLOW_POLICY_SWITCH` 默认关闭，学生界面不暴露策略切换。
-
 ## 控制链
 
 ```text
