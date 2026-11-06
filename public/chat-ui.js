@@ -26,11 +26,29 @@
   // 动态思考标题（服务端实时推送“思考中 · N 字 / 思考完成”）原样保留。
   const DYNAMIC_REASONING_RE = /^(思考中 · \d+ 字|思考完成)$/;
 
+  // 思考步骤识别：创建时的内部名（model-reasoning）与服务端收口后的动态名
+  // （思考中 · N 字 / 思考完成）都是同一条思考行。名字首次更新后就不再是
+  // 内部名，只按内部名识别会让放置/展开逻辑对运行中的思考行全部失效。
+  function isReasoningName(safeName) {
+    return safeName === "model-reasoning" || DYNAMIC_REASONING_RE.test(safeName);
+  }
+
+  function stepName(button) {
+    try {
+      return decodeURIComponent(button.id.slice("step-".length));
+    } catch (_) {
+      return button.id.slice("step-".length);
+    }
+  }
+
   function translateStepLabels() {
-    document.querySelectorAll('main button[id^="step-"]').forEach((button) => {
-      const safeName = decodeURIComponent(button.id.slice("step-".length));
-      const label = STEP_LABELS[safeName] ||
-        (DYNAMIC_REASONING_RE.test(safeName) ? safeName : null);
+    // 有内容的步骤渲染成可展开的 button，生成中尚无内容的步骤渲染成
+    // 同 id 的 <p>（“使用中 …”）；两种都要把内部名换成中文。
+    document.querySelectorAll('main [id^="step-"]').forEach((button) => {
+      const safeName = stepName(button);
+      const reasoning = isReasoningName(safeName);
+      const label = STEP_LABELS[safeName]
+        || (reasoning ? safeName : null);
       if (!label || button.dataset.egStepLabel === label) return;
 
       button.dataset.egStepLabel = label;
@@ -41,7 +59,7 @@
       });
       // 置于正式回答上方；展开/收起交给 Chainlit 自己的折叠机制
       //（见 ensureReasoningExpanded），这里只做标记。
-      if (safeName === "model-reasoning") {
+      if (reasoning && button.tagName === "BUTTON") {
         button.parentElement?.classList.add("eg-reasoning-step");
       }
     });
@@ -72,8 +90,11 @@
   document.addEventListener(
     "click",
     (event) => {
-      const button = event.target?.closest?.('button[id$="model-reasoning"]');
-      if (!button || !event.isTrusted) return;
+      // 思考行的名字会从内部名变为动态名（思考中 · N 字 / 思考完成），
+      // 且刷新后以动态名持久化——按内部名匹配会漏掉全部新历史芯片，
+      // 用户的展开会在下一帧被历史分支的自动收起弹回去。
+      const button = event.target?.closest?.('button[id^="step-"]');
+      if (!button || !event.isTrusted || !isReasoningName(stepName(button))) return;
       // 用户真实点击过 = 该步骤由用户掌管：自动展开/收起一律退场。
       // （否则“每帧一次的强制收起”会覆盖用户刚展开的历史思考。）
       reasoningUserControlled.add(button);
@@ -90,7 +111,7 @@
   document.addEventListener(
     "wheel",
     (event) => {
-      const container = document.querySelector(".eg-reasoning-step");
+      const container = event.target?.closest?.(".eg-reasoning-step");
       if (!container) return;
       const body = container.nextElementSibling;
       if (!body || !(event.target === body || body.contains(event.target))) return;
@@ -139,8 +160,58 @@
     return liveTurnPending;
   }
 
+  function reasoningButtons() {
+    return [...document.querySelectorAll('button[id^="step-"]')].filter(
+      (button) => isReasoningName(stepName(button))
+    );
+  }
+
+  const reasoningTailLengths = new WeakMap();
+
+  /* 流式淡入：思考正文每次全量重渲染，把新增的尾部文本包进淡入 span，
+     让新推理以约 0.4s 淡入浮现而不是生硬地整段替换。首次见到正文（历史
+     会话、刷新）与重生成重置时静默记录长度，不做动画；动画偏好关闭或
+     系统减弱动态效果时整体跳过（motionDisabled）。 */
+  function fadeReasoningTail(body) {
+    if (motionDisabled()) return;
+    const total = (body.textContent || "").length;
+    const prev = reasoningTailLengths.get(body);
+    if (prev === undefined || total < prev) {
+      reasoningTailLengths.set(body, total);
+      return;
+    }
+    if (total === prev) return;
+    reasoningTailLengths.set(body, total);
+    const from = prev;
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.textContent.trim()) return NodeFilter.FILTER_REJECT;
+        const el = node.parentElement;
+        return el && el.closest(".eg-tail-fade")
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const nodes = [];
+    let offset = 0;
+    let current;
+    while ((current = walker.nextNode())) {
+      nodes.push([current, offset]);
+      offset += current.textContent.length;
+    }
+    for (const [node, start] of nodes) {
+      const end = start + node.textContent.length;
+      if (end <= from) continue;
+      const target = start < from ? node.splitText(from - start) : node;
+      const span = document.createElement("span");
+      span.className = "eg-tail-fade";
+      target.parentNode.insertBefore(span, target);
+      span.appendChild(target);
+    }
+  }
+
   function ensureReasoningExpanded() {
-    const buttons = [...document.querySelectorAll('button[id$="model-reasoning"]')];
+    const buttons = reasoningButtons();
     if (!reasoningScanDone) {
       // 页面加载后的首轮扫描：现存按钮都视为历史渲染
       buttons.forEach((b) => {
@@ -149,6 +220,15 @@
       });
       reasoningScanDone = true;
     }
+    // 多轮历史里每条思考行都要有限高正文样式与流式淡入（与展开状态无关）。
+    reasoningButtons().forEach((b) => {
+      const body = b.parentElement?.nextElementSibling;
+      if (!body) return;
+      if (!body.classList.contains("eg-reasoning-body")) {
+        body.classList.add("eg-reasoning-body");
+      }
+      fadeReasoningTail(body);
+    });
     const button = buttons[buttons.length - 1];
     if (!button) return;
     const container = button.parentElement;
@@ -882,29 +962,97 @@
      首个思考增量到达时页面可能仍在欢迎视图，思考 Step 会渲染进欢迎
      容器；而回答流式渲染在消息容器——两者是兄弟容器，必须跨容器移动。 */
   function syncReasoningPlacement() {
-    const container = document.querySelector(".eg-reasoning-step");
-    if (!container) return;
-    const row = container.closest(".step") || container.parentElement;
-    if (!row) return;
-    const aMsg = document.querySelector('[data-step-type="assistant_message"]');
-    if (!aMsg) return;
-    const aContainer = aMsg.parentElement;
-    const aMsgRow = aMsg.closest(".step") || aMsg;
-    if (row.parentElement === aContainer) {
-      // 同容器：确保思考行紧邻回答行之前即可。
-      if (row.nextElementSibling === aMsgRow) return;
+    // NodeList 没有 .find；归位查找需要真数组。
+    const answers = [
+      ...document.querySelectorAll('[data-step-type="assistant_message"]'),
+    ];
+    if (!answers.length) return;
+    // 每个思考行归位到它自己回合的回答上方（历史会话里可能有多条）。
+    document.querySelectorAll(".eg-reasoning-step").forEach((container) => {
+      const row = container.closest(".step") || container.parentElement;
+      if (!row) return;
+      const aMsg = answerForReasoningRow(row, answers);
+      if (!aMsg) return;
+      const aContainer = aMsg.parentElement;
+      const aMsgRow = aMsg.closest(".step") || aMsg;
+      if (row.parentElement === aContainer) {
+        // 同容器：确保思考行紧邻回答行之前即可。
+        if (row.nextElementSibling === aMsgRow) return;
+        aContainer.insertBefore(row, aMsgRow);
+        return;
+      }
+      // 跨容器：思考行与其后的输出片段整体移到回答行之前。
+      const moving = [];
+      let sib = row.nextElementSibling;
+      while (sib) {
+        moving.push(sib);
+        sib = sib.nextElementSibling;
+      }
       aContainer.insertBefore(row, aMsgRow);
-      return;
+      moving.forEach((n) => aContainer.insertBefore(n, aMsgRow));
+    });
+    // 审计归位放在思考归位之后：思考行插入回答前会把审计挤离回答相邻位。
+    syncAuditPlacement();
+  }
+
+  /* 审计面板行归位到它回合的回答之后。回合收口时审计步骤在服务端最后
+     创建，React 实时渲染的顺序可能把它插到思考行甚至回答之前。 */
+  function syncAuditPlacement() {
+    const answers = [
+      ...document.querySelectorAll('[data-step-type="assistant_message"]'),
+    ];
+    if (!answers.length) return;
+    document
+      .querySelectorAll('main button[id^="step-"]')
+      .forEach((button) => {
+        let name = "";
+        try {
+          name = decodeURIComponent(button.id.slice("step-".length));
+        } catch (_) {
+          return;
+        }
+        if (name !== "security-audit-policy") return;
+        const row = button.closest(".step");
+        if (!row || !row.parentElement) return;
+        // 审计面板属于同回合的回答：先找前面最近的回答（创建顺序）；实时
+        // 渲染可能把审计插到回答上方，此时向后找最近的回答并移到它后面。
+        let prev = row;
+        let aMsg = null;
+        while ((prev = prev.previousElementSibling)) {
+          aMsg = answers.find((a) => prev === a || (prev.contains && prev.contains(a)));
+          if (aMsg) break;
+        }
+        if (!aMsg) {
+          let sib = row;
+          while ((sib = sib.nextElementSibling)) {
+            aMsg = answers.find((a) => sib === a || (sib.contains && sib.contains(a)));
+            if (aMsg) break;
+          }
+        }
+        if (!aMsg) return;
+        const aRow = aMsg.closest(".step") || aMsg;
+        if (row.previousElementSibling === aRow) return; // 已就位
+        if (row.parentElement !== aRow.parentElement) return; // 只处理同容器的平铺布局
+        aRow.parentElement.insertBefore(row, aRow.nextElementSibling);
+      });
+  }
+
+  function answerForReasoningRow(row, answers) {
+    // 思考行属于其后的第一个回答（流式期间可能尚未挂载）；历史会话里思考
+    // 行落在回合末尾，取它前面最近的回答。
+    let sib = row;
+    while ((sib = sib.nextElementSibling)) {
+      for (const a of answers) {
+        if (sib === a || (sib.contains && sib.contains(a))) return a;
+      }
     }
-    // 跨容器：思考行与其后的输出片段整体移到回答行之前。
-    const moving = [];
-    let sib = row.nextElementSibling;
-    while (sib) {
-      moving.push(sib);
-      sib = sib.nextElementSibling;
+    let prev = row;
+    while ((prev = prev.previousElementSibling)) {
+      for (const a of answers) {
+        if (prev === a || (prev.contains && prev.contains(a))) return a;
+      }
     }
-    aContainer.insertBefore(row, aMsgRow);
-    moving.forEach((n) => aContainer.insertBefore(n, aMsgRow));
+    return answers[answers.length - 1];
   }
 
   syncReadmeVisibility();

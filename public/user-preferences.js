@@ -55,13 +55,14 @@
   }
 
   function clearActiveDraft() {
-    // 欢迎页发出消息的瞬间清掉 "new" 草稿：必须赶在输入框被 React 清空
-    // 之前，否则 restoreDraft 的观察器会在清空窗口把旧草稿再注入一次
-    //（消息被拼接、标题从旧草稿里提取）。
-    if (threadKey() !== "new") return;
+    // 发出消息的瞬间清掉当前页面的草稿：必须赶在输入框被 React 清空之前。
+    // React 以编程方式清空输入框不会触发 input 事件，saveDraft 删不掉它；
+    // 不在此清理的话，restoreDraft 的观察器会把刚发出的消息重新填回输入框
+    //（欢迎页还会导致消息被拼接、标题从旧草稿里提取）。
     try {
       var drafts = JSON.parse(localStorage.getItem("algosage-drafts") || "{}");
-      delete drafts["new"];
+      delete drafts[threadKey()];
+      if (lastTypedKey) delete drafts[lastTypedKey];
       localStorage.setItem("algosage-drafts", JSON.stringify(drafts));
     } catch (_) {}
     lastTypedKey = null;
@@ -78,9 +79,11 @@
   document.addEventListener(
     "keydown",
     function (event) {
-      if (event.key === "Enter" && !event.shiftKey && event.target && event.target.id === "chat-input") {
-        clearActiveDraft();
-      }
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+      if (!event.target || event.target.id !== "chat-input") return;
+      // “Ctrl+Enter 发送”模式下普通回车不发送，草稿要保留。
+      if (readPreferences().enter_behavior === "ctrl_enter" && !(event.ctrlKey || event.metaKey)) return;
+      clearActiveDraft();
     },
     true
   );

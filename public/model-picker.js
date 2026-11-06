@@ -141,10 +141,15 @@
   var lastComposer = null;
 
   /* UI 时序埋点：composer 注入的毫秒级时间线上报到 /debug/ui-trace（服务端
-     只写日志）。用于远程诊断"设置按钮在重挂载窗口消失"类帧时序问题。 */
+     只写日志）。用于远程诊断"设置按钮在重挂载窗口消失"类帧时序问题。
+     默认关闭——生成期间每次 DOM 变动都会记一条，常开会持续刷请求和日志；
+     排查时在浏览器控制台执行 localStorage.setItem("algosage-ui-trace", "1")。 */
+  var traceEnabled = false;
+  try { traceEnabled = localStorage.getItem("algosage-ui-trace") === "1"; } catch (_) {}
   var traceBuffer = [];
   var traceTimer = 0;
   function trace(name, detail) {
+    if (!traceEnabled) return;
     traceBuffer.push({ t: Math.round(performance.now()), name: name, d: detail || "" });
     if (traceTimer) return;
     traceTimer = window.setTimeout(flushTrace, 1200);
@@ -231,15 +236,12 @@
       toggleMenu();
     });
     // 辅助等级控件（chat-options.js 挂在同一个 rightGroup）保持在模型
-    // 按钮左侧：先放等级钮，再放模型钮，最后才是发送键。
-    const levelControl = document.querySelector(".eg-level-pill");
-    if (levelControl) {
-      if (levelControl.parentElement !== rightGroup) {
-        rightGroup.insertBefore(levelControl, submit);
-      }
-      rightGroup.insertBefore(levelControl, button);
-    }
+    // 按钮左侧：顺序为 等级钮、模型钮、发送键。必须先插入模型钮，才能以它
+    // 为参照放等级钮——参照节点不在 rightGroup 里时 insertBefore 会抛错，
+    // 导致输入区重挂载后模型钮再也插不回去。
     rightGroup.insertBefore(button, submit);
+    const levelControl = document.querySelector(".eg-level-pill");
+    if (levelControl) rightGroup.insertBefore(levelControl, button);
     updateButton();
   }
 
@@ -511,6 +513,9 @@
       }
       // 两个分支都要刷新目录：管理对话框的列表与回退后的标签都依赖它。
       await loadCatalog();
+      // 设置面板的"默认模型"列表同样要去掉被删的模型（被删的若是账号
+      // 默认，服务端会回退到剩余的第一个模型）。
+      requestProviderViewsRefresh();
       return true;
     } finally {
       state.switching = false;
@@ -642,11 +647,12 @@
       }
     });
     addDialog.querySelector('[data-action="cancel"]').addEventListener("click", closeAddDialog);
-    // 确认：关闭对话框，并借一次面板提交让服务端重发"默认模型"列表
-    // （提供商增删发生在 HTTP 路由里，服务端无法从那里推送 ChatSettings）。
+    // 确认：关闭对话框，并请服务端重发设置，让面板的"默认模型"列表包含
+    // 刚增删的模型。不能借即时保存的提交来触发：没有控件改动时它不会发出
+    // 任何请求，列表就停留在旧值，只有刷新页面才更新。
     addDialog.querySelector('[data-action="confirm"]').addEventListener("click", function () {
       closeAddDialog();
-      if (window.AlgoSageSettingsAutoSave) window.AlgoSageSettingsAutoSave.refresh();
+      requestProviderViewsRefresh();
     });
     addDialog.querySelector('[data-action="discover"]').addEventListener("click", function () {
       discoverInDialog();
@@ -858,7 +864,7 @@
       });
       var payload = await response.json().catch(function () { return {}; });
       if (!response.ok) throw new Error(payload.detail || `获取失败（${response.status}）`);
-      renderDiscoveredModels(payload.models || [], fields);
+      renderDiscoveredModels(payload.models || [], fields, payload.limit_b);
     } catch (error) {
       showResultsNotice(error.message || "获取模型列表失败");
     }
@@ -931,7 +937,7 @@
     results.textContent = message;
   }
 
-  function renderDiscoveredModels(models, fields) {
+  function renderDiscoveredModels(models, fields, limitB) {
     var results = addDialog.querySelector(".eg-add-results");
     results.hidden = false;
     results.textContent = "";
@@ -974,12 +980,13 @@
       });
       results.append(row);
     }
-    allowed.slice(0, 30).forEach(appendItem);
+    allowed.slice(0, 100).forEach(appendItem);
     // 不可添加的模型（超限/参数量未知/非对话）一律不渲染，仅计数。
     if (blocked.length) {
       var more = document.createElement("div");
       more.className = "eg-add-more";
-      more.textContent = `另有 ${blocked.length} 个模型因超过 27B 或参数量未知被隐藏`;
+      more.textContent = "另有 " + blocked.length + " 个模型"
+        + (limitB ? "因超过 " + limitB + "B 或参数量未知被隐藏" : "因参数量未知被隐藏");
       results.append(more);
     }
     if (!allowed.length && !blocked.length) {

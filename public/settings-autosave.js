@@ -9,8 +9,48 @@
 
   var CLASS = "eg-autosave";
   var submitTimer = null;
+  var submitPending = false;
   var valueObserver = null;
   var comboTexts = new WeakMap();
+
+  // 直发：用设置镜像算出增量，经当前 socket 发 chat_settings_change。
+  // 返回 "sent"（已发出）、"empty"（无真实增量）或 null（直发不可用）。
+  function sendDelta() {
+    var socket = window.AlgoSageSocket;
+    if (!socket) return null;
+    var mirror = socket.settingsMirror();
+    if (!mirror || !Object.keys(mirror).length) return null;
+    var delta = {};
+    if (!lastSent) {
+      // 基线未建：首发改全量（幂等合并），包括默认模型。
+      for (var k in mirror) delta[k] = mirror[k];
+    } else {
+      for (var key in mirror) {
+        if (mirror[key] !== lastSent[key]) delta[key] = mirror[key];
+      }
+    }
+    if (!Object.keys(delta).length) return "empty";
+    if (!socket.emitSettingsChange(delta)) return null;
+    lastSent = Object.assign(lastSent || {}, mirror);
+    return "sent";
+  }
+
+  /* 面板关闭。Chainlit 关闭面板时会把模型列表和各项取值恢复到打开那一刻
+     的快照（取消语义），但即时保存下改动早已提交：不处理的话，重开后会
+     看到旧的模型列表和旧值（如“默认模型”退回 Select）。先把防抖中还没
+     发出的改动立即发出（不能被关闭吞掉），再请服务端重发设置，用保存后
+     的值覆盖旧快照；服务端保证重发排在保存之后。 */
+  var panelWasOpen = false;
+  function onPanelClosed() {
+    if (submitPending) {
+      window.clearTimeout(submitTimer);
+      submitPending = false;
+      sendDelta();
+    }
+    if (window.AlgoSageSocket) {
+      window.AlgoSageSocket.emitEvent("algosage_refresh_provider_views");
+    }
+  }
 
   function surface() {
     var title = document.getElementById("chat-settings-sidebar-title");
@@ -41,36 +81,17 @@
 
   function scheduleSubmit() {
     window.clearTimeout(submitTimer);
+    submitPending = true;
     submitTimer = window.setTimeout(function () {
+      submitPending = false;
       var confirm = document.getElementById("confirm-sidebar");
       var panel = surface();
       if (!confirm || !panel) return;
       // 首选直发路径：借前端自身维护的设置镜像（chat_settings_edit 全量
       // 事件）算出增量，直接发 chat_settings_change——服务端合并并原位
-      // 重发面板，抽屉全程不关，无收起/重开闪烁。
-      var socket = window.AlgoSageSocket;
-      if (socket) {
-        var mirror = socket.settingsMirror();
-        if (mirror && Object.keys(mirror).length) {
-          var delta = {};
-          if (!lastSent) {
-            // 基线未建：首发改全量（幂等合并），包括默认模型。
-            for (var k in mirror) delta[k] = mirror[k];
-          } else {
-            for (var key in mirror) {
-              if (mirror[key] !== lastSent[key]) delta[key] = mirror[key];
-            }
-          }
-          if (Object.keys(delta).length) {
-            if (socket.emitSettingsChange(delta)) {
-              lastSent = Object.assign(lastSent || {}, mirror);
-              return;
-            }
-          } else {
-            return; // 无真实增量（渲染回放误触发）：不提交也不闪面板
-          }
-        }
-      }
+      // 重发面板，抽屉全程不关，无收起/重开闪烁。无真实增量（渲染回放
+      // 误触发）时不提交也不闪面板。
+      if (sendDelta()) return;
       // 回退路径（无 WebSocket/镜像未就绪）：程序化提交 → 抽屉收起 →
       // 自动重开 → React 补渲染。整条链路的时长随负载波动，固定冷却窗
       // 会提前失效，让渲染回放（空值→初值）被当成用户编辑，引发面板收
@@ -199,7 +220,14 @@
 
   function scan() {
     var panel = surface();
-    if (!panel) return;
+    if (!panel) {
+      if (panelWasOpen) {
+        panelWasOpen = false;
+        onPanelClosed();
+      }
+      return;
+    }
+    panelWasOpen = true;
     if (panel.dataset.egAutosave !== "armed") {
       // 延迟一帧再挂监听和快照：面板刚挂载时 React 还没填值，立刻快照会
       // 把之后的补渲染（空→初值）误判为用户编辑（如点过下拉后重开面板）。
@@ -216,14 +244,19 @@
   }
 
   // 顶栏齿轮是面板开关的总闸：记录点击时间供重开轮询让位（用户主动关闭
-  // 时轮询不得再拉起面板），并清掉遗留的提交防抖。
+  // 时轮询不得再拉起面板）。遗留的提交防抖立即直发而不是丢弃——丢弃会让
+  // 刚选的值（如默认模型）在关闭后既没保存、也不再显示。
   document.addEventListener(
     "click",
     function (event) {
       var button = event.target.closest && event.target.closest("#chat-settings-header-button");
       if (!button) return;
       lastGearClickAt = Date.now();
-      window.clearTimeout(submitTimer);
+      if (submitPending) {
+        window.clearTimeout(submitTimer);
+        submitPending = false;
+        sendDelta();
+      }
     },
     true
   );
@@ -255,9 +288,8 @@
   window.addEventListener("mousedown", swallowOverlayClose, true);
   window.addEventListener("click", swallowOverlayClose, true);
 
-  // 管理模型提供商对话框的"确认"：面板里其它控件变更都由即时保存提交，
-  // 但提供商增删发生在 HTTP 路由里（服务端无法从那里推送 ChatSettings），
-  // 需要借一次面板提交让服务端重发"默认模型"列表。
+  // 管理模型提供商对话框的"确认"：面板里其它控件变更都由即时保存提交。
+  // 提供商增删后由 model-picker 直接请求服务端重发设置（见 requestProviderViewsRefresh）。
   window.AlgoSageSettingsAutoSave = { refresh: scheduleSubmit };
 
 })();
