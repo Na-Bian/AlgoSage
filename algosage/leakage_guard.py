@@ -417,7 +417,9 @@ class LLMLeakageJudge:
                     draft, decision, question, existing_code, history, images
                 ),
                 "judge",
-                getattr(self.settings, "judge_max_output_tokens", 256),
+                # 默认 768 在「思考无法关闭」的模型上会被推理占满，判定 JSON
+                # 没有空间；放宽到 1024（环境变量仍可覆盖）。
+                getattr(self.settings, "judge_max_output_tokens", 1024),
             )
             payload = self._normalise_payload(self._parse(result.text))
         except Exception as error:  # noqa: BLE001 - 超时/网络错误统一降级

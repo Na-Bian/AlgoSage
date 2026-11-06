@@ -1,11 +1,15 @@
 """Provider-independent Chat Completions adapter and offline deterministic mock."""
 
+import logging
 import time
 from typing import Protocol
 from urllib.parse import urlparse
+from openai import APIStatusError
 from .config import Settings
 from .schemas import LLMResult
 from .invocation import GenerationAborted, generation_abort_requested
+
+logger = logging.getLogger(__name__)
 
 
 class ChatBackend(Protocol):
@@ -96,7 +100,7 @@ class OpenAICompatibleBackend:
             extra.update(extra_body_overrides)
         if extra:
             kwargs["extra_body"] = extra
-        completion = self.client.chat.completions.create(**kwargs)
+        completion = self._create_with_retry(kwargs)
         message = completion.choices[0].message
         content = message.content or ""
         reasoning = getattr(message, "reasoning_content", None) or getattr(
@@ -110,6 +114,32 @@ class OpenAICompatibleBackend:
             output_tokens=getattr(usage, "completion_tokens", None),
             reasoning=str(reasoning) if isinstance(reasoning, str) else "",
         )
+
+    def _create_with_retry(self, kwargs: dict):
+        """发起请求；上游以 400 拒绝且我们附加了 extra_body 时，去掉附加
+        参数立即重试一次。
+
+        部分兼容端点不接受我们默认附加的私有参数（如为默认关闭思考而加的
+        enable_thinking=false；GLM Coding 端点对这类模型返回 1210「不支持
+        关闭思考」）。审核/分类等调用不携带面板开关，无法靠覆盖规避——
+        模型按自身默认行为输出即可，省略参数是无害回退。
+        """
+        try:
+            return self.client.chat.completions.create(**kwargs)
+        except APIStatusError as error:
+            if getattr(error, "status_code", None) == 400 and kwargs.get("extra_body"):
+                logger.warning(
+                    "上游拒绝 extra_body（%s）；去掉附加参数重试一次",
+                    str(getattr(error, "body", ""))[:200],
+                )
+                retry_kwargs = {
+                    key: value for key, value in kwargs.items() if key != "extra_body"
+                }
+                return self.client.chat.completions.create(**retry_kwargs)
+            raise
+
+    def _create_stream(self, kwargs: dict):
+        return self._create_with_retry(kwargs)
 
     def generate_stream_with_options(
         self,
@@ -154,7 +184,7 @@ class OpenAICompatibleBackend:
         if generation_abort_requested():
             raise GenerationAborted("用户停止了本轮生成")
         deadline = time.monotonic() + effective_timeout
-        stream = self.client.chat.completions.create(**kwargs)
+        stream = self._create_stream(kwargs)
         parts = []
         reasoning_parts = []
         finish_reason = None
