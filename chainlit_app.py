@@ -1654,9 +1654,20 @@ def _make_delta_sink(context, stream_out, abort_event):
     loop = asyncio.get_running_loop()
 
     # 思考过程更新节流：step.update 是全量重发，思考越长每次传输与前端
-    # 重渲染代价越大（O(n²)），按时间限流到 ~600ms 一次；回合结束时有
-    # 最终补发，不丢尾部内容。
+    # 重渲染代价越大（O(n²)）——GLM 等思考关不掉的模型推理可达十万字，
+    # 固定 600ms 的全量重发曾把前端消息区压到白屏。节流间隔随长度自适应，
+    # 且超过上限后正文只落库、不再推送（收口时一次性补发），进度由标题
+    # 字数以轻量事件继续呈现。
     REASONING_UPDATE_INTERVAL = 0.6
+    REASONING_FULL_TEXT_CAP = 12_000
+    REASONING_UPDATE_TIERS = ((5_000, 0.6), (20_000, 1.5), (float("inf"), 3.0))
+
+    def reasoning_interval(length: int) -> float:
+        for threshold, interval in REASONING_UPDATE_TIERS:
+            if length <= threshold:
+                return interval
+        return REASONING_UPDATE_TIERS[-1][1]
+
     try:
         thread = context_id()
     except Exception:  # noqa: BLE001 - 无 ws 上下文（测试）时没有旁观者
@@ -1690,22 +1701,33 @@ def _make_delta_sink(context, stream_out, abort_event):
                     stream_out["reasoning_step"] = step
                 now = time.monotonic()
                 last = stream_out.get("reasoning_last_update", 0.0)
+                reasoning_len = len(reasoning_so_far)
+                full_text_frozen = reasoning_len > REASONING_FULL_TEXT_CAP
                 if (
                     step is not None
                     and reasoning_so_far != stream_out.get("reasoning", "")
-                    and now - last >= REASONING_UPDATE_INTERVAL
+                    and now - last >= reasoning_interval(reasoning_len)
                 ):
-                    step.output = normalize_math_delimiters(reasoning_so_far)
-                    # 标题带实时思考进度（字数），阶段感清晰：思考仍在推进，
-                    # 不是卡住。
-                    step.name = f"思考中 · {len(reasoning_so_far)} 字"
-                    await step.update()
+                    if full_text_frozen:
+                        # 超长思考：正文不再全量重发（前端渲染过载白屏的根源），
+                        # 完整内容照常随收口补发落库；界面只推进标题字数。
+                        step.name = f"思考中 · {reasoning_len} 字"
+                        await step.update()
+                    else:
+                        step.output = normalize_math_delimiters(reasoning_so_far)
+                        # 标题带实时思考进度（字数），阶段感清晰：思考仍在推进，
+                        # 不是卡住。
+                        step.name = f"思考中 · {reasoning_len} 字"
+                        await step.update()
                     stream_out["reasoning"] = reasoning_so_far
                     stream_out["reasoning_last_update"] = now
-                    # 广播给回合进行中刷新过的页面，让它们看到直播推理。
+                    # 广播给回合进行中刷新过的页面：同样轻量化，超限后只发标题。
                     if _turn_watchers.get(thread):
+                        payload = step.to_dict()
+                        if full_text_frozen:
+                            payload = dict(payload, output="")
                         await _broadcast_turn_event(
-                            thread, "update_message", step.to_dict()
+                            thread, "update_message", payload
                         )
                 reply = stream_out.get("reply")
                 if reply is None:
