@@ -212,6 +212,7 @@ class HybridIntentClassifier:
                 _build_prompt(request, history),
                 "classification",
                 getattr(self.settings, "classifier_max_output_tokens", 256),
+                escalate_on_truncate=True,
             )
             parsed = _parse_llm_output(result.text)
         except Exception as error:  # noqa: BLE001 - API 超时/网络错误统一回退

@@ -91,6 +91,7 @@ def generate_title(backend, settings, question: str, timeout: float = 8) -> str 
                 stage="title",
                 max_output_tokens=96,
                 extra_body_overrides={"enable_thinking": False},
+                escalate_on_truncate=True,
             )
             title = valid_title(result.text, source)
             if title:

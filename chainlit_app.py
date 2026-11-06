@@ -1734,6 +1734,19 @@ def _make_delta_sink(context, stream_out, abort_event):
                     reply = cl.Message(content="")
                     stream_out["reply"] = reply
                 normalized = normalize_math_delimiters(text_so_far)
+                # 正文 token 开始到达 = 本轮思考已结束：立即把芯片标题定格为
+                # 「思考完成」，不再等回合收口（审核阶段可能持续几十秒）。
+                if (
+                    text_so_far
+                    and step is not None
+                    and getattr(step, "name", "") != "思考完成"
+                ):
+                    step.name = "思考完成"
+                    await step.update()
+                    if _turn_watchers.get(thread):
+                        await _broadcast_turn_event(
+                            thread, "update_message", step.to_dict()
+                        )
                 if len(normalized) < len(stream_out.get("streamed_text", "")):
                     # 重生成：文本从头开始，重置已播内容。
                     reply.content = ""

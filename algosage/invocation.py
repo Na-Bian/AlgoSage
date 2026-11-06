@@ -132,6 +132,7 @@ def generate(
     max_output_tokens=None,
     sampling=None,
     extra_body_overrides=None,
+    escalate_on_truncate=False,
 ):
     ledger = _current.get()
     remaining = None
@@ -164,6 +165,7 @@ def generate(
                 sampling=sampling,
                 extra_body_overrides=extra_body_overrides,
                 on_delta=_delta_sink.get(),
+                escalate_on_truncate=escalate_on_truncate,
             )
         elif hasattr(backend, "generate_with_options"):
             result = backend.generate_with_options(
@@ -172,6 +174,7 @@ def generate(
                 timeout=remaining,
                 sampling=sampling,
                 extra_body_overrides=extra_body_overrides,
+                escalate_on_truncate=escalate_on_truncate,
             )
         else:
             result = backend.generate(messages)

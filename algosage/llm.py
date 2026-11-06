@@ -72,14 +72,16 @@ class OpenAICompatibleBackend:
         timeout=None,
         sampling=None,
         extra_body_overrides=None,
+        escalate_on_truncate=False,
     ) -> LLMResult:
         if generation_abort_requested():
             raise GenerationAborted("用户停止了本轮生成")
+        ceiling = self.settings.max_output_tokens
+        requested = max_output_tokens or ceiling
         kwargs = {
             "model": self.settings.model,
             "messages": messages,
-            self.settings.token_parameter: max_output_tokens
-            or self.settings.max_output_tokens,
+            self.settings.token_parameter: requested,
             "timeout": (
                 min(self.settings.timeout, timeout)
                 if timeout is not None
@@ -101,6 +103,22 @@ class OpenAICompatibleBackend:
         if extra:
             kwargs["extra_body"] = extra
         completion = self._create_with_retry(kwargs)
+        finish = getattr(completion.choices[0], "finish_reason", None)
+        if (
+            escalate_on_truncate
+            and finish == "length"
+            and requested < ceiling
+        ):
+            # 「思考无法关闭」的模型在辅助调用的小预算下经常截断（推理吃掉
+            # 大半，判定 JSON 只剩半截——非空但解析不了）。按所选模型的
+            # 输出上限重试一次；回合预算与停止通道仍然生效。
+            logger.info(
+                "辅助调用输出被截断（finish=length, %s tokens）；放宽至 %s 重试一次",
+                requested,
+                ceiling,
+            )
+            kwargs[self.settings.token_parameter] = ceiling
+            completion = self._create_with_retry(kwargs)
         message = completion.choices[0].message
         content = message.content or ""
         reasoning = getattr(message, "reasoning_content", None) or getattr(
@@ -150,17 +168,19 @@ class OpenAICompatibleBackend:
         sampling=None,
         extra_body_overrides=None,
         on_delta=None,
+        escalate_on_truncate=False,
     ) -> LLMResult:
         effective_timeout = (
             min(self.settings.timeout, timeout)
             if timeout is not None
             else self.settings.timeout
         )
-        token_limit = max_output_tokens or self.settings.max_output_tokens
-        # 「思考无法关闭」的模型（GLM Coding 等）会把整个输出预算花在推理
-        # 上、正文为空。此时预算放大 4 倍重试一次，仍为空才按失败处理；
-        # 回合级预算与停止通道仍然生效。
-        escalation_left = 1
+        ceiling = self.settings.max_output_tokens
+        token_limit = max_output_tokens or ceiling
+        # 「思考无法关闭」的模型（GLM Coding 等）会把大半输出预算花在推理
+        # 上：正文为空，或判定 JSON 被截成半截。辅助调用允许在截断时按所选
+        # 模型的输出上限重试一次；回合级预算与停止通道仍然生效。
+        escalation_left = 1 if escalate_on_truncate and token_limit < ceiling else 0
         while True:
             char_cap = min(self._STREAM_CHAR_CAP, max(1, int(token_limit)) * 8)
             kwargs = {
@@ -232,15 +252,11 @@ class OpenAICompatibleBackend:
                 if time.monotonic() > deadline:
                     raise TimeoutError("流式响应超过本轮截止时间")
                 text = "".join(parts)
-                if (
-                    finish_reason == "length"
-                    and not text.strip()
-                    and escalation_left
-                ):
+                if finish_reason == "length" and escalation_left:
                     escalation_left -= 1
-                    token_limit *= 4
+                    token_limit = ceiling
                     logger.info(
-                        "输出预算内正文为空（推理占满）；预算放大至 %s 重试一次",
+                        "辅助调用输出被截断（finish=length）；放宽至 %s 重试一次",
                         token_limit,
                     )
                     continue

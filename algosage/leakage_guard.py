@@ -420,6 +420,7 @@ class LLMLeakageJudge:
                 # 默认 768 在「思考无法关闭」的模型上会被推理占满，判定 JSON
                 # 没有空间；放宽到 1024（环境变量仍可覆盖）。
                 getattr(self.settings, "judge_max_output_tokens", 1024),
+                escalate_on_truncate=True,
             )
             payload = self._normalise_payload(self._parse(result.text))
         except Exception as error:  # noqa: BLE001 - 超时/网络错误统一降级
@@ -437,6 +438,7 @@ class LLMLeakageJudge:
                     "judge",
                     # 与主审一致：思考关不掉的模型需要足够预算容纳推理+判定。
                     getattr(self.settings, "judge_max_output_tokens", 1024),
+                    escalate_on_truncate=True,
                 )
                 payload = self._normalise_payload(self._parse(repaired.text))
             except Exception as error:  # noqa: BLE001
@@ -664,6 +666,7 @@ class LLMAnswerQualityReviewer:
                 ],
                 "quality",
                 getattr(self.settings, "quality_max_output_tokens", 512),
+                escalate_on_truncate=True,
             )
         except Exception as error:  # noqa: BLE001 - quality review is best effort
             logger.info("Answer quality review unavailable: %s", type(error).__name__)
