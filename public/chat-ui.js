@@ -126,9 +126,21 @@
   // 把实时回合误判成历史。
   let liveTurnPending = false;
   let liveTurnTimer = 0;
+  function armLiveTurn() {
+    liveTurnPending = true;
+    clearTimeout(liveTurnTimer);
+    liveTurnTimer = setTimeout(() => { liveTurnPending = false; }, 15 * 60 * 1000);
+  }
   document.addEventListener(
     "click",
     (event) => {
+      // 编辑历史消息后的重发走消息气泡内的确认键（Chainlit 的
+      // button.confirm-edit），不在主输入区——同样属于本页发起的实时回合，
+      // 不置位的话重生成的思考芯片会被误判成历史渲染而保持折叠。
+      if (event.target?.closest?.("button.confirm-edit")) {
+        armLiveTurn();
+        return;
+      }
       const composer = document.getElementById("message-composer");
       if (!composer) return;
       const button = event.target?.closest?.("button");
@@ -138,9 +150,7 @@
       if (Math.round(rect.width) !== 40) return;
       const box = composer.getBoundingClientRect();
       if (rect.x < box.x + box.width - 220) return;
-      liveTurnPending = true;
-      clearTimeout(liveTurnTimer);
-      liveTurnTimer = setTimeout(() => { liveTurnPending = false; }, 15 * 60 * 1000);
+      armLiveTurn();
     },
     true
   );
@@ -148,10 +158,14 @@
     "keydown",
     (event) => {
       if (event.key !== "Enter" || event.shiftKey) return;
+      if (event.target?.id === "edit-chat-input") {
+        // 编辑框内回车：Chainlit 提交编辑重发（若上游不支持，仅多一个
+        // 无害的 live 标志）。
+        armLiveTurn();
+        return;
+      }
       if (!event.target?.closest?.("#message-composer")) return;
-      liveTurnPending = true;
-      clearTimeout(liveTurnTimer);
-      liveTurnTimer = setTimeout(() => { liveTurnPending = false; }, 15 * 60 * 1000);
+      armLiveTurn();
     },
     true
   );
