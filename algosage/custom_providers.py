@@ -65,6 +65,11 @@ def probe_model_capabilities(base_url: str, api_key: str, model_id: str) -> dict
     - 联网搜索：enable_search=true，上游拒绝（4xx）即不支持；
     - is_chat：纯文本最小请求，全部探测失败时用于区分"模型不存在"。
     四项检查相互独立，并发执行以缩短点击后的等待；单模型耗时≈最慢一项。
+    后三项只看上游是否接受请求：流式请求、收到首个事件即断开。默认开启
+    思考的模型（Qwen3/Qwen3.5 等）不受 max_tokens 限制推理，等完整响应
+    要先生成数百个推理 token（实测单项 4–31 秒）。不改用 enable_thinking=
+    false：那是 SiliconFlow 等的私有参数，其他 OpenAI 兼容端点可能直接 400，
+    会被误判为不支持。
     异常/超时统一记为 None（未知），不冒充支持。
     """
     from concurrent.futures import ThreadPoolExecutor
@@ -93,7 +98,13 @@ def probe_model_capabilities(base_url: str, api_key: str, model_id: str) -> dict
                     # 流式检查返回 None 表示本轮无结论，重试
                     last_error = None
                 else:
-                    client.chat.completions.create(**payload)
+                    # 4xx 拒绝在建立流时即抛出；接受则取首个事件后断开，
+                    # 不等完整生成（流内错误事件会在迭代时抛出，记为未知）。
+                    stream = client.chat.completions.create(**payload, stream=True)
+                    try:
+                        next(iter(stream), None)
+                    finally:
+                        stream.close()
                     settled = True
                     break
             except APIStatusError as error:
@@ -283,7 +294,9 @@ class CustomProviderStore:
         except (ValueError, TypeError):
             logger.info("custom provider 加密密钥格式无效，忽略已有条目")
             return
-        for idx in sorted(raw):
+        # 按序号数值排序：字符串排序会把 10、11 排在 2 之前，条目满 10 个后
+        # 每次重启都会打乱各账号的模型顺序。
+        for idx in sorted(raw, key=int):
             item = raw[idx]
             if not all(
                 field in item for field in ("PRINCIPAL", "BASE_URL", "MODEL", "KEY")
@@ -433,6 +446,16 @@ class CustomProviderStore:
                 self._persist_to_env()
             return True
 
+    def remove_all(self, principal_id: str) -> list[str]:
+        """Drop every provider (and its encrypted key) owned by one principal."""
+        with self._lock:
+            bucket = self._entries.pop(principal_id, None)
+            if not bucket:
+                return []
+            if self._env_file:
+                self._persist_to_env()
+            return list(bucket)
+
     def list_for(self, principal_id: str) -> list[dict]:
         with self._lock:
             bucket = self._entries.get(principal_id)
@@ -440,12 +463,14 @@ class CustomProviderStore:
         return [self._public_entry(entry) for entry in entries]
 
     def resolve(self, principal_id: str, selection: str) -> Settings:
+        # 只读查询，不调整顺序：条目按添加先后排列（列表展示与"回退到第一个
+        # 可用模型"都依赖它）。早期按使用先后做 LRU 淘汰时会把命中项移到
+        # 末尾，淘汰取消后若保留，每次使用都会打乱下拉列表的顺序。
         with self._lock:
             bucket = self._entries.get(principal_id)
             entry = bucket.get(selection) if bucket else None
             if entry is None:
                 raise ValueError("未知自定义模型，或所属会话已失效，请重新添加")
-            bucket.move_to_end(selection)
             settings: Settings = entry["settings"]
             return settings
 
@@ -480,6 +505,7 @@ class CustomProviderStore:
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("API Key 不能为空")
         limit_b = custom_model_max_b()
+        unlimited = limit_b == float("inf")
         models = []
         # 列表默认不显示能力标签；is_chat 用命名规则仅做非对话排除，
         # 真实能力由前端点选该模型后调用 /models/probe 探测。
@@ -491,9 +517,11 @@ class CustomProviderStore:
                     "id": model_id,
                     "params_b": params_b,
                     "allowed": (
-                        params_b is not None
-                        and params_b <= limit_b
-                        and is_chat
+                        is_chat
+                        and (
+                            unlimited
+                            or (params_b is not None and params_b <= limit_b)
+                        )
                     ),
                     "capabilities": {"is_chat": is_chat},
                 }

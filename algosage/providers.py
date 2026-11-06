@@ -13,19 +13,24 @@ from urllib.parse import urlparse
 from .config import Settings
 from .runtime_paths import runtime_path
 
-# BYOK（自带密钥）自定义 Provider 只允许接入小参数量模型：小模型的输出更
-# 容易被本系统的规则与 LLM Judge 审核层可靠约束。
+# BYOK（自带密钥）自定义 Provider 默认只允许接入小参数量模型：小模型的输出更
+# 容易被本系统的规则与 LLM Judge 审核层可靠约束。SAGE_CUSTOM_MODEL_MAX_B 可
+# 调整上限；设为 0 或负数表示暂不限制（审核层照常工作，但大模型的输出更长、
+# 更难约束，属于部署方的权衡）。
 DEFAULT_CUSTOM_MODEL_MAX_B = 27.0
+
+_UNLIMITED = float("inf")
 
 
 def custom_model_max_b() -> float:
+    """参数量上限（B）；环境变量设为 0 或负数表示暂不限制。"""
     try:
         value = float(
             os.environ.get("SAGE_CUSTOM_MODEL_MAX_B", "") or DEFAULT_CUSTOM_MODEL_MAX_B
         )
     except ValueError:
         return DEFAULT_CUSTOM_MODEL_MAX_B
-    return value if value > 0 else DEFAULT_CUSTOM_MODEL_MAX_B
+    return value if value > 0 else _UNLIMITED
 
 
 _MOE_SIZE = re.compile(
@@ -84,14 +89,15 @@ def build_custom_settings(
     if not isinstance(model, str) or not model.strip() or len(model) > 200:
         raise ValueError("模型名不能为空且长度需在 200 字符以内")
     params_b = parse_model_params_b(model)
-    if params_b is None:
-        raise ValueError(
-            "无法从模型名识别参数量（需要形如 8B / 14B 的标注），为稳妥起见拒绝添加"
-        )
-    if params_b > custom_model_max_b():
-        raise ValueError(
-            f"模型参数量 {params_b:g}B 超过自定义上限 {custom_model_max_b():g}B"
-        )
+    if custom_model_max_b() != _UNLIMITED:
+        if params_b is None:
+            raise ValueError(
+                "无法从模型名识别参数量（需要形如 8B / 14B 的标注），为稳妥起见拒绝添加"
+            )
+        if params_b > custom_model_max_b():
+            raise ValueError(
+                f"模型参数量 {params_b:g}B 超过自定义上限 {custom_model_max_b():g}B"
+            )
     return replace(
         base,
         mode="api",
