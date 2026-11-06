@@ -271,7 +271,12 @@ class TutorService:
                 ctx.history.clear()
 
     def forget_personal_state(self, exam_id: str, principal_id: str) -> None:
-        """Remove all account-linked learning state after account closure."""
+        """Remove all account-linked learning state after account closure.
+
+        ``principal_id`` is the trusted identifier used by new_context
+        (e.g. ``student:U202412345``); the stored key is ``principal:<id>``.
+        The principal's BYOK providers, including encrypted API keys, go too.
+        """
         principal_key = f"principal:{principal_id}"
         with self._context_lock:
             doomed_sessions = [
@@ -285,6 +290,11 @@ class TutorService:
                 self._contexts.pop(session_id, None)
                 self._session_bindings.pop(session_id, None)
         self.state_store.delete_principal(exam_id, principal_key)
+        removed = self.custom_providers.remove_all(principal_id)
+        if removed:
+            with self._provider_lock:
+                for selection in removed:
+                    self._custom_tutors.pop((principal_id, selection), None)
 
     def set_exam_mode(self, context: ServiceContext, exam_mode: bool) -> None:
         """Teacher-only switch; refused unless SAGE_ALLOW_POLICY_SWITCH is enabled."""
@@ -501,12 +511,20 @@ class TutorService:
     def select_provider(self, context: ServiceContext, selection: str) -> None:
         # Serialize against an in-flight turn; every turn uses one immutable profile.
         with self._context_budget(context).lock:
-            settings = self._resolve_selection_settings(context, selection)
-            context.provider_selection = selection
-            # Sampling controls are re-clamped against the newly selected profile.
-            context.model_params = normalize_model_params(
-                context.model_params, settings
-            )
+            self.apply_provider_selection(context, selection)
+
+    def apply_provider_selection(self, context: ServiceContext, selection: str) -> None:
+        """Apply a selection without the budget lock (select_provider's body).
+
+        Only for restoring a chat's state. The budget lock is per principal and
+        held for a whole turn, so a restore that waits on it stalls every chat
+        of that student until the generation ends. This is two attribute
+        assignments; an in-flight turn has already captured its own profile.
+        """
+        settings = self._resolve_selection_settings(context, selection)
+        context.provider_selection = selection
+        # Sampling controls are re-clamped against the newly selected profile.
+        context.model_params = normalize_model_params(context.model_params, settings)
 
     def select_provider_probe(
         self, selection: str, principal_id: str | None = None

@@ -377,25 +377,26 @@ def install_profile_routes(
                 current_password=payload.current_password,
                 confirmation=payload.confirmation,
             )
+            # 与聊天回合使用同一身份标识：服务端按 principal:student:<学号>
+            # 存学习保护状态与用量计数，按 student:<学号> 存 BYOK 提供商。
+            principal_id = f"student:{student_id}"
             if chat_store_factory is not None:
-                await chat_store_factory().delete_all_personal_data(
-                    f"student:{student_id}"
-                )
+                await chat_store_factory().delete_all_personal_data(principal_id)
             if state_store_factory is not None:
                 state_store_factory().delete_principal(
-                    "personal", f"principal:{student_id}"
+                    "personal", f"principal:{principal_id}"
                 )
             if personal_state_factory is not None:
                 learning_state = personal_state_factory()
                 await asyncio.to_thread(
                     learning_state.forget_personal_state,
                     learning_state.settings.exam_id,
-                    student_id,
+                    principal_id,
                 )
                 if state_store_factory is not None:
                     state_store_factory().delete_principal(
                         learning_state.settings.exam_id,
-                        f"principal:{student_id}",
+                        f"principal:{principal_id}",
                     )
         except AuthValidationError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
