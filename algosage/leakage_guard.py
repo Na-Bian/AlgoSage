@@ -435,7 +435,8 @@ class LLMLeakageJudge:
                         draft, decision, question, existing_code, history, images
                     ),
                     "judge",
-                    min(192, getattr(self.settings, "judge_max_output_tokens", 256)),
+                    # 与主审一致：思考关不掉的模型需要足够预算容纳推理+判定。
+                    getattr(self.settings, "judge_max_output_tokens", 1024),
                 )
                 payload = self._normalise_payload(self._parse(repaired.text))
             except Exception as error:  # noqa: BLE001

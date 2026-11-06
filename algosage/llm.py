@@ -157,94 +157,111 @@ class OpenAICompatibleBackend:
             else self.settings.timeout
         )
         token_limit = max_output_tokens or self.settings.max_output_tokens
-        char_cap = min(self._STREAM_CHAR_CAP, max(1, int(token_limit)) * 8)
-        kwargs = {
-            "model": self.settings.model,
-            "messages": messages,
-            self.settings.token_parameter: token_limit,
-            "timeout": effective_timeout,
-            "stream": True,
-            "stream_options": {"include_usage": True},
-        }
-        if isinstance(sampling, dict):
-            for key in (
-                "temperature",
-                "top_p",
-                "frequency_penalty",
-                "presence_penalty",
-            ):
-                if key in sampling:
-                    kwargs[key] = sampling[key]
-        extra = dict(self.settings.extra_body)
-        if isinstance(extra_body_overrides, dict):
-            extra.update(extra_body_overrides)
-        if extra:
-            kwargs["extra_body"] = extra
+        # 「思考无法关闭」的模型（GLM Coding 等）会把整个输出预算花在推理
+        # 上、正文为空。此时预算放大 4 倍重试一次，仍为空才按失败处理；
+        # 回合级预算与停止通道仍然生效。
+        escalation_left = 1
+        while True:
+            char_cap = min(self._STREAM_CHAR_CAP, max(1, int(token_limit)) * 8)
+            kwargs = {
+                "model": self.settings.model,
+                "messages": messages,
+                self.settings.token_parameter: token_limit,
+                "timeout": effective_timeout,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
+            if isinstance(sampling, dict):
+                for key in (
+                    "temperature",
+                    "top_p",
+                    "frequency_penalty",
+                    "presence_penalty",
+                ):
+                    if key in sampling:
+                        kwargs[key] = sampling[key]
+            extra = dict(self.settings.extra_body)
+            if isinstance(extra_body_overrides, dict):
+                extra.update(extra_body_overrides)
+            if extra:
+                kwargs["extra_body"] = extra
 
-        if generation_abort_requested():
-            raise GenerationAborted("用户停止了本轮生成")
-        deadline = time.monotonic() + effective_timeout
-        stream = self._create_stream(kwargs)
-        parts = []
-        reasoning_parts = []
-        finish_reason = None
-        usage = None
-        model = self.settings.model
-        accumulated_chars = 0
-        try:
-            for event in stream:
-                if generation_abort_requested():
-                    raise GenerationAborted("用户停止了本轮生成")
+            if generation_abort_requested():
+                raise GenerationAborted("用户停止了本轮生成")
+            deadline = time.monotonic() + effective_timeout
+            stream = self._create_stream(kwargs)
+            parts = []
+            reasoning_parts = []
+            finish_reason = None
+            usage = None
+            model = self.settings.model
+            accumulated_chars = 0
+            try:
+                for event in stream:
+                    if generation_abort_requested():
+                        raise GenerationAborted("用户停止了本轮生成")
+                    if time.monotonic() > deadline:
+                        raise TimeoutError("流式响应超过本轮截止时间")
+                    model = getattr(event, "model", None) or model
+                    event_usage = getattr(event, "usage", None)
+                    if event_usage is not None:
+                        usage = event_usage
+                    for choice in getattr(event, "choices", ()) or ():
+                        reason = getattr(choice, "finish_reason", None)
+                        if reason is not None:
+                            finish_reason = reason
+                        delta = getattr(choice, "delta", None)
+                        content = getattr(delta, "content", None)
+                        if isinstance(content, str):
+                            parts.append(content)
+                            accumulated_chars += len(content)
+                            if accumulated_chars > char_cap:
+                                raise ValueError("流式响应超过允许的累积长度")
+                        reasoning_delta = getattr(
+                            delta, "reasoning_content", None
+                        ) or getattr(delta, "reasoning", None)
+                        if isinstance(reasoning_delta, str):
+                            reasoning_parts.append(reasoning_delta)
+                    if on_delta is not None and (parts or reasoning_parts):
+                        # 传累计全文而非单段增量：消费者可检测长度回退（重生成
+                        # 时文本重新开始）并整体重置自己的展示状态。
+                        try:
+                            on_delta("".join(parts), "".join(reasoning_parts))
+                        except Exception:  # noqa: BLE001 - 展示层异常不影响生成
+                            pass
                 if time.monotonic() > deadline:
                     raise TimeoutError("流式响应超过本轮截止时间")
-                model = getattr(event, "model", None) or model
-                event_usage = getattr(event, "usage", None)
-                if event_usage is not None:
-                    usage = event_usage
-                for choice in getattr(event, "choices", ()) or ():
-                    reason = getattr(choice, "finish_reason", None)
-                    if reason is not None:
-                        finish_reason = reason
-                    delta = getattr(choice, "delta", None)
-                    content = getattr(delta, "content", None)
-                    if isinstance(content, str):
-                        parts.append(content)
-                        accumulated_chars += len(content)
-                        if accumulated_chars > char_cap:
-                            raise ValueError("流式响应超过允许的累积长度")
-                    reasoning_delta = getattr(
-                        delta, "reasoning_content", None
-                    ) or getattr(delta, "reasoning", None)
-                    if isinstance(reasoning_delta, str):
-                        reasoning_parts.append(reasoning_delta)
-                if on_delta is not None and (parts or reasoning_parts):
-                    # 传累计全文而非单段增量：消费者可检测长度回退（重生成
-                    # 时文本重新开始）并整体重置自己的展示状态。
-                    try:
-                        on_delta("".join(parts), "".join(reasoning_parts))
-                    except Exception:  # noqa: BLE001 - 展示层异常不影响生成
-                        pass
-            if time.monotonic() > deadline:
-                raise TimeoutError("流式响应超过本轮截止时间")
-            text = "".join(parts)
-            if finish_reason != "stop":
-                # 触顶截断（finish_reason=length）且正文有内容：思考模型的
-                # reasoning 也计入 completion 预算，正文被截断是常见情况，
-                # 照常送审交付比整轮报错更有用；其余中止原因（内容过滤/
-                # 工具调用/缺失标记）不可交付。
-                if finish_reason != "length" or not text.strip():
-                    raise RuntimeError("流式响应不完整：缺少 stop 结束标记或被截断/过滤")
-            return LLMResult(
-                text=text,
-                model=model,
-                input_tokens=getattr(usage, "prompt_tokens", None),
-                output_tokens=getattr(usage, "completion_tokens", None),
-                reasoning="".join(reasoning_parts),
-            )
-        finally:
-            close = getattr(stream, "close", None)
-            if callable(close):
-                close()
+                text = "".join(parts)
+                if (
+                    finish_reason == "length"
+                    and not text.strip()
+                    and escalation_left
+                ):
+                    escalation_left -= 1
+                    token_limit *= 4
+                    logger.info(
+                        "输出预算内正文为空（推理占满）；预算放大至 %s 重试一次",
+                        token_limit,
+                    )
+                    continue
+                if finish_reason != "stop":
+                    # 触顶截断（finish_reason=length）且正文有内容：思考模型的
+                    # reasoning 也计入 completion 预算，正文被截断是常见情况，
+                    # 照常送审交付比整轮报错更有用；其余中止原因（内容过滤/
+                    # 工具调用/缺失标记）不可交付。
+                    if finish_reason != "length" or not text.strip():
+                        raise RuntimeError("流式响应不完整：缺少 stop 结束标记或被截断/过滤")
+                return LLMResult(
+                    text=text,
+                    model=model,
+                    input_tokens=getattr(usage, "prompt_tokens", None),
+                    output_tokens=getattr(usage, "completion_tokens", None),
+                    reasoning="".join(reasoning_parts),
+                )
+            finally:
+                close = getattr(stream, "close", None)
+                if callable(close):
+                    close()
 
 
 def make_backend(settings: Settings) -> ChatBackend:
