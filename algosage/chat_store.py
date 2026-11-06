@@ -631,6 +631,8 @@ class ChatDataLayer(BaseDataLayer):
                     "created_at": row["created_at"],
                     "type": data.get("type", ""),
                     "name": data.get("name", ""),
+                    # 清扫据此区分真正的回答与“已停止生成”提示。
+                    "output": data.get("output") or "",
                 }
             )
         return out

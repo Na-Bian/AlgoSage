@@ -29,7 +29,7 @@ from chainlit.input_widget import Select, Slider, Switch
 
 from algosage.config import Settings
 from algosage.service import TutorService, HISTORY_TURNS_KEPT
-from algosage.providers import ProviderRegistry, short_model_name
+from algosage.providers import ProviderRegistry, custom_model_max_b, short_model_name
 from algosage.invocation import (
     GenerationAborted,
     generation_abort_requested,
@@ -76,9 +76,6 @@ WELCOME_TMPL = """### AlgoSage · 知衡
 
 **分级辅助**
 输入区的「自动 / L1 / L2 / L3」可选择本次对话的帮助等级上限；设置面板的「默认辅助等级」是账号默认。上限只能收紧服务端策略判定，考试模式的限制不受影响。
-
-**边界声明**
-AlgoSage 提供分级辅助、输出审核与全程审计留痕，但审核与反泄漏保护均为大模型辅助的多层判断，仍可能被绕过或误判。它们用于辅助学习约束，不能视为绝对的反泄漏保障。
 
 **数据说明**
 - 你发送的消息、代码与附件会存储在本系统服务器的数据库中，用于会话恢复与审计留痕；删除会话即删除对应内容。
@@ -159,7 +156,9 @@ async def restore_conversation(service):
         if selection:
             # 已有会话沿用该线程上次的选择；记录失效时回退账号默认。
             try:
-                await asyncio.to_thread(service.select_provider, context, selection)
+                await asyncio.to_thread(
+                    _apply_selection_nowait, service, context, selection
+                )
             except ValueError:
                 await _select_account_default(service, context, principal)
         else:
@@ -189,10 +188,27 @@ async def _select_account_default(service, context, principal) -> None:
     if not target:
         context.provider_selection = ""
         return
-    await asyncio.to_thread(service.select_provider, context, target)
+    await asyncio.to_thread(_apply_selection_nowait, service, context, target)
 
 
 _model_selection_locks: dict[str, asyncio.Lock] = {}
+_settings_push_locks: WeakValueDictionary = WeakValueDictionary()
+
+
+def settings_push_lock() -> asyncio.Lock:
+    """串行化同一会话的「保存设置」与「重发设置」。
+
+    关闭面板时前端先发未提交的改动、再请求重发设置；两个 socket 事件在
+    服务端并发处理，不加锁时重发可能读到保存前的偏好、并晚于保存后的推送
+    到达，把面板又覆盖成旧值。不复用 conversation_lock：回合生成期间它被
+    整轮持有，重发会一直等到生成结束。
+    """
+    key = context_id()
+    lock = _settings_push_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _settings_push_locks[key] = lock
+    return lock
 
 
 def model_selection_lock(thread_id: str) -> asyncio.Lock:
@@ -235,16 +251,29 @@ async def user_default_selection(service, principal: str | None) -> str:
         return fallback
     preferences = await get_chat_store().load_user_app_preferences(principal)
     stored = preferences.get("default_model_selection")
-    if not isinstance(stored, str) or not stored:
+    if isinstance(stored, str) and stored:
+        try:
+            await asyncio.to_thread(service.select_provider_probe, stored, principal)
+        except ValueError:
+            stored = ""
+        if stored and not stored.startswith("custom:"):
+            if stored.split("::", 1)[0] in await hidden_preset_providers(principal):
+                stored = ""
+        if stored:
+            return stored
+    if fallback:
         return fallback
-    try:
-        await asyncio.to_thread(service.select_provider_probe, stored, principal)
-    except ValueError:
-        return fallback
-    if not stored.startswith("custom:"):
-        if stored.split("::", 1)[0] in await hidden_preset_providers(principal):
-            return fallback
-    return stored
+    # 没有存储的默认、或它指向已删除的模型：回退到账号里第一个可用模型，
+    # 面板的「默认模型」不再悬空，新对话也能直接发送。不写回偏好——用同
+    # 一显示名重新添加原模型时选择 ID 不变，原默认会自动恢复生效。
+    for entry in service.list_custom_providers(principal):
+        selection = entry.get("selection") or ""
+        try:
+            await asyncio.to_thread(service.select_provider_probe, selection, principal)
+        except ValueError:
+            continue
+        return selection
+    return fallback
 
 
 async def send_model_catalog(context) -> None:
@@ -521,9 +550,11 @@ try:  # pragma: no cover - exercised through the running Chainlit server
     async def refresh_provider_views(sid: str, _payload: dict | None = None) -> None:
         try:
             init_ws_context(sid)
-            context = await restore_conversation(get_service())
-            await send_provider_settings(context)
-            await send_model_catalog(context)
+            # 排在同一会话进行中的设置保存之后，保证推送的是保存后的值。
+            async with settings_push_lock():
+                context = await restore_conversation(get_service())
+                await send_provider_settings(context)
+                await send_model_catalog(context)
         except Exception as error:  # noqa: BLE001 - 刷新失败不影响操作本身
             logger.info(
                 "provider views refresh skipped error_type=%s", type(error).__name__
@@ -722,7 +753,8 @@ try:  # pragma: no cover - exercised through the running Chainlit server
 
     @models_router.post("/models/discover", include_in_schema=False)
     async def discover_models(payload: dict, current_user: UserParam):
-        """List models on a user-supplied endpoint; ≤27B ones are addable."""
+        """List models on a user-supplied endpoint; addable ones follow the
+        SAGE_CUSTOM_MODEL_MAX_B limit (0 = unlimited)."""
         if not current_user:
             raise HTTPException(status_code=401, detail="Unauthorized")
         if not isinstance(payload, dict):
@@ -747,7 +779,12 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                 detail="无法获取模型列表：请检查 Base URL、API Key 与网络连通性",
             ) from error
         # 列表默认不探测能力；前端点选模型后经 /models/probe 逐个探测。
-        return {"models": models}
+        limit = custom_model_max_b()
+        return {
+            "models": models,
+            # 前端提示文案用；None = 未限制参数量。
+            "limit_b": None if limit == float("inf") else limit,
+        }
 
     @models_router.post("/models/probe", include_in_schema=False)
     async def probe_single_model(payload: dict, current_user: UserParam):
@@ -1089,6 +1126,7 @@ async def send_provider_settings(context) -> None:
     )
     widgets = []
     if items:
+        limit = custom_model_max_b()
         widgets.append(
             Select(
                 id="model_catalog",
@@ -1097,7 +1135,11 @@ async def send_provider_settings(context) -> None:
                 initial_value=await user_default_selection(
                     service, context.principal_id
                 ),
-                description="仅支持参数量在27B以内的模型。",
+                description=(
+                    "模型参数量暂不限制。"
+                    if limit == float("inf")
+                    else f"仅支持参数量在 {limit:g}B 以内的模型。"
+                ),
             )
         )
     widgets.extend(
@@ -1277,7 +1319,7 @@ def _normalize_ui_settings(settings: dict, current: dict | None = None) -> dict:
 @cl.on_settings_update
 async def on_settings_update(settings: dict) -> None:
     service = get_service()
-    async with conversation_lock():
+    async with conversation_lock(), settings_push_lock():
         context = await restore_conversation(service)
         # “默认模型”是账号级偏好：只持久化，不切换当前线程的模型。
         requested_model = str(settings.get("model_catalog") or "").strip()
@@ -1377,13 +1419,31 @@ def _rebuild_msg_turn_map(history):
 
 
 def _snapshot_context(context):
-    with context._budget.lock:
-        return [dict(m) for m in context.history], context.provider_selection
+    # 不取预算锁（见 _restore_context_history）：快照只在本线程回合结束后
+    # 或设置保存时读取；读到在途回合尚未追加的旧历史也无妨，回合结束后
+    # 会再落库一次完整历史。
+    return [dict(m) for m in list(context.history)], context.provider_selection
 
 
 def _restore_context_history(context, history):
-    with context._budget.lock:
-        context.history[:] = [dict(m) for m in history[-2 * HISTORY_TURNS_KEPT :]]
+    # 不取预算锁：它按账号划分，同账号任一会话生成期间被整回合持有；在这里
+    # 等待，打开历史会话、新建对话、保存设置都会卡到生成结束（界面空白）。
+    # history 只属于本线程的上下文，其他会话的回合不会写它；本线程回合
+    # 进行中换入落库快照也一致——回合结束时在其上追加本轮后统一落库。
+    context.history[:] = [dict(m) for m in history[-2 * HISTORY_TURNS_KEPT :]]
+
+
+def _apply_selection_nowait(service, context, selection) -> None:
+    """恢复会话状态时套用模型选择：优先走与回合互斥的 select_provider；
+    预算锁被在途回合持有时改用无锁套用，不等待生成结束。"""
+    budget_lock = context._budget.lock
+    if budget_lock.acquire(timeout=0.2):
+        try:
+            service.select_provider(context, selection)
+        finally:
+            budget_lock.release()
+        return
+    service.apply_provider_selection(context, selection)
 
 
 async def persist_backend_history(context, *, only_existing: bool = False) -> None:
@@ -1522,10 +1582,36 @@ def normalize_math_delimiters(text: str) -> str:
     )
 
 
-def _make_delta_sink(context, stream_out):
+_LOOP_WINDOW = 12        # 尾部连续 12 句全部重复即判循环
+_LOOP_MIN_CHUNK = 8      # 句子最少字符数（过滤“好的”“等等”类短句）
+_LOOP_MIN_LENGTH = 1200  # 推理过短不检测，避免误伤简短思考
+
+
+def _reasoning_loop_detected(reasoning: str) -> bool:
+    """句级重复检测：思考尾部陷入同一小撮句子反复复述即判死循环。
+
+    部分思考模型（尤其在大参数模型上）会在受限提示词下无限重复同一两句
+    自我说服的话，靠输出上限/回合预算收口要烧掉十几分钟。只看推理末段
+    4000 字；复述里常见的短句（<8 字）被过滤，正常推理的排比与枚举不会
+    满足「连续 12 句去重后只剩 ≤4 句」。
+    """
+    if len(reasoning) < _LOOP_MIN_LENGTH:
+        return False
+    chunks = [
+        chunk.strip()
+        for chunk in re.split(r"[。！？!?\n]", reasoning[-4000:])
+        if len(chunk.strip()) >= _LOOP_MIN_CHUNK
+    ]
+    if len(chunks) < _LOOP_WINDOW:
+        return False
+    return len(set(chunks[-_LOOP_WINDOW:])) <= 4
+
+
+def _make_delta_sink(context, stream_out, abort_event):
     """Live consumer for generation deltas (runs on the worker thread while
     the upstream stream loop iterates). Schedules UI updates onto the main
-    event loop; the audited answer may still replace everything streamed."""
+    event loop; the audited answer may still replace everything streamed.
+    思考陷入死循环时置位中断事件，worker 线程在下一个分片边界掐断上游。"""
     loop = asyncio.get_running_loop()
 
     # 思考过程更新节流：step.update 是全量重发，思考越长每次传输与前端
@@ -1536,6 +1622,24 @@ def _make_delta_sink(context, stream_out):
     def sink(text_so_far, reasoning_so_far):
         async def apply():
             async with stream_out["ui_lock"]:
+                if stream_out.get("closed"):
+                    # 回合已停止并清理：worker 线程收到中断前迟到的增量
+                    # 不能把已删除的思考步骤或半截回答重新建出来。
+                    return
+                if reasoning_so_far:
+                    # 循环检测先于 UI 重建：命中即中断，不再创建/更新步骤。
+                    # 重生成会让推理从头开始，此时重置检测窗口。
+                    prev_len = stream_out.get("reasoning_loop_len") or 0
+                    if len(reasoning_so_far) < prev_len:
+                        stream_out.pop("reasoning_loop_len", None)
+                    stream_out["reasoning_loop_len"] = len(reasoning_so_far)
+                    if (
+                        not abort_event.is_set()
+                        and _reasoning_loop_detected(reasoning_so_far)
+                    ):
+                        stream_out["loop_aborted"] = True
+                        abort_event.set()
+                        return
                 step = stream_out.get("reasoning_step")
                 if reasoning_so_far and step is None:
                     step = cl.Step(name="model-reasoning", type="run", icon="brain")
@@ -1615,8 +1719,8 @@ async def run_turn(
                 content=(
                     "尚未添加模型提供商，暂时无法回答。\n\n"
                     "请点击右上角 ⚙ **设置** →「管理模型提供商」，"
-                    "用 Base URL + API Key 添加你的模型（支持参数量 ≤27B 的 "
-                    "OpenAI 兼容接口，如 SiliconFlow / DeepSeek / 本地 vLLM），"
+                    "用 Base URL + API Key 添加你的模型（OpenAI 兼容接口，"
+                    "如 SiliconFlow / DeepSeek / 本地 vLLM），"
                     "添加后在「默认模型」中选择并确认即可开始对话。"
                 )
             ).send()
@@ -1627,10 +1731,17 @@ async def run_turn(
         async with cl.Step(
             name="generation-safety-review", type="run", icon="shield-check"
         ) as step:
+            # 只在“停止生成”时清理（见 _cleanup_cancelled_turn）。流式回答与
+            # 思考过程都挂在这个步骤下面：失败回合的回退文案就是这条流式
+            # 消息，删除本步骤会连带把回退文案从界面上抹掉，所以失败回合
+            # 必须保留它。
+            stream_out["review_step"] = step
             step.output = "正在生成并审核回答…"
             with (
                 streaming_transport(),
-                generation_delta_sink(_make_delta_sink(context, stream_out)),
+                generation_delta_sink(
+                    _make_delta_sink(context, stream_out, abort_event)
+                ),
                 generation_abort_scope(abort_event),
             ):
                 if edit_turn is not None:
@@ -1693,8 +1804,43 @@ async def on_stop() -> None:
     """用户点停止：置位当前回合的中断事件。worker 线程在下一个流式
     chunk 边界掐断上游请求并立刻让出会话锁——被取消的 on_message 任务
     因 to_thread 不可强杀、会等生成自然结束，这正是此前停止后新消息
-    仍显示"排队等待"的根源。"""
+    仍显示"排队等待"的根源。本回合内容的清理见 _cleanup_cancelled_turn。"""
     request_turn_abort()
+
+
+# 停止生成后留在会话里的提示。Chainlit 内置 stop 处理器原本发送英文
+# "Task manually stopped."（历史会话里可能仍有这条）；两者都不算“回答”。
+STOP_NOTICE = "已停止生成，本轮未完成的内容不会保留。"
+STOP_NOTICES = frozenset({STOP_NOTICE, "Task manually stopped."})
+
+
+def _install_stop_handler() -> None:
+    """替换 Chainlit 内置的 stop 事件处理器，只把硬编码的英文提示换成中文。
+
+    其余行为与内置处理器一致：发提示 → 取消当前任务 → 调用 on_stop。
+    chainlit.server 在模块末尾导入 chainlit.socket 完成内置注册，这里随后
+    以同名事件重新注册即覆盖内置处理器。
+    """
+    from chainlit.config import config as chainlit_config
+    from chainlit.context import init_ws_context
+    from chainlit.server import sio
+    from chainlit.session import WebsocketSession
+
+    async def stop(sid):
+        session = WebsocketSession.get(sid)
+        if not session:
+            return
+        init_ws_context(session)
+        await cl.Message(content=STOP_NOTICE).send()
+        if session.current_task:
+            session.current_task.cancel()
+        if chainlit_config.code.on_stop:
+            await chainlit_config.code.on_stop()
+
+    sio.on("stop", stop)
+
+
+_install_stop_handler()
 
 
 def authenticated_principal_id() -> str | None:
@@ -1899,6 +2045,20 @@ async def _mask_or_reply(stream_out: dict, reply, content: str) -> None:
     await reply.send()
 
 
+def _current_run_step_id() -> str | None:
+    """当前回合 on_message 包裹步骤的 id（Chainlit 以 Step(name="on_message") 包裹回调）。"""
+    try:
+        from chainlit.context import local_steps
+
+        stack = local_steps.get() or []
+    except Exception:  # noqa: BLE001 - 无步骤上下文时按“未知”处理
+        return None
+    for step in reversed(stack):
+        if getattr(step, "name", None) == "on_message":
+            return getattr(step, "id", None)
+    return None
+
+
 async def _sweep_orphan_turn_steps() -> None:
     """清扫上一轮被中断（停止/断线/重启）留下的孤儿过程步骤。
 
@@ -1906,6 +2066,11 @@ async def _sweep_orphan_turn_steps() -> None:
     assistant_message，说明该回合没有交付任何回答（用户取消或服务中断），
     其中的生成审核/思考过程芯片都是孤儿，删除以免看起来像“思考被拆成两半”。
     绝不触碰有回答的回合，也不触碰 user_message。
+
+    当前回合自己的 on_message 步骤在清扫时可能已经落库、回答尚未生成，
+    形似孤儿，必须排除：删掉它会让本回合后续步骤与回答都挂到已删除的父
+    节点下，前端整棵丢弃（回答不显示，刷新后才出现）。无法确定当前回合时
+    保守处理，不清扫最后一组。
     """
     try:
         thread_id = context_id()
@@ -1913,6 +2078,7 @@ async def _sweep_orphan_turn_steps() -> None:
         steps = await store.list_thread_steps(thread_id)
     except Exception:  # noqa: BLE001 - 清扫失败不影响新回合
         return
+    current_run_id = _current_run_step_id()
     orphan_ids: list[str] = []
     group: list[str] = []
     answered = False
@@ -1922,11 +2088,17 @@ async def _sweep_orphan_turn_steps() -> None:
             # 结算上一组，然后以本轮 on_message 作为新组的起点。
             if group and not answered:
                 orphan_ids.extend(group)
+            if current_run_id is not None and step["id"] == current_run_id:
+                # 当前回合及其后的步骤都属于进行中的回合，到此为止。
+                group = []
+                break
             group = [step["id"]]
             answered = False
             continue
         if step["type"] == "assistant_message":
-            answered = True
+            # 停止提示不是回答：停止的回合仍按无回答组清扫。
+            if (step.get("output") or "").strip() not in STOP_NOTICES:
+                answered = True
             continue
         if step["type"] == "run" and name in (
             "generation-safety-review",
@@ -1934,7 +2106,7 @@ async def _sweep_orphan_turn_steps() -> None:
             "security-audit-policy",
         ):
             group.append(step["id"])
-    if group and not answered:
+    if group and not answered and current_run_id is not None:
         orphan_ids.extend(group)
     if not orphan_ids:
         return
@@ -1986,6 +2158,83 @@ async def _cleanup_failed_turn_steps(stream_out: dict) -> None:
     stream_out.pop("reasoning_step", None)
 
 
+async def _cleanup_cancelled_turn(stream_out: dict) -> None:
+    """用户点停止后的回合收尾：删除本回合的过程芯片与已播的半截回答。
+
+    取消让 on_message 在任意 await 点抛 CancelledError——正常交付路径
+    （审核面板、思考补发）都不会执行，这里在 except 里统一清理：
+    - 过程步骤（生成审核 / 思考过程）从界面与数据库移除；
+    - reply 的历史记录条目删除，刷新后不回放半截回答；
+    - stream_out 置 closed，迟到增量不再重建 UI（见 _make_delta_sink）。
+    没有发过任何内容时（如分类阶段就被停止）无事可做。"""
+    stream_out["closed"] = True
+    steps = []
+    reasoning = stream_out.get("reasoning_step")
+    if reasoning is not None:
+        steps.append(reasoning)
+    steps.extend(s for s in stream_out.get("turn_steps", []) if s is not None)
+    reply = stream_out.get("reply")
+    if reply is not None:
+        steps.append(reply)
+    review = stream_out.get("review_step")
+    if review is not None:
+        steps.append(review)
+    if not steps:
+        return
+    data_layer = get_chat_store()
+    logger.info(
+        "Cancelled-turn cleanup removing steps=%s",
+        [getattr(s, "id", "?") for s in steps],
+    )
+    for step in steps:
+        try:
+            step_dict = step.to_dict()
+        except Exception:
+            continue
+        try:
+            await cl.context.emitter.delete_step(step_dict)
+        except Exception:
+            pass
+        try:
+            await data_layer.delete_step(step_dict["id"])
+        except Exception as error:
+            logger.info(
+                "Cancelled-turn cleanup store delete skipped id=%s error=%s",
+                step_dict.get("id"), type(error).__name__,
+            )
+    stream_out["turn_steps"] = []
+    stream_out.pop("reasoning_step", None)
+    stream_out.pop("reply", None)
+    stream_out.pop("review_step", None)
+
+
+async def _finalize_reasoning_step(stream_out: dict, response) -> None:
+    """回合收口：思考步骤标题定格为「思考完成」，必要时补发完整推理。
+
+    节流可能留下未推送的尾部，这里以完整推理收口；考试模式下 pipeline
+    不返回 reasoning（防止题解经持久化步骤泄漏），但思考内容刚在界面上
+    流式展示过，标题不能停留在「思考中 · N 字」——此前收口逻辑以
+    「最终推理与已推送内容不一致」为前提，考试模式下永远不成立，标题
+    就永久卡在思考中。
+    """
+    step = stream_out.get("reasoning_step")
+    if step is None:
+        return
+    final_reasoning = normalize_math_delimiters(
+        (getattr(response, "reasoning", "") or "").strip()
+    )
+    changed = False
+    if final_reasoning and final_reasoning != stream_out.get("reasoning", ""):
+        step.output = final_reasoning
+        stream_out["reasoning"] = final_reasoning
+        changed = True
+    if getattr(step, "name", "") != "思考完成":
+        step.name = "思考完成"
+        changed = True
+    if changed:
+        await step.update()
+
+
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
     service = get_service()
@@ -2021,6 +2270,33 @@ async def on_message(message: cl.Message) -> None:
         if response is None:
             # 无提供商引导已由 run_turn 发出，无需再送达任何内容。
             return
+    except asyncio.CancelledError:
+        # 用户点了停止（Chainlit 取消当前任务）：未完成、未经审核的内容
+        # 一律不保留。清理后继续抛出，让 Chainlit 正常结束本次任务。
+        await _cleanup_cancelled_turn(stream_out)
+        if _turn_streams.get(context_id()) is stream_out:
+            _turn_streams.pop(context_id(), None)
+        raise
+    except GenerationAborted as error:
+        # 中断事件置位后 worker 线程在流上抛出本异常（BaseException，常规
+        # except Exception 接不住）。思考死循环自动终止时给出可理解的提示。
+        if stream_out.get("loop_aborted"):
+            await _mask_or_reply(
+                stream_out,
+                reply,
+                "⚠️ 模型的思考陷入重复循环，已自动终止本次生成。"
+                "可重试、换个问法，或改用其他模型。",
+            )
+        else:
+            await _mask_or_reply(
+                stream_out,
+                reply,
+                f"⚠️ 请求未完成（{type(error).__name__}）。请稍后重试或简化问题。",
+            )
+        await _cleanup_failed_turn_steps(stream_out)
+        if _turn_streams.get(context_id()) is stream_out:
+            _turn_streams.pop(context_id(), None)
+        return
     except ValueError as error:
         reply.content = f"⚠️ 输入未通过校验：{error}"
         await reply.send()
@@ -2041,18 +2317,7 @@ async def on_message(message: cl.Message) -> None:
 
     latency_ms = int((time.perf_counter() - started) * 1000)
     delivery_started = time.perf_counter()
-    # 思考过程的最终补发：节流可能留下未推送的尾部，这里以完整推理收口
-    # （考试模式下 pipeline 不返回 reasoning，跳过即可）。
-    reasoning_step = stream_out.get("reasoning_step")
-    if reasoning_step is not None:
-        final_reasoning = normalize_math_delimiters(
-            (getattr(response, "reasoning", "") or "").strip()
-        )
-        if final_reasoning and final_reasoning != stream_out.get("reasoning", ""):
-            reasoning_step.output = final_reasoning
-            reasoning_step.name = "思考完成"
-            await reasoning_step.update()
-            stream_out["reasoning"] = final_reasoning
+    await _finalize_reasoning_step(stream_out, response)
     vision_note = getattr(response, "vision_notice", None)
     if vision_note:
         vision_note = f"⚠️ {vision_note}"
