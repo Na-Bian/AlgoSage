@@ -106,6 +106,9 @@ def conversation_lock():
 
 # 进行中的回合（thread_id -> stream_out）：供恢复页面时快照推送在途回答
 _turn_streams: dict[str, dict] = {}
+# 回合进行中刷新页面后新建立的连接（socket id）：流式增量会广播给这些
+# 旁观连接（见 _broadcast_turn_event）。回合收口时清空。
+_turn_watchers: dict[str, set[str]] = {}
 # 当前回合的中断事件（thread_id -> threading.Event）。@cl.on_stop 置位，
 # run_turn 的 worker 线程轮询它以掐断上游流式请求。
 _turn_abort_events: dict[str, threading.Event] = {}
@@ -1524,18 +1527,35 @@ async def on_chat_resume(thread: dict) -> None:
         logger.info("resume DENIED")
         raise PermissionError("恢复对话需要对应工作区身份")
     logger.info("resume OK")
-    # 回合进行中恢复页面时，把在途回答的当前快照推流给刚恢复的界面：
-    # 前端会在同一消息 id 上继续追加后续增量，实现“接续生成一半的状态”。
+    # 回合进行中恢复页面时，把当前界面登记为该回合的“旁观者”：推理与回答
+    # 的后续增量会同时广播给它（_make_delta_sink），刷新后不需要再次刷新
+    # 就能继续看到直播；并立即推送推理/回答的当前快照接续已有内容。
     stream = _turn_streams.get(thread["id"])
-    if stream is not None and stream.get("reply") is not None and stream.get("text"):
-        try:
-            await cl.context.emitter.emit(
-                "stream_token", {"id": stream["reply"].id, "token": stream["text"]}
-            )
-        except Exception as error:  # noqa: BLE001 - 快照推送失败不影响主流程
-            logger.info(
-                "Resume stream snapshot skipped error_type=%s", type(error).__name__
-            )
+    if stream is not None:
+        _turn_watchers.setdefault(thread["id"], set()).add(
+            cl.context.session.socket_id
+        )
+        reasoning_step = stream.get("reasoning_step")
+        if reasoning_step is not None:
+            try:
+                await cl.context.emitter.emit(
+                    "update_message", reasoning_step.to_dict()
+                )
+            except Exception as error:  # noqa: BLE001 - 快照推送失败不影响主流程
+                logger.info(
+                    "Resume reasoning snapshot skipped error_type=%s",
+                    type(error).__name__,
+                )
+        reply = stream.get("reply")
+        if reply is not None and stream.get("text"):
+            try:
+                await cl.context.emitter.emit(
+                    "stream_token", {"id": reply.id, "token": stream["text"]}
+                )
+            except Exception as error:  # noqa: BLE001 - 快照推送失败不影响主流程
+                logger.info(
+                    "Resume stream snapshot skipped error_type=%s", type(error).__name__
+                )
     # 不等待生成锁：回合进行中点侧边栏切换/恢复必须即时可用，
     # 否则整个流式生成期间（可达一两分钟）会话切换都表现为"没反应"。
     # 恢复只读历史并重发设置，与进行中的回合共享只读数据并无冲突。
@@ -1607,6 +1627,25 @@ def _reasoning_loop_detected(reasoning: str) -> bool:
     return len(set(chunks[-_LOOP_WINDOW:])) <= 4
 
 
+async def _broadcast_turn_event(thread_id: str, event: str, payload) -> None:
+    """把流式增量广播给回合进行中刷新/切换后登记的旁观连接。
+
+    页面刷新会更换 socket：worker 线程的 UI 对象仍绑定旧连接，增量只推到
+    死连接上，刷新后的页面只能靠再次刷新看进度。这里直接经 socket.io 按
+    sid 定向补发，失效 sid 由 socket.io 丢弃即可，无需维护断开事件。
+    """
+    watchers = _turn_watchers.get(thread_id)
+    if not watchers:
+        return
+    from chainlit.server import sio as _chainlit_sio
+
+    for sid in list(watchers):
+        try:
+            await _chainlit_sio.emit(event, payload, to=sid)
+        except Exception:  # noqa: BLE001 - 单个失效连接不影响其余广播
+            watchers.discard(sid)
+
+
 def _make_delta_sink(context, stream_out, abort_event):
     """Live consumer for generation deltas (runs on the worker thread while
     the upstream stream loop iterates). Schedules UI updates onto the main
@@ -1618,6 +1657,10 @@ def _make_delta_sink(context, stream_out, abort_event):
     # 重渲染代价越大（O(n²)），按时间限流到 ~600ms 一次；回合结束时有
     # 最终补发，不丢尾部内容。
     REASONING_UPDATE_INTERVAL = 0.6
+    try:
+        thread = context_id()
+    except Exception:  # noqa: BLE001 - 无 ws 上下文（测试）时没有旁观者
+        thread = ""
 
     def sink(text_so_far, reasoning_so_far):
         async def apply():
@@ -1659,6 +1702,11 @@ def _make_delta_sink(context, stream_out, abort_event):
                     await step.update()
                     stream_out["reasoning"] = reasoning_so_far
                     stream_out["reasoning_last_update"] = now
+                    # 广播给回合进行中刷新过的页面，让它们看到直播推理。
+                    if _turn_watchers.get(thread):
+                        await _broadcast_turn_event(
+                            thread, "update_message", step.to_dict()
+                        )
                 reply = stream_out.get("reply")
                 if reply is None:
                     reply = cl.Message(content="")
@@ -1681,6 +1729,10 @@ def _make_delta_sink(context, stream_out, abort_event):
                     stream_out["streamed_text"] = streamable
                     stream_out["streamed"] = streamed_len
                     stream_out["text"] = normalized
+                    if _turn_watchers.get(thread):
+                        await _broadcast_turn_event(
+                            thread, "stream_token", {"id": reply.id, "token": tail}
+                        )
 
 
         asyncio.run_coroutine_threadsafe(apply(), loop)
@@ -1710,6 +1762,7 @@ async def run_turn(
     abort_event = threading.Event()
     _turn_abort_events[context_id()] = abort_event
     _turn_streams[context_id()] = stream_out
+    _turn_watchers.pop(context_id(), None)
     async with _turn_lock_quiet_if_stopping(previous_abort_event):
         # Every window reloads the latest private transcript before generating.
         context = await restore_conversation(service)
@@ -2276,6 +2329,7 @@ async def on_message(message: cl.Message) -> None:
         await _cleanup_cancelled_turn(stream_out)
         if _turn_streams.get(context_id()) is stream_out:
             _turn_streams.pop(context_id(), None)
+        _turn_watchers.pop(context_id(), None)
         raise
     except GenerationAborted as error:
         # 中断事件置位后 worker 线程在流上抛出本异常（BaseException，常规
@@ -2296,6 +2350,7 @@ async def on_message(message: cl.Message) -> None:
         await _cleanup_failed_turn_steps(stream_out)
         if _turn_streams.get(context_id()) is stream_out:
             _turn_streams.pop(context_id(), None)
+        _turn_watchers.pop(context_id(), None)
         return
     except ValueError as error:
         reply.content = f"⚠️ 输入未通过校验：{error}"
@@ -2364,6 +2419,7 @@ async def on_message(message: cl.Message) -> None:
     # 完整线程状态推送给当前连接——否则最终答案只送到了已断开的旧连接，
     # 用户在生成中新建对话再点回来会永远看不到答案。
     _turn_streams.pop(context_id(), None)
+    _turn_watchers.pop(context_id(), None)
     if getattr(cl.context.session, 'socket_id', None) != socket_at_start:
         try:
             thread = await get_chat_store().get_thread(context_id())
