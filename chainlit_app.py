@@ -1779,13 +1779,12 @@ def _make_delta_sink(context, stream_out, abort_event):
                         await step.update()
                     stream_out["reasoning"] = reasoning_so_far
                     stream_out["reasoning_last_update"] = now
-                    # 广播给回合进行中刷新过的页面：同样轻量化，超限后只发标题。
+                    # 广播给回合进行中刷新过的页面。冻结模式下正文保持最后
+                    # 一次的截断文本——置空会让前端把步骤降级成不可点击的
+                    # 纯文本行（update_message 是整体替换）。
                     if _turn_watchers.get(thread):
-                        payload = step.to_dict()
-                        if full_text_frozen:
-                            payload = dict(payload, output="")
                         await _broadcast_turn_event(
-                            thread, "update_message", payload
+                            thread, "update_message", step.to_dict()
                         )
                 reply = stream_out.get("reply")
                 if reply is None:
