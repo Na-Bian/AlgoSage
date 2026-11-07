@@ -992,6 +992,15 @@
       if (row.parentElement === aContainer) {
         // 同容器：确保思考行紧邻回答行之前即可。
         if (row.nextElementSibling === aMsgRow) return;
+        // 与目标回答之间若只隔着其它思考行，说明已经就位——再插入会与
+        // 后面的思考行互相争位、每帧来回搬动（React 节点被外部反复移动
+        // 后协调崩溃：点击失效/白屏）。
+        let sib = row.nextElementSibling;
+        while (sib && sib !== aMsgRow) {
+          if (!sib.querySelector?.(".eg-reasoning-step")) break;
+          sib = sib.nextElementSibling;
+        }
+        if (sib === aMsgRow) return;
         aContainer.insertBefore(row, aMsgRow);
         return;
       }
@@ -1033,12 +1042,17 @@
         let prev = row;
         let aMsg = null;
         while ((prev = prev.previousElementSibling)) {
+          // 向后查找限定在同回合内（跨过 user_message 即进入别的回合）。
+          if (prev.querySelector?.('[data-step-type="user_message"]')) break;
           aMsg = answers.find((a) => prev === a || (prev.contains && prev.contains(a)));
           if (aMsg) break;
         }
         if (!aMsg) {
           let sib = row;
           while ((sib = sib.nextElementSibling)) {
+            // 向前兜底只在本回合内：跨过 user_message 就是别的回合了，
+            // 误配对会把审计搬到其它回合的回答后面。
+            if (sib.querySelector?.('[data-step-type="user_message"]')) break;
             aMsg = answers.find((a) => sib === a || (sib.contains && sib.contains(a)));
             if (aMsg) break;
           }
@@ -1051,22 +1065,23 @@
       });
   }
 
+  /* 以 user_message 行为界确定思考行所属的回合组，返回组内第一个回答。
+     孤儿芯片（回合被中断/失败清理，组内没有回答）返回 null 并原地保留——
+     跨组兜底配对会让多条孤儿芯片互相争位、反复搬动。 */
   function answerForReasoningRow(row, answers) {
-    // 思考行属于其后的第一个回答（流式期间可能尚未挂载）；历史会话里思考
-    // 行落在回合末尾，取它前面最近的回答。
-    let sib = row;
-    while ((sib = sib.nextElementSibling)) {
+    let start = row;
+    while (start.previousElementSibling) {
+      const prev = start.previousElementSibling;
+      if (prev.querySelector?.('[data-step-type="user_message"]')) break;
+      start = prev;
+    }
+    for (let sib = start; sib; sib = sib.nextElementSibling) {
       for (const a of answers) {
         if (sib === a || (sib.contains && sib.contains(a))) return a;
       }
+      if (sib.querySelector?.('[data-step-type="user_message"]')) break;
     }
-    let prev = row;
-    while ((prev = prev.previousElementSibling)) {
-      for (const a of answers) {
-        if (prev === a || (prev.contains && prev.contains(a))) return a;
-      }
-    }
-    return answers[answers.length - 1];
+    return null;
   }
 
   syncReadmeVisibility();

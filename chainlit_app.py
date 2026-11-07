@@ -1527,6 +1527,11 @@ async def on_chat_resume(thread: dict) -> None:
         logger.info("resume DENIED")
         raise PermissionError("恢复对话需要对应工作区身份")
     logger.info("resume OK")
+    # 打开历史会话时先清扫中断回合的孤儿芯片（停止/断线/重启留下的
+    # 「思考中 · N 字」残片）：Chainlit 紧接着会按线程数据渲染会话，
+    # 先清才能让刷新后的界面不含误导性的残留芯片。正在生成的回合由
+    # 清扫的保守守卫保护（恢复上下文无步骤栈 → 保留最后一组）。
+    await _sweep_orphan_turn_steps()
     # 回合进行中恢复页面时，把当前界面登记为该回合的“旁观者”：推理与回答
     # 的后续增量会同时广播给它（_make_delta_sink），刷新后不需要再次刷新
     # 就能继续看到直播；并立即推送推理/回答的当前快照接续已有内容。
@@ -1547,15 +1552,21 @@ async def on_chat_resume(thread: dict) -> None:
                     type(error).__name__,
                 )
         reply = stream.get("reply")
-        if reply is not None and stream.get("text"):
-            try:
-                await cl.context.emitter.emit(
-                    "stream_token", {"id": reply.id, "token": stream["text"]}
+        if reply is not None:
+            # 让刷新后的页面“拥有”这条在途回答（此刻它还未落库，后续
+            # stream_token 增量按 id 追加时才有落点）。快照延迟到 Chainlit
+            # 自身的 resume_thread 渲染之后发出，否则会被整体替换掉。
+            snapshot = reply.to_dict()
+
+            async def push_reply_snapshot():
+                await asyncio.sleep(0.6)
+                await _broadcast_turn_event(
+                    thread["id"], "new_message", snapshot
                 )
-            except Exception as error:  # noqa: BLE001 - 快照推送失败不影响主流程
-                logger.info(
-                    "Resume stream snapshot skipped error_type=%s", type(error).__name__
-                )
+
+            snapshot_task = asyncio.create_task(push_reply_snapshot())
+            _title_tasks.add(snapshot_task)
+            snapshot_task.add_done_callback(_title_tasks.discard)
     # 不等待生成锁：回合进行中点侧边栏切换/恢复必须即时可用，
     # 否则整个流式生成期间（可达一两分钟）会话切换都表现为"没反应"。
     # 恢复只读历史并重发设置，与进行中的回合共享只读数据并无冲突。
@@ -1644,6 +1655,53 @@ async def _broadcast_turn_event(thread_id: str, event: str, payload) -> None:
             await _chainlit_sio.emit(event, payload, to=sid)
         except Exception:  # noqa: BLE001 - 单个失效连接不影响其余广播
             watchers.discard(sid)
+
+
+async def _push_thread_to_watchers(thread_id: str, stream_out: dict, *, failed=False) -> None:
+    """回合收口：把结局同步给刷新过页面的旁观连接。
+
+    旁观页面只通过广播收到流式增量；回合结束阶段的事件（回退/新消息、
+    芯片清理、最终回答替换、task_end）都发往原会话 socket——刷新后它已
+    失效。整体替换（resume_thread）会与页面上的流式状态冲突（回答/审计
+    渲染后又被丢弃），因此这里只补发缺失的增量事件；被清理的芯片由清理
+    函数自行广播 delete_message。
+    """
+    watchers = _turn_watchers.pop(thread_id, None)
+    logger.info(
+        "Turn-end watcher push thread=%s watchers=%s failed=%s",
+        thread_id,
+        len(watchers) if watchers else 0,
+        failed,
+    )
+    if not watchers:
+        return
+    from chainlit.server import sio as _chainlit_sio
+
+    async def emit(event, payload):
+        for sid in list(watchers):
+            try:
+                await _chainlit_sio.emit(event, payload, to=sid)
+            except Exception:  # noqa: BLE001
+                watchers.discard(sid)
+
+    reply = stream_out.get("reply")
+    if reply is not None:
+        # new_message 而非 update_message：刷新后的页面此刻还没有这条在途回答
+        # （它回合结束才落库）；前端 addMessage 按 id 去重，已存在则原地更新。
+        await emit("new_message", reply.to_dict())
+    if failed:
+        # 失败回合：思考芯片等已由清理函数广播删除；这里只收口。
+        pass
+    else:
+        reasoning = stream_out.get("reasoning_step")
+        if reasoning is not None:
+            await emit("update_message", reasoning.to_dict())
+        for step in stream_out.get("turn_steps", []) or []:
+            try:
+                await emit("new_message", step.to_dict())
+            except Exception:  # noqa: BLE001
+                pass
+    await emit("task_end", None)
 
 
 def _make_delta_sink(context, stream_out, abort_event):
@@ -2242,6 +2300,8 @@ async def _cleanup_failed_turn_steps(stream_out: dict) -> None:
                 "Failed-turn cleanup store delete skipped id=%s error=%s",
                 step_dict.get("id"), type(error).__name__,
             )
+        # 旁观页面（回合中刷新过）也需要收到删除事件。
+        await _broadcast_turn_event(context_id(), "delete_message", step_dict)
     stream_out["turn_steps"] = []
     stream_out.pop("reasoning_step", None)
 
@@ -2290,6 +2350,8 @@ async def _cleanup_cancelled_turn(stream_out: dict) -> None:
                 "Cancelled-turn cleanup store delete skipped id=%s error=%s",
                 step_dict.get("id"), type(error).__name__,
             )
+        # 旁观页面（回合中刷新过）也需要收到删除事件。
+        await _broadcast_turn_event(context_id(), "delete_message", step_dict)
     stream_out["turn_steps"] = []
     stream_out.pop("reasoning_step", None)
     stream_out.pop("reply", None)
@@ -2364,7 +2426,7 @@ async def on_message(message: cl.Message) -> None:
         await _cleanup_cancelled_turn(stream_out)
         if _turn_streams.get(context_id()) is stream_out:
             _turn_streams.pop(context_id(), None)
-        _turn_watchers.pop(context_id(), None)
+        await _push_thread_to_watchers(context_id(), stream_out, failed=True)
         raise
     except GenerationAborted as error:
         # 中断事件置位后 worker 线程在流上抛出本异常（BaseException，常规
@@ -2385,7 +2447,7 @@ async def on_message(message: cl.Message) -> None:
         await _cleanup_failed_turn_steps(stream_out)
         if _turn_streams.get(context_id()) is stream_out:
             _turn_streams.pop(context_id(), None)
-        _turn_watchers.pop(context_id(), None)
+        await _push_thread_to_watchers(context_id(), stream_out, failed=True)
         return
     except ValueError as error:
         reply.content = f"⚠️ 输入未通过校验：{error}"
@@ -2394,6 +2456,7 @@ async def on_message(message: cl.Message) -> None:
     except UsageLimitExceeded as error:
         await _mask_or_reply(stream_out, reply, f"⚠️ {error}")
         await _cleanup_failed_turn_steps(stream_out)
+        await _push_thread_to_watchers(context_id(), stream_out, failed=True)
         return
     except Exception as error:  # noqa: BLE001 - 前端不向学生暴露堆栈细节
         logger.exception("处理消息失败 session=%s", cl.context.session.id)
@@ -2403,6 +2466,7 @@ async def on_message(message: cl.Message) -> None:
             f"⚠️ 请求未完成（{type(error).__name__}）。请稍后重试或简化问题。",
         )
         await _cleanup_failed_turn_steps(stream_out)
+        await _push_thread_to_watchers(context_id(), stream_out, failed=True)
         return
 
     latency_ms = int((time.perf_counter() - started) * 1000)
@@ -2454,7 +2518,6 @@ async def on_message(message: cl.Message) -> None:
     # 完整线程状态推送给当前连接——否则最终答案只送到了已断开的旧连接，
     # 用户在生成中新建对话再点回来会永远看不到答案。
     _turn_streams.pop(context_id(), None)
-    _turn_watchers.pop(context_id(), None)
     if getattr(cl.context.session, 'socket_id', None) != socket_at_start:
         try:
             thread = await get_chat_store().get_thread(context_id())
@@ -2482,3 +2545,6 @@ async def on_message(message: cl.Message) -> None:
     if response.answer in fallback_texts():
         # 送达的是兜底文案 = 失败回合：移除本回合的过程步骤（提示消息保留）。
         await _cleanup_failed_turn_steps(stream_out)
+        await _push_thread_to_watchers(context_id(), stream_out, failed=True)
+    else:
+        await _push_thread_to_watchers(context_id(), stream_out)
