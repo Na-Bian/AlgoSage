@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -326,7 +327,17 @@ class TutorService:
             if question_id and question_id != self.settings.question_id:
                 raise ValueError("题目由服务端 SAGE_QUESTION_ID 绑定，不允许切换")
             question_id = self.settings.question_id
+        # 账号级预算锁由 state_store.turn 在这里获取（整回合持有）：上一回合
+        # 若挂起，本回合会在此无声等待。回合计时用于诊断"发消息卡住"。
+        budget_wait_started = time.monotonic()
         with self.state_store.turn(self._context_budget(context)):
+            budget_waited = time.monotonic() - budget_wait_started
+            if budget_waited > 15:
+                logger.warning(
+                    "budget lock waited %.1fs before this turn principal=%s",
+                    budget_waited,
+                    context._budget.principal_key,
+                )
             self.state_store.consume_global_daily_request(
                 self.settings.global_daily_requests
             )
@@ -369,7 +380,17 @@ class TutorService:
             if question_id and question_id != self.settings.question_id:
                 raise ValueError("题目由服务端 SAGE_QUESTION_ID 绑定，不允许切换")
             question_id = self.settings.question_id
+        # 账号级预算锁由 state_store.turn 在这里获取（整回合持有）：上一回合
+        # 若挂起，本回合会在此无声等待。回合计时用于诊断"发消息卡住"。
+        budget_wait_started = time.monotonic()
         with self.state_store.turn(self._context_budget(context)):
+            budget_waited = time.monotonic() - budget_wait_started
+            if budget_waited > 15:
+                logger.warning(
+                    "budget lock waited %.1fs before this turn principal=%s",
+                    budget_waited,
+                    context._budget.principal_key,
+                )
             self.state_store.consume_global_daily_request(
                 self.settings.global_daily_requests
             )

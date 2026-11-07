@@ -1856,6 +1856,15 @@ async def run_turn(
     _turn_abort_events[context_id()] = abort_event
     _turn_streams[context_id()] = stream_out
     _turn_watchers.pop(context_id(), None)
+    # 回合级看门狗：上游"滴漏式"响应（隔很久才来一个字节）会同时绕过
+    # 流式读超时与逐事件截止检查，让回合无限期挂起并占住账号级预算锁、
+    # 静默阻塞该账号后续所有回合。到点强制置位中断事件，流式循环在下一个
+    # 分片边界抛出 GenerationAborted，完全沉默的流由读超时兜底。
+    turn_watchdog = threading.Timer(
+        max(60.0, service.settings.turn_timeout), abort_event.set
+    )
+    turn_watchdog.daemon = True
+    turn_watchdog.start()
     async with _turn_lock_quiet_if_stopping(previous_abort_event):
         # Every window reloads the latest private transcript before generating.
         context = await restore_conversation(service)
@@ -1943,6 +1952,9 @@ async def run_turn(
             logger.info(
                 "Sidebar title not scheduled error_type=%s", type(error).__name__
             )
+    # 回合主体已结束（无论成败）：撤销看门狗，避免它在交付阶段误触发中断
+    # （迟到的置位只会影响下一个回合，而下一回合会创建全新的中断事件）。
+    turn_watchdog.cancel()
     return response
 
 @cl.on_stop

@@ -183,11 +183,22 @@ class OpenAICompatibleBackend:
         escalation_left = 1 if escalate_on_truncate and token_limit < ceiling else 0
         while True:
             char_cap = min(self._STREAM_CHAR_CAP, max(1, int(token_limit)) * 8)
+            # 流式读超时收紧为「字节间最大静默」：上游滴漏式响应（隔很久才
+            # 来一个字节）会绕过整体超时与逐事件截止检查，无限期挂住回合。
+            # 思考模型的正常分片间隔是秒级，300 秒静默即为异常。
+            import httpx
+
+            stream_timeout = httpx.Timeout(
+                connect=15.0,
+                read=min(300.0, effective_timeout),
+                write=60.0,
+                pool=15.0,
+            )
             kwargs = {
                 "model": self.settings.model,
                 "messages": messages,
                 self.settings.token_parameter: token_limit,
-                "timeout": effective_timeout,
+                "timeout": stream_timeout,
                 "stream": True,
                 "stream_options": {"include_usage": True},
             }
