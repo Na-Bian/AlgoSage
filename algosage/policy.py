@@ -33,9 +33,6 @@ def decide(
     elif "uncertain" in result.risk_flags:
         level = min(level, 1)
         details = "；问题意图没把握，先只讲概念"
-    elif "full_solution_request" in result.risk_flags:
-        level = min(level, 1)
-        details = "；看起来在要完整解答，先只讲概念"
     return PolicyDecision(
         result.intent, level, f"{source}按这类问题最高给到 L{level}" + details
     )

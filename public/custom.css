@@ -2313,14 +2313,6 @@ main [data-step-type="user_message"] #edit-chat-input {
    历史（数据未到），闪现的大字欢迎屏观感突兀。欢迎屏只属于首页。 */
 body.eg-in-thread #welcome-screen { visibility: hidden; }
 
-/* 辅助等级下拉菜单里的语义说明 */
-.eg-level-menu-note {
-  padding: 4px 14px 10px;
-  font-size: .72rem;
-  line-height: 1.5;
-  color: hsl(var(--muted-foreground));
-}
-
 /* ---------- 顶部提示 toast 的关闭按钮 ---------- */
 [data-sonner-toast] {
   position: relative;

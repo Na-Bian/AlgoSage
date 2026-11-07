@@ -30,7 +30,9 @@ from .schemas import Intent
 # 与第一阶段 policy.decide 的硬编码映射逐项一致（冻结基线）。
 DEFAULT_EXAM_LEVELS: dict[Intent, int] = {
     Intent.JAILBREAK: 0,
-    Intent.SOLUTION: 1,
+    # 索取完整解答：L2 允许方向性提示（内容契约禁止完整代码/伪代码/可拼装
+    # 步骤，Judge 与 SessionGuard 继续兜底）；反复索要仍会随累计风险收紧。
+    Intent.SOLUTION: 2,
     Intent.KNOWLEDGE: 1,
     Intent.HINT: 2,
     Intent.DEBUG: 3,
