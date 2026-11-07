@@ -182,50 +182,6 @@
     );
   }
 
-  const reasoningTailLengths = new WeakMap();
-
-  /* 流式淡入：思考正文每次全量重渲染，把新增的尾部文本包进淡入 span，
-     让新推理以约 0.4s 淡入浮现而不是生硬地整段替换。首次见到正文（历史
-     会话、刷新）与重生成重置时静默记录长度，不做动画；动画偏好关闭或
-     系统减弱动态效果时整体跳过（motionDisabled）。 */
-  function fadeReasoningTail(body) {
-    if (motionDisabled()) return;
-    const total = (body.textContent || "").length;
-    const prev = reasoningTailLengths.get(body);
-    if (prev === undefined || total < prev) {
-      reasoningTailLengths.set(body, total);
-      return;
-    }
-    if (total === prev) return;
-    reasoningTailLengths.set(body, total);
-    const from = prev;
-    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (!node.textContent.trim()) return NodeFilter.FILTER_REJECT;
-        const el = node.parentElement;
-        return el && el.closest(".eg-tail-fade")
-          ? NodeFilter.FILTER_REJECT
-          : NodeFilter.FILTER_ACCEPT;
-      },
-    });
-    const nodes = [];
-    let offset = 0;
-    let current;
-    while ((current = walker.nextNode())) {
-      nodes.push([current, offset]);
-      offset += current.textContent.length;
-    }
-    for (const [node, start] of nodes) {
-      const end = start + node.textContent.length;
-      if (end <= from) continue;
-      const target = start < from ? node.splitText(from - start) : node;
-      const span = document.createElement("span");
-      span.className = "eg-tail-fade";
-      target.parentNode.insertBefore(span, target);
-      span.appendChild(target);
-    }
-  }
-
   function ensureReasoningExpanded() {
     const buttons = reasoningButtons();
     if (!reasoningScanDone) {
@@ -236,14 +192,13 @@
       });
       reasoningScanDone = true;
     }
-    // 多轮历史里每条思考行都要有限高正文样式与流式淡入（与展开状态无关）。
+    // 多轮历史里每条思考行都要有限高正文样式（与展开状态无关）。
     reasoningButtons().forEach((b) => {
       const body = b.parentElement?.nextElementSibling;
       if (!body) return;
       if (!body.classList.contains("eg-reasoning-body")) {
         body.classList.add("eg-reasoning-body");
       }
-      fadeReasoningTail(body);
     });
     const button = buttons[buttons.length - 1];
     if (!button) return;

@@ -44,6 +44,29 @@ try {
     return nativeSend.call(this, data);
   };
 
+  /* React 渲染崩溃只走 console.error（错误边界拦截，不触发 window.onerror），
+     消息区整树卸载后表现为"变白"。限流转发到服务端日志用于远程定位。 */
+  (function () {
+    const nativeError = console.error;
+    let reported = 0;
+    console.error = function (...args) {
+      nativeError.apply(console, args);
+      if (reported >= 3) return;
+      const text = args.map((a) => (typeof a === "string" ? a : String(a?.message || a))).join(" ");
+      if (!/error occurred in|Uncaught|Minified React error/i.test(text)) return;
+      reported += 1;
+      try {
+        navigator.sendBeacon(
+          "/debug/ui-trace",
+          new Blob(
+            [JSON.stringify({ events: [{ t: Math.round(performance.now()), name: "react-error", d: text.slice(0, 300) }] })],
+            { type: "application/json" }
+          )
+        );
+      } catch (_) {}
+    };
+  })();
+
   window.AlgoSageSocket = {
     // 直发设置增量（服务端合并并重发面板，抽屉全程保持打开）。
     // 失败返回 false，调用方回退原生确认路径。
@@ -294,7 +317,7 @@ try {
     .then(() => loadScript("/public/account-profile.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/user-preferences.js?v=20261106-draft-clear-3"))
     .then(() => loadScript("/public/model-picker.js?v=20261106-maxb-unlimited-1"))
-    .then(() => loadScript("/public/chat-ui.js?v=20261106-follow-scroll-1"))
+    .then(() => loadScript("/public/chat-ui.js?v=20261106-no-tailfade-1"))
     .then(() => loadScript("/public/settings-autosave.js?v=20261106-settings-sync-1"))
     .then(() => loadScript("/public/chat-options.js?v=20261103-level-left-3"))
     .catch(() => {

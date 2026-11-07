@@ -2349,8 +2349,6 @@ body.eg-in-thread #welcome-screen { visibility: hidden; }
   to { opacity: 1; }
 }
 .eg-reasoning-body { animation: egReasoningFadeIn 300ms ease both; }
-.eg-tail-fade { animation: egReasoningFadeIn 420ms ease both; }
 @media (prefers-reduced-motion: reduce) {
-  .eg-reasoning-body,
-  .eg-tail-fade { animation: none !important; }
+  .eg-reasoning-body { animation: none !important; }
 }
