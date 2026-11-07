@@ -319,7 +319,7 @@ try {
     .then(() => loadScript("/public/model-picker.js?v=20261106-maxb-unlimited-1"))
     .then(() => loadScript("/public/chat-ui.js?v=20261106-no-tailfade-1"))
     .then(() => loadScript("/public/settings-autosave.js?v=20261106-settings-sync-1"))
-    .then(() => loadScript("/public/chat-options.js?v=20261103-level-left-3"))
+    .then(() => loadScript("/public/chat-options.js?v=20261107-level-note-1"))
     .catch(() => {
       // Existing behavior remains usable even if optional enhancements fail.
       loadScript("/public/account-profile.js?v=20261026-refresh-all-1");

@@ -62,7 +62,8 @@
     menu.setAttribute("role", "listbox");
     menu.setAttribute("aria-label", "辅助等级");
     menu.innerHTML =
-      '<div class="eg-model-menu-header"><div class="eg-model-menu-title">辅助等级</div></div>';
+      '<div class="eg-model-menu-header"><div class="eg-model-menu-title">辅助等级</div></div>' +
+      '<div class="eg-level-menu-note">上限只能收紧服务端策略：审批给的等级更高时，以这里的选择为准；更低时以审批为准。</div>';
     var list = document.createElement("div");
     list.className = "eg-model-list";
     LEVELS.forEach(function (level) {
