@@ -192,12 +192,25 @@
       });
       reasoningScanDone = true;
     }
-    // 多轮历史里每条思考行都要有限高正文样式（与展开状态无关）。
+    // 多轮历史里每条思考行都要有限高正文样式（与展开状态无关）。正在
+    // 流式输出的正文在其滚动容器末尾放一个自有哨兵元素：粘性定位的渐变
+    // 遮罩让最新浮现的内容呈淡入态、随增长固化——纯 CSS 视觉，不触碰
+    // React 管理的子节点（往 react-markdown 的子列表里插元素会破坏协调，
+    // 曾导致消息树崩溃白屏）。思考结束后遮罩移除。
     reasoningButtons().forEach((b) => {
       const body = b.parentElement?.nextElementSibling;
       if (!body) return;
       if (!body.classList.contains("eg-reasoning-body")) {
         body.classList.add("eg-reasoning-body");
+      }
+      const live = turnInFlight() && (decodeURIComponent(b.id.slice(5)) || "").startsWith("思考中");
+      const sentinel = body.querySelector(".eg-fade-sentinel");
+      if (live && !sentinel) {
+        const el = document.createElement("div");
+        el.className = "eg-fade-sentinel";
+        body.append(el);
+      } else if (!live && sentinel) {
+        sentinel.remove();
       }
     });
     const button = buttons[buttons.length - 1];

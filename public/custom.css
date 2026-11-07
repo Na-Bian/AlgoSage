@@ -2349,6 +2349,27 @@ body.eg-in-thread #welcome-screen { visibility: hidden; }
   to { opacity: 1; }
 }
 .eg-reasoning-body { animation: egReasoningFadeIn 300ms ease both; }
+
+/* 思考流式的"新内容淡入"：正文滚动容器末尾的粘性渐变遮罩（自有哨兵
+   元素，不触碰 React 子节点）。最新浮现的文本在底部边缘呈淡入态，随
+   内容增长向上推出固化；思考结束即移除。 */
+.eg-reasoning-body { position: relative; }
+.eg-fade-sentinel {
+  position: sticky;
+  bottom: 0;
+  height: 0;
+  z-index: 2;
+}
+.eg-fade-sentinel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 56px;
+  background: linear-gradient(transparent, hsl(var(--background)) 92%);
+  pointer-events: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .eg-reasoning-body { animation: none !important; }
 }
