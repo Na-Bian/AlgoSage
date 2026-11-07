@@ -224,9 +224,14 @@
     }
     if (!reasoningSeenNodes.has(button)) {
       reasoningSeenNodes.add(button);
-      if (turnInFlight()) {
+      const firstName = stepName(button);
+      if (turnInFlight() && firstName !== "思考完成") {
         // 本回合正在生成：新出现的思考步骤自动展开并跟随。
         reasoningFollowPaused = false;
+      } else if (turnInFlight()) {
+        // 「思考完成」是思考结束后收口改名生成的新节点：思考已结束，
+        // 不再自动展开；若 Chainlit 以展开态渲染则折叠一次。
+        reasoningAutoFolded.add(button);
       } else {
         // 打开历史会话（含会话恢复）时挂载的思考步骤：保持折叠。
         reasoningHistoricalNodes.add(button);
@@ -248,13 +253,33 @@
     }
     if (reasoningUserCollapsed.has(button)) return;
     const len = body ? (body.textContent || "").length : 0;
+    // 超长思考冻结后正文不再增长，但标题字数持续更新——用标题计数作为
+    // 主增长信号，否则流式中的思考会被"停滞"误判自动收起。
+    const titleCount = (() => {
+      const m = button.innerText.match(/思考中 · (\d+) 字/);
+      return m ? parseInt(m[1]) : null;
+    })();
     const now = performance.now();
     let meta = reasoningMeta.get(button);
     if (!meta) {
-      meta = { lastLen: len, stableAt: now, answersAtStart: document.querySelectorAll('[data-step-type="assistant_message"]').length };
+      meta = { lastGrowth: titleCount ?? len, lastLen: len, stableAt: now, answersAtStart: document.querySelectorAll('[data-step-type="assistant_message"]').length };
       reasoningMeta.set(button, meta);
     }
-    if (len !== meta.lastLen) {
+    // 标题字数骤降 = 审核否决触发重生成：思考重新开始，恢复展开与跟随
+    // （首次回答出字时的自动折叠不该延续到重生成后的新一轮思考）。
+    if (
+      titleCount !== null
+      && meta.lastGrowth !== null
+      && meta.lastGrowth - titleCount > 100
+    ) {
+      reasoningAutoFolded.delete(button);
+      reasoningFollowPaused = false;
+      meta.answersAtStart = document.querySelectorAll(
+        '[data-step-type="assistant_message"]'
+      ).length;
+    }
+    if (titleCount !== meta.lastGrowth || len !== meta.lastLen) {
+      meta.lastGrowth = titleCount ?? len;
       meta.lastLen = len;
       meta.stableAt = now;
     }
@@ -269,7 +294,7 @@
     const answerStarted =
       document.querySelectorAll('[data-step-type="assistant_message"]').length
         > meta.answersAtStart;
-    const stalled = meta.lastLen > 0 && now - meta.stableAt > 3000;
+    const stalled = meta.lastGrowth > 0 && now - meta.stableAt > 3000;
     if ((answerStarted || stalled) && !reasoningAutoFolded.has(button)) {
       reasoningAutoFolded.add(button);
       liveTurnPending = false;
