@@ -107,16 +107,18 @@
     },
     true
   );
-  // 思考正文里向上滚轮 = 回看，暂停自动跟随；向下滚轮 = 恢复跟随。
+  // 自动跟随只在用户位于思考正文底部附近时进行：监听滚动位置（覆盖滚轮、
+  // 滚动条拖动、触摸板、键盘等一切滚动方式），离开底部即暂停跟随，滚回
+  // 底部（32px 容差）自动恢复。此前只看滚轮方向，拖动滚动条回看时仍会被
+  // 强制拉回底部。
+  const REASONING_FOLLOW_RESUME_PX = 32;
   document.addEventListener(
-    "wheel",
+    "scroll",
     (event) => {
-      const container = event.target?.closest?.(".eg-reasoning-step");
-      if (!container) return;
-      const body = container.nextElementSibling;
-      if (!body || !(event.target === body || body.contains(event.target))) return;
-      if (event.deltaY < 0) reasoningFollowPaused = true;
-      else if (event.deltaY > 0) reasoningFollowPaused = false;
+      const body = event.target;
+      if (!(body instanceof Element) || !body.classList.contains("eg-reasoning-body")) return;
+      const fromBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
+      reasoningFollowPaused = fromBottom > REASONING_FOLLOW_RESUME_PX;
     },
     { capture: true, passive: true }
   );
