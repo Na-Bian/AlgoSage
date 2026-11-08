@@ -542,6 +542,17 @@ class ChatDataLayer(BaseDataLayer):
             )
             self._conn.commit()
 
+    async def get_image_elements_for(self, for_id: str) -> list[dict]:
+        """图片元素（按 for_id 归属消息）：编辑重发只携带文字（Chainlit
+        edit 协议限制），原消息的图片从这里重新附带。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT name, mime, storage_path, size_bytes FROM elements "
+                "WHERE for_id = ? AND type = 'image' ORDER BY created_at ASC, id ASC",
+                (for_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     async def get_element(self, thread_id: str, element_id: str):
         with self._lock:
             row = self._conn.execute(

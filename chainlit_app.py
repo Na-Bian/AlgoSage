@@ -2380,6 +2380,42 @@ async def _cleanup_cancelled_turn(stream_out: dict) -> None:
     stream_out.pop("review_step", None)
 
 
+async def _load_original_image_attachments(for_id: str) -> tuple:
+    """编辑重发只携带文字（Chainlit edit 协议只传 message.output）：原消息
+    的图片附件从元素存储读回，保证编辑文字不会丢图。文件缺失/损坏时逐个
+    跳过，不阻塞编辑重发。"""
+    from algosage.attachments import (
+        MAX_FILES,
+        MAX_FILE_BYTES,
+        AttachmentPayload,
+        _image_data_url,
+    )
+
+    rows = await get_chat_store().get_image_elements_for(for_id)
+    prepared: list[AttachmentPayload] = []
+    for row in rows[:MAX_FILES]:
+        path = Path(str(row.get("storage_path") or ""))
+        if not path.is_file():
+            continue
+        size = path.stat().st_size
+        if size <= 0 or size > MAX_FILE_BYTES:
+            continue
+        try:
+            image_mime, encoded = _image_data_url(path)
+        except Exception:  # noqa: BLE001 - 单张损坏不阻塞其余图片
+            continue
+        prepared.append(
+            AttachmentPayload(
+                name=str(row.get("name") or "image.png"),
+                mime=image_mime,
+                kind="image",
+                image_data_url=f"data:{image_mime};base64,{encoded}",
+                size_bytes=size,
+            )
+        )
+    return tuple(prepared)
+
+
 async def _finalize_reasoning_step(stream_out: dict, response) -> None:
     """回合收口：思考步骤标题定格为「思考完成」，必要时补发完整推理。
 
@@ -2419,6 +2455,17 @@ async def on_message(message: cl.Message) -> None:
             getattr(message, "elements", ()),
             max_chars=service.settings.max_input_chars,
         )
+        # 编辑重发只携带文字（Chainlit edit 协议限制）：原消息的图片附件
+        # 从元素存储重新附带，保证编辑文字不会悄悄丢图。
+        if not any(item.kind == "image" for item in attachments):
+            try:
+                attachments = attachments + await _load_original_image_attachments(
+                    message.id
+                )
+            except Exception as error:  # noqa: BLE001 - 重带失败不影响编辑重发
+                logger.info(
+                    "edit image re-attach skipped error_type=%s", type(error).__name__
+                )
         context = await asyncio.to_thread(
             service.new_context,
             context_id(),
