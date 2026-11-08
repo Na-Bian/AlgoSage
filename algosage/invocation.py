@@ -121,6 +121,7 @@ def timing_summary(calls):
         "latency_ms",
         "input_tokens",
         "output_tokens",
+        "error_type",
     }
     return [{key: call[key] for key in fields if key in call} for call in calls]
 

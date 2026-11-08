@@ -434,7 +434,14 @@ class AlgoSageTutor:
                         "error_type": type(error).__name__,
                     }
                 )
-            if audit.approved or audit.status == "unknown":
+            if audit.approved:
+                break
+            if audit.status == "unknown":
+                # 生成调用本身失败（网络/上游瞬断等）：还有剩余次数时原样
+                # 重试一次，不追加针对被否决草稿的整改反馈；预算耗尽除外
+                # （重试必然再失败）。
+                if attempt < attempts - 1 and audit.method != "budget":
+                    continue
                 break
             if attempt < attempts - 1:
                 regenerations += 1
