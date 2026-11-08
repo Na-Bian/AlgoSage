@@ -440,11 +440,16 @@ try:  # pragma: no cover - exercised through the running Chainlit server
     from chainlit.types import DeleteFeedbackRequest, UpdateFeedbackRequest
     from chainlit.data.acl import is_thread_author
     from chainlit.server import UserParam, app as _chainlit_server_app
+    from algosage.student_auth import _chainlit_router
 
     configure_auth_cookies()
     install_origin_guard(_chainlit_server_app)
 
-    @_chainlit_server_app.get(
+    # 必须注册在拥有 UI 兜底路由的那个 router 上：app 级注册会被兜底遮蔽
+    # （返回 index.html），图片元素在刷新后全部显示为破损图标。
+    _element_router = _chainlit_router(_chainlit_server_app)
+
+    @_element_router.get(
         "/project/element/{thread_id}/{element_id}/content",
         include_in_schema=False,
     )
@@ -1085,7 +1090,13 @@ try:  # pragma: no cover - exercised through the running Chainlit server
     install_student_auth(_chainlit_server_app, get_student_auth)
     _move_routes_before_catchall(
         _chainlit_router(_chainlit_server_app),
-        ("/auth/preferences", "/chat/options"),
+        (
+            "/auth/preferences",
+            "/chat/options",
+            # 持久化附件的字节端点：必须移到 SPA 兜底路由之前，否则返回
+            # index.html，历史图片在刷新后显示为破损图标。
+            "/project/element/{thread_id}/{element_id}/content",
+        ),
     )
     install_profile_routes(
         _chainlit_server_app,
