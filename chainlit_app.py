@@ -1476,7 +1476,11 @@ async def persist_backend_history(context, *, only_existing: bool = False) -> No
 async def schedule_title(
     service, context, response, question, emitter, session, timeout=8
 ):
-    """Start one ancillary job after audit, concurrently with final answer delivery."""
+    """Start one ancillary job after audit, concurrently with final answer delivery.
+
+    正常时机是首轮回答审核通过后；首轮被否决（审核拦截/生成失败）的会话
+    拿不到标题且旧逻辑此后不再尝试。这里在常规领取失败时回落到补救领取
+    （线程从未成功生成过标题即允许），本轮审核通过的回答同样可补出标题。"""
     if (
         emitter is None
         or not context.principal_id
@@ -1491,7 +1495,10 @@ async def schedule_title(
     store = get_chat_store()
     thread_id, principal = context.session_id, context.principal_id
     if not await store.claim_title(thread_id, principal):
-        return None
+        # 常规首轮领取未命中（历史已多于一轮等）：线程可能一直没有标题，
+        # 用补救路径再领一次；已有标题的线程在 claim 内直接拒绝。
+        if not await store.claim_title_retry(thread_id, principal):
+            return None
     selection = context.provider_selection
 
     async def complete():

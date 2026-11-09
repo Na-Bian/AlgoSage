@@ -851,6 +851,31 @@ class ChatDataLayer(BaseDataLayer):
             self._conn.commit()
             return cursor.rowcount == 1
 
+    async def claim_title_retry(self, thread_id: str, principal_id: str) -> bool:
+        """首轮标题未生成（审核否决/失败回合跳过、生成失败）时的补救领取：
+        线程从未成功拿到标题（无登记行，或此前尝试均非成功态）时，以当前
+        第一条用户消息重新登记并生成。生成成功的线程不会再进入这里。"""
+        with self._lock:
+            current = self._title_history(thread_id, principal_id)
+            if current is None:
+                return False
+            row, _, source_hash = current
+            job = self._conn.execute(
+                "SELECT status FROM thread_titles WHERE thread_id=?", (thread_id,)
+            ).fetchone()
+            if job is not None and job["status"] == "auto":
+                return False
+            cursor = self._conn.execute(
+                "INSERT INTO thread_titles(thread_id,status,source_hash,initial_name) "
+                "VALUES(?, 'pending', ?, ?) "
+                "ON CONFLICT(thread_id) DO UPDATE SET "
+                "status='pending', source_hash=excluded.source_hash, "
+                "initial_name=excluded.initial_name",
+                (thread_id, source_hash, row["name"]),
+            )
+            self._conn.commit()
+            return cursor.rowcount == 1
+
     async def finish_title(
         self, thread_id: str, principal_id: str, title: str | None
     ) -> bool:
@@ -868,8 +893,9 @@ class ChatDataLayer(BaseDataLayer):
                 and len(title) <= 24
                 and "\n" not in title
                 and "\r" not in title
+                # source_hash 校验防止生成期间第一条用户消息被编辑重发改写
+                # 后拿旧问题覆盖新标题；标题任务随当前轮重新发起即可。
                 and job["source_hash"] == source_hash
-                and job["initial_name"] == row["name"]
             )
             if valid:
                 self._conn.execute(
