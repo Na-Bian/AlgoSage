@@ -2203,12 +2203,21 @@ async def on_chat_end() -> None:
 
 async def _mask_or_reply(stream_out: dict, reply, content: str) -> None:
     """生成中途出错或触达用量上限时，优先把已直播的草稿整体替换为提示
-    文案（即时屏蔽）；还没有直播过任何内容时才另发一条新消息。"""
+    文案（即时屏蔽）；还没有直播过任何内容时才另发一条新消息。
+
+    另发的提示消息不能挂在 generation-safety-review 芯片下：回调此时仍
+    在该 Step 的上下文里，Chainlit 默认取 local_steps 栈顶为父节点，而
+    失败收尾会连芯片带它的整棵子树一起删除——前端按父链挂载，芯片被删
+    后提示消息随之从界面上消失（数据库里仍在，刷新后才回来）。显式把
+    提示消息挂到 on_message 包裹步骤下，与被删的芯片平级，删除不波及。"""
     streamed = stream_out.get("reply")
     if streamed is not None:
         streamed.content = content
         await streamed.update()
         return
+    run_step_id = _current_run_step_id()
+    if run_step_id:
+        reply.parent_id = run_step_id
     reply.content = content
     await reply.send()
 

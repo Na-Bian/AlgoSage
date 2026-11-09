@@ -277,6 +277,12 @@ class OpenAICompatibleBackend:
                     # 照常送审交付比整轮报错更有用；其余中止原因（内容过滤/
                     # 工具调用/缺失标记）不可交付。
                     if finish_reason != "length" or not text.strip():
+                        logger.warning(
+                            "流式响应异常结束 finish_reason=%s text_chars=%s reasoning_chars=%s",
+                            finish_reason,
+                            len(text),
+                            len("".join(reasoning_parts)),
+                        )
                         raise RuntimeError("流式响应不完整：缺少 stop 结束标记或被截断/过滤")
                 return LLMResult(
                     text=text,
