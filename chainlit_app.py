@@ -1490,10 +1490,11 @@ async def schedule_title(
         return None
     store = get_chat_store()
     thread_id, principal = context.session_id, context.principal_id
-    if not await store.claim_title(thread_id, principal):
-        # 常规首轮领取未命中（历史已多于一轮等）：线程可能一直没有标题，
-        # 用补救路径再领一次；已有标题的线程在 claim 内直接拒绝。
-        if not await store.claim_title_retry(thread_id, principal):
+    # question 直接参与领取哈希：回答落库前就能登记，标题真正与生成并行。
+    if not await store.claim_title(thread_id, principal, question):
+        # 常规首轮领取未命中（线程已有登记等）：线程可能一直没有标题，
+        # 用补救路径再领一次；已命名线程在 retry 内直接拒绝。
+        if not await store.claim_title_retry(thread_id, principal, question):
             return None
 
     async def complete():

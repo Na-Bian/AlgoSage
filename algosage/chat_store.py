@@ -821,6 +821,14 @@ class ChatDataLayer(BaseDataLayer):
                 )
             self._conn.commit()
 
+    @staticmethod
+    def _title_source_hash(message: dict) -> str:
+        """标题领取/落名共用的哈希：只取 role+content，忽略 msg_id 等元数据
+        （claim 以 question 文本登记、finish 以历史首轮比对，两侧必须一致）。"""
+        return hashlib.sha256(
+            _json({"role": "user", "content": message.get("content", "")}).encode()
+        ).hexdigest()
+
     def _title_history(self, thread_id: str, principal_id: str):
         row = self._thread_row(thread_id)
         if row is None or row["user_identifier"] != principal_id:
@@ -833,12 +841,32 @@ class ChatDataLayer(BaseDataLayer):
         users = [m for m in history if m.get("role") == "user"]
         if not users:
             return None
-        first_hash = hashlib.sha256(_json(users[0]).encode()).hexdigest()
+        first_hash = self._title_source_hash(users[0])
         return row, users, first_hash
 
-    async def claim_title(self, thread_id: str, principal_id: str) -> bool:
-        """Persist one first-turn job, separately from browser-controlled metadata."""
+    async def claim_title(
+        self, thread_id: str, principal_id: str, question: str | None = None
+    ) -> bool:
+        """Persist one first-turn job, separately from browser-controlled metadata.
+
+        question 传入时以它为准计算 source_hash：回合一开始（回答落库前）
+        就能领取，标题与生成并行；不传则回退读 backend_history 首轮（兼容
+        旧调用与测试）。"""
         with self._lock:
+            if question is not None:
+                row = self._thread_row(thread_id)
+                if row is None or row["user_identifier"] != principal_id:
+                    return False
+                source_hash = self._title_source_hash(
+                    {"role": "user", "content": question}
+                )
+                cursor = self._conn.execute(
+                    "INSERT OR IGNORE INTO thread_titles(thread_id,status,source_hash,initial_name) "
+                    "VALUES(?, 'pending', ?, ?)",
+                    (thread_id, source_hash, row["name"]),
+                )
+                self._conn.commit()
+                return cursor.rowcount == 1
             current = self._title_history(thread_id, principal_id)
             if current is None or len(current[1]) != 1:
                 return False
@@ -851,15 +879,25 @@ class ChatDataLayer(BaseDataLayer):
             self._conn.commit()
             return cursor.rowcount == 1
 
-    async def claim_title_retry(self, thread_id: str, principal_id: str) -> bool:
+    async def claim_title_retry(
+        self, thread_id: str, principal_id: str, question: str | None = None
+    ) -> bool:
         """首轮标题未生成（审核否决/失败回合跳过、生成失败）时的补救领取：
-        线程从未成功拿到标题（无登记行，或此前尝试均非成功态）时，以当前
-        第一条用户消息重新登记并生成。生成成功的线程不会再进入这里。"""
+        线程从未成功拿到标题（无登记行，或此前尝试均非成功态）时重新登记
+        并生成。question 语义同 claim_title；生成成功的线程不会再进入这里。"""
         with self._lock:
-            current = self._title_history(thread_id, principal_id)
-            if current is None:
-                return False
-            row, _, source_hash = current
+            if question is not None:
+                row = self._thread_row(thread_id)
+                if row is None or row["user_identifier"] != principal_id:
+                    return False
+                source_hash = self._title_source_hash(
+                    {"role": "user", "content": question}
+                )
+            else:
+                current = self._title_history(thread_id, principal_id)
+                if current is None:
+                    return False
+                row, _, source_hash = current
             job = self._conn.execute(
                 "SELECT status FROM thread_titles WHERE thread_id=?", (thread_id,)
             ).fetchone()
@@ -883,19 +921,27 @@ class ChatDataLayer(BaseDataLayer):
             job = self._conn.execute(
                 "SELECT * FROM thread_titles WHERE thread_id=?", (thread_id,)
             ).fetchone()
-            current = self._title_history(thread_id, principal_id)
-            if not job or job["status"] != "pending" or current is None:
+            if not job or job["status"] != "pending":
                 return False
-            row, _, source_hash = current
+            # source_hash 校验：领取基于"当时的第一条用户消息"，若生成期间
+            # 它被编辑重发改写（历史里的哈希已变），旧任务的结果作废——
+            # 标题任务会随当前轮重新发起，不会拿旧问题覆盖新标题。
+            # 历史尚未落库（本轮仍在生成）时跳过比对：claim 已用同一问题
+            # 文本登记，两次读到的必然一致。
+            current = self._title_history(thread_id, principal_id)
+            if current is not None and job["source_hash"] != current[2]:
+                self._conn.execute(
+                    "UPDATE thread_titles SET status='failed' WHERE thread_id=?",
+                    (thread_id,),
+                )
+                self._conn.commit()
+                return False
             valid = (
                 bool(title)
                 and isinstance(title, str)
                 and len(title) <= 24
                 and "\n" not in title
                 and "\r" not in title
-                # source_hash 校验防止生成期间第一条用户消息被编辑重发改写
-                # 后拿旧问题覆盖新标题；标题任务随当前轮重新发起即可。
-                and job["source_hash"] == source_hash
             )
             if valid:
                 self._conn.execute(
