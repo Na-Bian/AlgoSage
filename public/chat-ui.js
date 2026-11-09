@@ -41,6 +41,11 @@
     }
   }
 
+  // 状态集合统一以 step id 为键：id 跨 React 重渲染稳定，DOM 节点不是。
+  function stepKey(button) {
+    return button.id;
+  }
+
   function translateStepLabels() {
     // 有内容的步骤渲染成可展开的 button，生成中尚无内容的步骤渲染成
     // 同 id 的 <p>（“使用中 …”）；两种都要把内部名换成中文。
@@ -77,15 +82,20 @@
        （刷新正在生成的页面属于此列，重载后不自动展开是可接受降级）；
      - 之后新出现的思考步骤节点 = 新回合：自动展开并跟随滚动；正式回答
        元素出现（思考必然结束）或思考停更 3 秒时自动折叠一次；
-     - 用户手动收起（isTrusted 点击）永远优先，不再自动展开。 */
-  const reasoningUserCollapsed = new WeakSet();
-  const reasoningAutoFolded = new WeakSet();
-  const reasoningSeenNodes = new WeakSet();
-  const reasoningHistoricalNodes = new WeakSet();
-  const reasoningMeta = new WeakMap();
+     - 用户手动收起（isTrusted 点击）永远优先，不再自动展开。
+     状态全部按 step id（button.id，稳定）记录：React 重渲染会整体重建
+     步骤行节点，按 DOM 节点记录的状态在重建后丢失——自动折叠标记丢失
+     导致收起/展开反复横跳（生成结束后持续闪烁），淡入动画随每次重建
+     重播。动画播过标记同样按 id 去重，一条思考只播一次。 */
+  const reasoningUserCollapsed = new Set();
+  const reasoningAutoFolded = new Set();
+  const reasoningSeenNodes = new Set();
+  const reasoningHistoricalNodes = new Set();
+  const reasoningMeta = new Map();
   let reasoningScanDone = false;
-  const reasoningHistoricalCollapsed = new WeakSet();
-  const reasoningUserControlled = new WeakSet();
+  const reasoningHistoricalCollapsed = new Set();
+  const reasoningUserControlled = new Set();
+  const reasoningAnimatedIds = new Set();
   let reasoningFollowPaused = false;
   document.addEventListener(
     "click",
@@ -97,9 +107,9 @@
       if (!button || !event.isTrusted || !isReasoningName(stepName(button))) return;
       // 用户真实点击过 = 该步骤由用户掌管：自动展开/收起一律退场。
       // （否则“每帧一次的强制收起”会覆盖用户刚展开的历史思考。）
-      reasoningUserControlled.add(button);
-      reasoningAutoFolded.delete(button);
-      reasoningHistoricalCollapsed.add(button);
+      reasoningUserControlled.add(stepKey(button));
+      reasoningAutoFolded.delete(stepKey(button));
+      reasoningHistoricalCollapsed.add(stepKey(button));
       // 展开回看时暂停自动跟随，防止思考期被拉回底部。
       if (button.getAttribute("aria-expanded") === "false") {
         reasoningFollowPaused = true;
@@ -110,13 +120,26 @@
   // 自动跟随只在用户位于思考正文底部附近时进行：监听滚动位置（覆盖滚轮、
   // 滚动条拖动、触摸板、键盘等一切滚动方式），离开底部即暂停跟随，滚回
   // 底部（32px 容差）自动恢复。此前只看滚轮方向，拖动滚动条回看时仍会被
-  // 强制拉回底部。
+  // 强制拉回底部。识别思考正文不能依赖 .eg-reasoning-body class——该
+  // class 由每帧 tick 幂等补挂，React 重建正文节点后的一瞬间新节点还没
+  // 有它，用户的"滑回底部"事件会被这里提前 return 丢弃，跟随从此不再
+  // 恢复。改按结构识别：class 挂了直接认；没挂则看它是否紧跟思考步骤头。
   const REASONING_FOLLOW_RESUME_PX = 32;
+  function looksLikeReasoningBody(el) {
+    if (!(el instanceof Element)) return false;
+    if (el.classList.contains("eg-reasoning-body")) return true;
+    const prev = el.previousElementSibling;
+    return !!(
+      prev &&
+      prev.querySelector?.('button[id^="step-"]') &&
+      isReasoningName(stepName(prev.querySelector('button[id^="step-"]')))
+    );
+  }
   document.addEventListener(
     "scroll",
     (event) => {
       const body = event.target;
-      if (!(body instanceof Element) || !body.classList.contains("eg-reasoning-body")) return;
+      if (!looksLikeReasoningBody(body)) return;
       const fromBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
       reasoningFollowPaused = fromBottom > REASONING_FOLLOW_RESUME_PX;
     },
@@ -187,8 +210,8 @@
     if (!reasoningScanDone) {
       // 页面加载后的首轮扫描：现存按钮都视为历史渲染
       buttons.forEach((b) => {
-        reasoningSeenNodes.add(b);
-        reasoningHistoricalNodes.add(b);
+        reasoningSeenNodes.add(stepKey(b));
+        reasoningHistoricalNodes.add(stepKey(b));
       });
       reasoningScanDone = true;
     }
@@ -200,8 +223,17 @@
     reasoningButtons().forEach((b) => {
       const body = b.parentElement?.nextElementSibling;
       if (!body) return;
+      // 300ms 淡入动画只对每条思考播一次：React 重渲染会重建正文节点，
+      // class 摘掉再挂上就会重播动画（持续闪烁）。首次挂 class 的节点若
+      // 属于已播过动画的 step（重建出来的新节点），跳过动画类。
+      const key = stepKey(b);
       if (!body.classList.contains("eg-reasoning-body")) {
-        body.classList.add("eg-reasoning-body");
+        if (reasoningAnimatedIds.has(key)) {
+          body.classList.add("eg-reasoning-body", "eg-no-reasoning-anim");
+        } else {
+          body.classList.add("eg-reasoning-body");
+          reasoningAnimatedIds.add(key);
+        }
       }
       const live = turnInFlight() && (decodeURIComponent(b.id.slice(5)) || "").startsWith("思考中");
       const sentinel = body.querySelector(".eg-fade-sentinel");
@@ -219,11 +251,17 @@
     const body = container?.nextElementSibling;
     // 思考正文的限高/独立滚动样式挂在 .eg-reasoning-body 上；正文晚于
     // 步骤头挂载，所以每个 tick 幂等补挂（重写节点跟踪时曾把这个赋值弄丢）。
+    // 已播过动画的 step（重建节点）跳过淡入，避免重播闪烁。
     if (body && !body.classList.contains("eg-reasoning-body")) {
-      body.classList.add("eg-reasoning-body");
+      if (reasoningAnimatedIds.has(stepKey(button))) {
+        body.classList.add("eg-reasoning-body", "eg-no-reasoning-anim");
+      } else {
+        body.classList.add("eg-reasoning-body");
+        reasoningAnimatedIds.add(stepKey(button));
+      }
     }
-    if (!reasoningSeenNodes.has(button)) {
-      reasoningSeenNodes.add(button);
+    if (!reasoningSeenNodes.has(stepKey(button))) {
+      reasoningSeenNodes.add(stepKey(button));
       const firstName = stepName(button);
       if (turnInFlight() && firstName !== "思考完成") {
         // 本回合正在生成：新出现的思考步骤自动展开并跟随。
@@ -231,27 +269,27 @@
       } else if (turnInFlight()) {
         // 「思考完成」是思考结束后收口改名生成的新节点：思考已结束，
         // 不再自动展开；若 Chainlit 以展开态渲染则折叠一次。
-        reasoningAutoFolded.add(button);
+        reasoningAutoFolded.add(stepKey(button));
       } else {
         // 打开历史会话（含会话恢复）时挂载的思考步骤：保持折叠。
-        reasoningHistoricalNodes.add(button);
+        reasoningHistoricalNodes.add(stepKey(button));
         reasoningScanDone = true;
       }
     }
-    if (reasoningUserControlled.has(button)) return;
-    if (reasoningHistoricalNodes.has(button)) {
+    if (reasoningUserControlled.has(stepKey(button))) return;
+    if (reasoningHistoricalNodes.has(stepKey(button))) {
       // 历史步骤：初始挂载时若为展开态（恢复的旧状态）收起一次；之后完全
       // 交还给 Chainlit 与用户——用户点击展开的历史思考必须保持展开。
       if (
         button.getAttribute("aria-expanded") === "true" &&
-        !reasoningHistoricalCollapsed.has(button)
+        !reasoningHistoricalCollapsed.has(stepKey(button))
       ) {
-        reasoningHistoricalCollapsed.add(button);
+        reasoningHistoricalCollapsed.add(stepKey(button));
         button.click();
       }
       return;
     }
-    if (reasoningUserCollapsed.has(button)) return;
+    if (reasoningUserCollapsed.has(stepKey(button))) return;
     const len = body ? (body.textContent || "").length : 0;
     // 超长思考冻结后正文不再增长，但标题字数持续更新——用标题计数作为
     // 主增长信号，否则流式中的思考会被"停滞"误判自动收起。
@@ -260,10 +298,10 @@
       return m ? parseInt(m[1]) : null;
     })();
     const now = performance.now();
-    let meta = reasoningMeta.get(button);
+    let meta = reasoningMeta.get(stepKey(button));
     if (!meta) {
       meta = { lastGrowth: titleCount ?? len, lastLen: len, stableAt: now, answersAtStart: document.querySelectorAll('[data-step-type="assistant_message"]').length };
-      reasoningMeta.set(button, meta);
+      reasoningMeta.set(stepKey(button), meta);
     }
     // 标题字数骤降 = 审核否决触发重生成：思考重新开始，恢复展开与跟随
     // （首次回答出字时的自动折叠不该延续到重生成后的新一轮思考）。
@@ -272,7 +310,7 @@
       && meta.lastGrowth !== null
       && meta.lastGrowth - titleCount > 100
     ) {
-      reasoningAutoFolded.delete(button);
+      reasoningAutoFolded.delete(stepKey(button));
       reasoningFollowPaused = false;
       meta.answersAtStart = document.querySelectorAll(
         '[data-step-type="assistant_message"]'
@@ -286,7 +324,7 @@
     if (button.getAttribute("aria-expanded") === "false") {
       // 自动折叠造成的折叠态不能重新展开（否则两个分支互相打架，
       // 思考过程会在回答开始后反复弹开）；只有新回合的初始折叠才展开。
-      if (!reasoningAutoFolded.has(button)) {
+      if (!reasoningAutoFolded.has(stepKey(button))) {
         button.click();
       }
       return;
@@ -295,8 +333,8 @@
       document.querySelectorAll('[data-step-type="assistant_message"]').length
         > meta.answersAtStart;
     const stalled = meta.lastGrowth > 0 && now - meta.stableAt > 3000;
-    if ((answerStarted || stalled) && !reasoningAutoFolded.has(button)) {
-      reasoningAutoFolded.add(button);
+    if ((answerStarted || stalled) && !reasoningAutoFolded.has(stepKey(button))) {
+      reasoningAutoFolded.add(stepKey(button));
       liveTurnPending = false;
       button.click();
       return;

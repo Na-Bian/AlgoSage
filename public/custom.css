@@ -2349,6 +2349,9 @@ body.eg-in-thread #welcome-screen { visibility: hidden; }
   to { opacity: 1; }
 }
 .eg-reasoning-body { animation: egReasoningFadeIn 300ms ease both; }
+/* React 重渲染重建正文节点后补挂的 class：跳过淡入（每条思考只播一次，
+   重播表现为持续闪烁，由 JS 按 step id 去重后加本类）。 */
+.eg-reasoning-body.eg-no-reasoning-anim { animation: none; }
 
 /* 思考流式的"新内容淡入"：正文滚动容器末尾的粘性渐变遮罩（自有哨兵
    元素，不触碰 React 子节点）。最新浮现的文本在底部边缘呈淡入态，随
