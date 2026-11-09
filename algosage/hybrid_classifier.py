@@ -57,10 +57,11 @@ _KNOWN_FLAGS = {
 }
 
 # 考试模式帮助等级：数字越小越严格。用于"冲突取更严格"的合并。
+# 与 exam_policy.DEFAULT_EXAM_LEVELS 保持一致（knowledge 提到 L2）。
 _HELP_LEVEL = {
     Intent.JAILBREAK: 0,
     Intent.SOLUTION: 1,
-    Intent.KNOWLEDGE: 1,
+    Intent.KNOWLEDGE: 2,
     Intent.HINT: 2,
     Intent.DEBUG: 3,
 }

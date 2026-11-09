@@ -33,7 +33,10 @@ DEFAULT_EXAM_LEVELS: dict[Intent, int] = {
     # 索取完整解答：L2 允许方向性提示（内容契约禁止完整代码/伪代码/可拼装
     # 步骤，Judge 与 SessionGuard 继续兜底）；反复索要仍会随累计风险收紧。
     Intent.SOLUTION: 2,
-    Intent.KNOWLEDGE: 1,
+    # 知识问答（含"详细讲解"类概念课）：L2。L1 曾拦截讲解中必然出现的
+    # 状态定义句式（"设 f[v] 表示…"），把正常的概念课讲成误伤；完整代码/
+    # 伪代码/可拼装步骤仍由内容契约、Judge 与 SessionGuard 兜底。
+    Intent.KNOWLEDGE: 2,
     Intent.HINT: 2,
     Intent.DEBUG: 3,
 }
