@@ -54,14 +54,27 @@
       const reasoning = isReasoningName(safeName);
       const label = STEP_LABELS[safeName]
         || (reasoning ? safeName : null);
-      if (!label || button.dataset.egStepLabel === label) return;
+      if (!label) return;
 
-      button.dataset.egStepLabel = label;
-      button.childNodes.forEach((node) => {
-        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-          node.textContent = node.textContent.replace(safeName, label);
-        }
-      });
+      if (button.dataset.egStepLabel !== label) {
+        button.dataset.egStepLabel = label;
+        button.childNodes.forEach((node) => {
+          if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+            node.textContent = node.textContent.replace(safeName, label);
+          }
+        });
+      }
+      // 流式中间态/React 局部渲染可能不给步骤标题文本节点（replace 无从
+      // 命中，界面上只剩图标和箭头的空白芯片）。没有可见文本时注入一个
+      // label 文本节点（置于最前，不触碰 React 管理的其他子节点）。
+      const hasVisibleText = Array.from(button.childNodes).some(
+        (node) =>
+          node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
+      );
+      if (!hasVisibleText) {
+        const text = document.createTextNode(label);
+        button.insertBefore(text, button.firstChild);
+      }
       // 置于正式回答上方；展开/收起交给 Chainlit 自己的折叠机制
       //（见 ensureReasoningExpanded），这里只做标记。
       if (reasoning && button.tagName === "BUTTON") {
@@ -333,7 +346,15 @@
       document.querySelectorAll('[data-step-type="assistant_message"]').length
         > meta.answersAtStart;
     const stalled = meta.lastGrowth > 0 && now - meta.stableAt > 3000;
-    if ((answerStarted || stalled) && !reasoningAutoFolded.has(stepKey(button))) {
+    if (reasoningAutoFolded.has(stepKey(button))) {
+      // 已自动折叠过的思考：React 重渲染会重建节点并按服务端状态渲染成
+      // 展开态——补一次收起，否则回答生成中思考会重新摊开且不再收起。
+      if (button.getAttribute("aria-expanded") !== "false") {
+        button.click();
+      }
+      return;
+    }
+    if ((answerStarted || stalled)) {
       reasoningAutoFolded.add(stepKey(button));
       liveTurnPending = false;
       button.click();

@@ -2210,6 +2210,42 @@ main div:has(> #messages) { overflow: visible; }
 
 /* ---------- 思考过程 Step：默认折叠、弱化样式 ---------- */
 .eg-reasoning-step button[id^="step-"] { opacity: .78; }
+/* 展开/收起过渡：Chainlit 的折叠是 Radix Collapsible，内容节点的显隐
+   由 animation presence 维持——只有 keyframes 动画（而非 transition）
+   会让它在收起时等动画播完再卸载内容。data-state 驱动双向动画，高度
+   用 Radix 注入的 --radix-collapsible-content-height 变量，收起时平滑
+   合拢而不是瞬间消失。设置里关闭动画或系统"减弱动态效果"时由全局
+   0ms / animation:none 规则兜底。 */
+main .eg-reasoning-step + * {
+  animation-duration: 240ms;
+  animation-timing-function: ease;
+}
+@keyframes egReasoningExpand {
+  from {
+    opacity: 0;
+    height: 0;
+  }
+  to {
+    opacity: 1;
+    height: var(--radix-collapsible-content-height);
+  }
+}
+@keyframes egReasoningCollapse {
+  from {
+    opacity: 1;
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    opacity: 0;
+    height: 0;
+  }
+}
+main .eg-reasoning-step + *[data-state="open"] {
+  animation-name: egReasoningExpand;
+}
+main .eg-reasoning-step + *[data-state="closed"] {
+  animation-name: egReasoningCollapse;
+}
 /* 思考正文：限高、独立滚动。Chainlit 的折叠包装层自带 overflow-hidden
    工具类，特异性同为单类名、且可能排在自定义样式之后——用 main 前缀
    提升特异性并 !important 兜底，保证限高与滚动不被覆盖。 */
