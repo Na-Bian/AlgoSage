@@ -1474,21 +1474,17 @@ async def persist_backend_history(context, *, only_existing: bool = False) -> No
 
 
 async def schedule_title(
-    service, context, response, question, emitter, session, timeout=8
+    service, context, question, emitter, session, timeout=8
 ):
-    """Start one ancillary job after audit, concurrently with final answer delivery.
-
-    正常时机是首轮回答审核通过后；首轮被否决（审核拦截/生成失败）的会话
-    拿不到标题且旧逻辑此后不再尝试。这里在常规领取失败时回落到补救领取
-    （线程从未成功生成过标题即允许），本轮审核通过的回答同样可补出标题。"""
+    """回合开始（思考前）就发起标题任务：内置小模型出标题只需亚秒级，
+    与生成并行，回答送达时侧栏标题已经就位。标题与回答审核解耦——首轮
+    被否决的会话同样有标题。领取规则：常规首轮领取，未命中则补救领取
+    （线程从未成功生成过标题即允许）；已命名线程在 claim 内直接拒绝。"""
     if (
         emitter is None
         or not context.principal_id
         or getattr(session, "restored", False)
         or os.environ.get("SAGE_AUTO_TITLES", "true").lower() in {"false", "0", "no"}
-        or not response.audit.approved
-        or response.audit.reason == "policy_denial"
-        or len(response.call_trace) >= service.settings.max_calls_per_turn
         or timeout <= 0
     ):
         return None
@@ -1499,13 +1495,12 @@ async def schedule_title(
         # 用补救路径再领一次；已有标题的线程在 claim 内直接拒绝。
         if not await store.claim_title_retry(thread_id, principal):
             return None
-    selection = context.provider_selection
 
     async def complete():
         try:
             title = await asyncio.to_thread(
                 service.generate_title,
-                selection,
+                context.provider_selection,
                 question,
                 min(8, timeout),
                 principal,
@@ -1897,6 +1892,25 @@ async def run_turn(
                 )
             ).send()
             return
+        # 标题任务在回合一开始（思考前）就发起：内置小模型亚秒级出标题，
+        # 与生成并行，回答送达时侧栏标题已就位；与回答审核解耦（被否决的
+        # 会话同样有标题）。内置标题 tutor 与会话模型无关，不占回合预算。
+        try:
+            await schedule_title(
+                service,
+                context,
+                question,
+                getattr(cl.context, "emitter", None),
+                cl.context.session,
+                timeout=service.settings.turn_timeout
+                - (time.perf_counter() - started),
+            )
+        except (
+            Exception
+        ) as error:  # noqa: BLE001 - optional title failures must not affect chat
+            logger.info(
+                "Sidebar title not scheduled error_type=%s", type(error).__name__
+            )
         mapping = _msg_turn_map()
         if edit_turn is None:
             edit_turn = mapping.get(msg_id)  # 命中即编辑重发
@@ -1953,22 +1967,6 @@ async def run_turn(
             if reply is not None and response.answer != stream_out.get("text", ""):
                 reply.content = response.answer
                 await reply.update()
-        try:
-            await schedule_title(
-                service,
-                context,
-                response,
-                question,
-                getattr(cl.context, "emitter", None),
-                cl.context.session,
-                timeout=service.settings.turn_timeout - (time.perf_counter() - started),
-            )
-        except (
-            Exception
-        ) as error:  # noqa: BLE001 - optional title failures must not affect chat
-            logger.info(
-                "Sidebar title not scheduled error_type=%s", type(error).__name__
-            )
     # 回合主体已结束（无论成败）：撤销看门狗，避免它在交付阶段误触发中断
     # （迟到的置位只会影响下一个回合，而下一回合会创建全新的中断事件）。
     turn_watchdog.cancel()

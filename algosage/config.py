@@ -65,6 +65,11 @@ class Settings:
     # BYOK 注册时真实探测并持久化的模型能力（thinking/web_search/…）。
     # None 表示无探测数据（预置模型），门控回退命名推断；缺失/None 视为不支持。
     capabilities: dict | None = None
+    # 内置标题小模型：与学生会话模型无关（BYOK 模型也可能不支持快速出短
+    # 文本），服务启动时按此配置独立构建；留空 model 时回退主模型配置。
+    title_model: str = ""
+    title_base_url: str = ""
+    title_api_key: str = ""
 
     def __post_init__(self) -> None:
         for name in (
@@ -171,4 +176,7 @@ class Settings:
             min_classifier_confidence=float(
                 os.environ.get("SAGE_MIN_CLASSIFIER_CONFIDENCE", ".7")
             ),
+            title_model=os.environ.get("TITLE_MODEL", "").strip(),
+            title_base_url=os.environ.get("TITLE_BASE_URL", "").strip(),
+            title_api_key=os.environ.get("TITLE_API_KEY", "").strip(),
         )

@@ -21,12 +21,13 @@ import os
 import time
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .config import Settings
 from .exam_policy import ExamPolicy
 from .hybrid_classifier import HybridIntentClassifier
 from .llm import ChatBackend, make_backend
+from .output_guard import BasicOutputGuard
 from .pipeline import AlgoSageTutor, make_output_guard
 from .providers import ProviderRegistry
 from .schemas import AttachmentPayload, TutorRequest, TutorResponse
@@ -628,34 +629,40 @@ class TutorService:
         timeout: float = 8,
         principal_id: str | None = None,
     ):
-        """Use the first turn's captured model; title calls have their own usage log."""
+        """标题用内置小模型（TITLE_* 配置，缺省 Qwen3.5-4B 档）独立生成，
+        与学生会话选择的模型无关：BYOK 模型可能是昂贵/慢速的大模型， auxiliary
+        任务不应跟随；也可保证 BYOK 会话同样有标题。"""
         from .chat_titles import generate_title
 
-        if selection.startswith("custom:"):
-            if not principal_id:
-                raise ValueError("自定义模型标题生成需要身份")
-            settings = self.custom_providers.resolve(principal_id, selection)
-            cache_key = (principal_id, selection)
-            with self._provider_lock:
-                tutor = self._custom_tutors.get(cache_key)
-                if tutor is None:
-                    backend = make_backend(settings)
-                    tutor = AlgoSageTutor(
-                        backend,
-                        settings,
-                        output_guard=make_output_guard(settings, backend),
-                        policy_config=self.policy_config,
-                    )
-                    self._custom_tutors[cache_key] = tutor
-        else:
-            settings = self.providers.resolve(selection)
-            with self._provider_lock:
-                tutor = (
-                    self.tutor
-                    if selection == self.providers.default
-                    else self._provider_tutors[selection]
-                )
-        return generate_title(tutor.backend, settings, question, timeout)
+        tutor = self._title_tutor()
+        return generate_title(tutor.backend, tutor.settings, question, timeout)
+
+    def _title_tutor(self) -> AlgoSageTutor:
+        """懒构建内置标题 tutor；TITLE_MODEL 未配置时回退主模型配置。"""
+        if getattr(self, "_cached_title_tutor", None) is not None:
+            return self._cached_title_tutor
+        title_settings = replace(
+            self.settings,
+            model=os.environ.get("TITLE_MODEL", "").strip() or self.settings.model,
+            base_url=os.environ.get("TITLE_BASE_URL", "").strip()
+            or self.settings.base_url,
+            api_key=os.environ.get("TITLE_API_KEY", "").strip()
+            or self.settings.api_key,
+            # 标题是短文本一次性任务：小预算、关闭思考；结果另有 extractive
+            # 校验兜底，不需要审核器。
+            max_output_tokens=96,
+            extra_body={"enable_thinking": False},
+            capabilities=None,
+        )
+        backend = make_backend(title_settings)
+        tutor = AlgoSageTutor(
+            backend,
+            title_settings,
+            output_guard=BasicOutputGuard(),
+            policy_config=self.policy_config,
+        )
+        self._cached_title_tutor = tutor
+        return tutor
 
     def _selected_tutor(self, context: ServiceContext) -> AlgoSageTutor:
         selection = context.provider_selection
