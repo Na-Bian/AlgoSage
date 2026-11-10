@@ -99,7 +99,6 @@ def extract_disclosures_llm(backend, answer_text: str, timeout: float = 8.0):
                     + text[:_MAX_ANSWER_CHARS],
                 },
             ],
-            stage="disclosure",
             max_output_tokens=256,
             timeout=timeout,
             extra_body_overrides={"enable_thinking": False},

@@ -2011,11 +2011,19 @@ def _install_stop_handler() -> None:
         if not session:
             return
         init_ws_context(session)
-        await cl.Message(content=STOP_NOTICE).send()
-        if session.current_task:
+        # 前端在页面刷新/切换会话时也会 emit "stop"（unload 前的清理），
+        # 并非用户真的点了停止。真正在生成中的回合此刻会被
+        # session.current_task.cancel() 取消（CancelledError 路径，内容
+        # 全部清理）；而已经进入审核/交付阶段的回合不该被这条清理性 stop
+        # 杀死——此前 abort_event 置位后，审核调用的中止检查会把回合打成
+        # GenerationAborted 兜底，用户看到"请求未完成"却什么都没点。
+        # 区分依据：stop 事件只有在"当前任务确实存在（还在跑 on_message）"
+        # 时才置位中断事件；任务已结束（收尾中）的 stop 只忽略。
+        if session.current_task and not session.current_task.done():
+            await cl.Message(content=STOP_NOTICE).send()
             session.current_task.cancel()
-        if chainlit_config.code.on_stop:
-            await chainlit_config.code.on_stop()
+            if chainlit_config.code.on_stop:
+                await chainlit_config.code.on_stop()
 
     sio.on("stop", stop)
 
