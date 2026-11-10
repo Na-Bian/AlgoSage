@@ -1017,11 +1017,9 @@
       var row = document.createElement("button");
       row.type = "button";
       row.className = "eg-add-model";
-      var sizeText = item.params_b == null ? "参数量未知" : `${item.params_b}B`;
       row.dataset.modelId = item.id;
       row.innerHTML = `
         <span class="eg-add-model-name">${shortModelName(item.id)}<span class="eg-add-model-caps"></span></span>
-        <span class="eg-add-model-size">${sizeText}</span>
       `;
       row.addEventListener("click", function () {
         if (selected[item.id]) {

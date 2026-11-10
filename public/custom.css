@@ -1125,12 +1125,6 @@ body.eg-no-models #chat-submit {
   font-weight: 400;
 }
 
-.eg-add-model-size {
-  flex: 0 0 auto;
-  color: hsl(var(--muted-foreground));
-  font-size: .74rem;
-}
-
 .eg-add-more {
   padding: 8px 9px;
   color: hsl(var(--muted-foreground));
