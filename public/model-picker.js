@@ -1163,10 +1163,13 @@
   }
   document.addEventListener("click", interceptSend, true);
   document.addEventListener("keydown", interceptSend, true);
-  // Esc 归属当前最上层弹层：模型管理对话框打开时，Esc 只关它——在捕获
-  // 阶段拦截并 stopImmediatePropagation，让 Chainlit 的设置面板收不到该
-  // 按键（否则面板把自己连同对话框一起关掉）。模型菜单同理。
-  document.addEventListener(
+  // Esc 归属当前最上层弹层：模型管理对话框打开时，Esc 只关它。监听必须
+  // 挂 **window 捕获阶段**——设置面板的 Esc 处理注册在 document 层（Radix
+  // 的 dismissable layer），document 上的监听无论 capture 与否都无法阻止
+  // 它（同元素同阶段的监听按注册顺序执行，面板先注册）。window 是事件
+  // 传播的第一站，在这里 stopImmediatePropagation 才能真正切断事件，
+  // 让面板收不到 Esc。模型菜单同理。
+  window.addEventListener(
     "keydown",
     function (event) {
       if (event.key !== "Escape") return;
