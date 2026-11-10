@@ -1493,7 +1493,6 @@ async def schedule_title(
     if (
         emitter is None
         or not context.principal_id
-        or getattr(session, "restored", False)
         or os.environ.get("SAGE_AUTO_TITLES", "true").lower() in {"false", "0", "no"}
         or timeout <= 0
     ):
