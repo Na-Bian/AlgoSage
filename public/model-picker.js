@@ -1165,20 +1165,28 @@
   }
   document.addEventListener("click", interceptSend, true);
   document.addEventListener("keydown", interceptSend, true);
-  document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") {
+  // Esc 归属当前最上层弹层：模型管理对话框打开时，Esc 只关它——在捕获
+  // 阶段拦截并 stopImmediatePropagation，让 Chainlit 的设置面板收不到该
+  // 按键（否则面板把自己连同对话框一起关掉）。模型菜单同理。
+  document.addEventListener(
+    "keydown",
+    function (event) {
+      if (event.key !== "Escape") return;
       if (addDialog) {
-        event.stopPropagation();
+        event.preventDefault();
+        event.stopImmediatePropagation();
         closeAddDialog();
         return;
       }
       if (menu) {
-        event.stopPropagation();
+        event.preventDefault();
+        event.stopImmediatePropagation();
         closeMenu();
         button?.focus();
       }
-    }
-  });
+    },
+    true
+  );
   window.addEventListener("resize", function () {
     if (menu) menuPosition();
   });
