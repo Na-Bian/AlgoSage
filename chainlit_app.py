@@ -1150,7 +1150,7 @@ async def send_provider_settings(context) -> None:
                     service, context.principal_id
                 ),
                 description=(
-                    "模型参数量暂不限制。"
+                    None
                     if limit == float("inf")
                     else f"仅支持参数量在 {limit:g}B 以内的模型。"
                 ),
