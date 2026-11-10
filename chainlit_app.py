@@ -29,6 +29,7 @@ from chainlit.input_widget import Select, Slider, Switch
 
 from algosage.config import Settings
 from algosage.service import TutorService, HISTORY_TURNS_KEPT
+from algosage.provider_presets import public_presets
 from algosage.providers import ProviderRegistry, custom_model_max_b, short_model_name
 from algosage.invocation import (
     GenerationAborted,
@@ -758,6 +759,14 @@ try:  # pragma: no cover - exercised through the running Chainlit server
             "provider_id": provider_id,
             "action": action,
         }
+
+    @models_router.get("/models/presets", include_in_schema=False)
+    async def list_provider_presets(current_user: UserParam):
+        """厂商预设：用户选一个厂商 → Base URL 与默认模型名自动预填，
+        只需补 API Key 即可探测/添加。"""
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return {"presets": public_presets()}
 
     @models_router.post("/models/discover", include_in_schema=False)
     async def discover_models(payload: dict, current_user: UserParam):

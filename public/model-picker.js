@@ -626,6 +626,7 @@
         </div>
         <div data-removed-list></div>
         <div class="eg-add-divider">添加提供商</div>
+        <div class="eg-add-field">厂商预设<span class="eg-add-presets" data-presets><span class="eg-add-presets-loading">加载中…</span></span></div>
         <label class="eg-add-field">显示名称（可选）<input type="text" data-field="label" placeholder="例如：我的 SiliconFlow" maxlength="40"></label>
         <label class="eg-add-field">Base URL<input type="text" data-field="base_url" placeholder="https://api.siliconflow.cn/v1"></label>
         <label class="eg-add-field">API Key<input type="password" data-field="api_key" placeholder="sk-…" autocomplete="off"></label>
@@ -662,8 +663,72 @@
     loadCatalog().then(function () {
       if (addDialog) renderManagedModels();
     }).catch(function () {});
+    // 厂商预设：点击即预填 Base URL 与模型名，用户只需补 API Key。
+    renderPresetChips();
     var first = addDialog.querySelector('[data-field="label"]');
     if (first) first.focus();
+  }
+
+  var presetsCache = null;
+
+  function renderPresetChips() {
+    var host = addDialog && addDialog.querySelector("[data-presets]");
+    if (!host) return;
+    var apply = function (presets) {
+      if (!addDialog) return;
+      host.textContent = "";
+      presets.forEach(function (preset) {
+        var chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "eg-add-preset";
+        chip.textContent = preset.label;
+        chip.title = preset.hint + " ｜ " + preset.base_url;
+        chip.addEventListener("click", function () {
+          setField("base_url", preset.base_url);
+          setField("label", preset.label);
+          var modelInput = addDialog.querySelector("[data-field]");
+          // 模型名经「获取模型列表」选择或注册后填写；预设的默认模型
+          // 先记下来，供 discover 结果默认勾选。
+          addDialog.dataset.presetModel = preset.model;
+          host.querySelectorAll(".eg-add-preset").forEach(function (other) {
+            other.classList.remove("eg-add-preset-on");
+          });
+          chip.classList.add("eg-add-preset-on");
+          // Base URL 已填好，直接把焦点交给 API Key。
+          var keyInput = addDialog.querySelector('[data-field="api_key"]');
+          if (keyInput) keyInput.focus();
+        });
+        host.append(chip);
+      });
+    };
+    if (presetsCache) {
+      apply(presetsCache);
+      return;
+    }
+    fetch("/models/presets", {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    })
+      .then(function (response) { return response.json(); })
+      .then(function (payload) {
+        presetsCache = payload.presets || [];
+        apply(presetsCache);
+      })
+      .catch(function () {
+        if (host) host.textContent = "预设加载失败，可手动填写";
+      });
+  }
+
+  function setField(name, value) {
+    var input = addDialog.querySelector('[data-field="' + name + '"]');
+    if (!input) return;
+    // 走原生 setter 触发框架可感知的 input 事件。
+    var setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value"
+    ).set;
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   function customEntries() {
@@ -981,6 +1046,14 @@
       results.append(row);
     }
     allowed.slice(0, 100).forEach(appendItem);
+    // 预设的默认模型预先勾选（厂商预设选过的话），省一次查找点击。
+    var presetModel = addDialog ? addDialog.dataset.presetModel : null;
+    if (presetModel) {
+      var presetRow = results.querySelector(
+        '.eg-add-model[data-model-id="' + presetModel + '"]'
+      );
+      if (presetRow) presetRow.click();
+    }
     // 不可添加的模型（超限/参数量未知/非对话）一律不渲染，仅计数。
     if (blocked.length) {
       var more = document.createElement("div");

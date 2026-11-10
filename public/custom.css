@@ -981,6 +981,38 @@ body.eg-no-models #chat-submit {
   border-color: hsl(var(--primary) / .6);
 }
 
+/* 厂商预设芯片：点击预填 Base URL 与模型名。 */
+.eg-add-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+}
+.eg-add-preset {
+  padding: 4px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--card));
+  color: hsl(var(--foreground) / .85);
+  font-size: .76rem;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+.eg-add-preset:hover {
+  border-color: hsl(var(--primary) / .55);
+  color: hsl(var(--foreground));
+}
+.eg-add-preset-on,
+.eg-add-preset-on:hover {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / .12);
+  color: hsl(var(--primary));
+}
+.eg-add-presets-loading {
+  color: hsl(var(--foreground) / .5);
+  font-size: .76rem;
+}
+
 .eg-add-actions {
   display: flex;
   justify-content: flex-end;
