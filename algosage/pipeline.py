@@ -130,18 +130,27 @@ def _strip_images(request, history):
     return request, history
 
 
-def make_output_guard(settings: Settings, backend: ChatBackend | None):
+def make_output_guard(
+    settings: Settings, backend: ChatBackend | None, judge_backend=None
+):
+    """构建输出审核层。
+
+    judge_backend 传入时，LLM Judge 与质量审查改用它（服务端内置审核
+    模型）——审核是服务端策略执行，判定尺度不能随学生自选的模型漂移，
+    也不该在学生的贵/慢模型上烧审核调用。规则预筛不调模型，不受影响。
+    judge_backend 缺省 None 时维持旧行为（用生成同款 backend）。"""
     if settings.output_guard == "basic":
         return BasicOutputGuard()
     if settings.output_guard == "layered":
+        review_backend = judge_backend or backend
         judge = (
-            LLMLeakageJudge(backend, settings)
-            if settings.mode == "api" and backend
+            LLMLeakageJudge(review_backend, settings)
+            if settings.mode == "api" and review_backend
             else None
         )
         quality_reviewer = (
-            LLMAnswerQualityReviewer(backend, settings)
-            if settings.mode == "api" and backend
+            LLMAnswerQualityReviewer(review_backend, settings)
+            if settings.mode == "api" and review_backend
             else None
         )
         return LayeredOutputGuard(

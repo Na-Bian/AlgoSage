@@ -76,6 +76,12 @@ class Settings:
     classifier_model: str = ""
     classifier_base_url: str = ""
     classifier_api_key: str = ""
+    # 内置审核模型（LLM Judge + 质量审查）：审核是服务端策略执行，判定
+    # 质量与尺度必须与学生自选的模型解耦。留空时依次回退
+    # CLASSIFIER_* → 主模型配置。
+    judge_model: str = ""
+    judge_base_url: str = ""
+    judge_api_key: str = ""
 
     def __post_init__(self) -> None:
         for name in (
@@ -188,4 +194,7 @@ class Settings:
             classifier_model=os.environ.get("CLASSIFIER_MODEL", "").strip(),
             classifier_base_url=os.environ.get("CLASSIFIER_BASE_URL", "").strip(),
             classifier_api_key=os.environ.get("CLASSIFIER_API_KEY", "").strip(),
+            judge_model=os.environ.get("JUDGE_MODEL", "").strip(),
+            judge_base_url=os.environ.get("JUDGE_BASE_URL", "").strip(),
+            judge_api_key=os.environ.get("JUDGE_API_KEY", "").strip(),
         )

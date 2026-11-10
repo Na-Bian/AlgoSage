@@ -173,7 +173,9 @@ class TutorService:
                 self.builtin_classifier_backend(), settings, self.policy_config
             )
         # P2：按配置选择输出审核层（basic / rules / layered）。
-        output_guard = make_output_guard(settings, self.backend)
+        output_guard = make_output_guard(
+            settings, self.backend, judge_backend=self.builtin_judge_backend()
+        )
         self.tutor = AlgoSageTutor(
             self.backend,
             settings,
@@ -701,6 +703,39 @@ class TutorService:
             return self.builtin_classifier_backend()
         return None
 
+    def builtin_judge_backend(self):
+        """内置审核模型（LLM Judge + 质量审查）的 backend。
+
+        审核是服务端策略执行：判定质量与尺度必须与学生自选的模型解耦
+        （学生接弱模型时审核放行标准不能跟着变弱，接贵模型时也不能跟着
+        烧钱）。JUDGE_* 未配置时依次回退 CLASSIFIER_* → 主模型配置；
+        构建失败抛给上层（layered guard 已有 judge_unavailable 安全回退）。"""
+        if getattr(self, "_cached_judge_backend", None) is not None:
+            return self._cached_judge_backend
+        judge_settings = replace(
+            self.settings,
+            model=(
+                os.environ.get("JUDGE_MODEL", "").strip()
+                or os.environ.get("CLASSIFIER_MODEL", "").strip()
+                or self.settings.model
+            ),
+            base_url=(
+                os.environ.get("JUDGE_BASE_URL", "").strip()
+                or os.environ.get("CLASSIFIER_BASE_URL", "").strip()
+                or self.settings.base_url
+            ),
+            api_key=(
+                os.environ.get("JUDGE_API_KEY", "").strip()
+                or os.environ.get("CLASSIFIER_API_KEY", "").strip()
+                or self.settings.api_key
+            ),
+            extra_body={"enable_thinking": False},
+            capabilities=None,
+        )
+        backend = make_backend(judge_settings)
+        self._cached_judge_backend = backend
+        return backend
+
     def _selected_tutor(self, context: ServiceContext) -> AlgoSageTutor:
         selection = context.provider_selection
         if selection == self.providers.default:
@@ -730,7 +765,9 @@ class TutorService:
                     backend,
                     settings,
                     classifier=classifier,
-                    output_guard=make_output_guard(settings, backend),
+                    output_guard=make_output_guard(
+                        settings, backend, judge_backend=self.builtin_judge_backend()
+                    ),
                     policy_config=self.policy_config,
                     policy_backend=self._policy_backend_for(settings),
                 )
@@ -753,7 +790,9 @@ class TutorService:
                     backend,
                     settings,
                     classifier=classifier,
-                    output_guard=make_output_guard(settings, backend),
+                    output_guard=make_output_guard(
+                        settings, backend, judge_backend=self.builtin_judge_backend()
+                    ),
                     policy_config=self.policy_config,
                     policy_backend=self._policy_backend_for(settings),
                 )
