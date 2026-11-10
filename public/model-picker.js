@@ -686,10 +686,6 @@
         chip.addEventListener("click", function () {
           setField("base_url", preset.base_url);
           setField("label", preset.label);
-          var modelInput = addDialog.querySelector("[data-field]");
-          // 模型名经「获取模型列表」选择或注册后填写；预设的默认模型
-          // 先记下来，供 discover 结果默认勾选。
-          addDialog.dataset.presetModel = preset.model;
           host.querySelectorAll(".eg-add-preset").forEach(function (other) {
             other.classList.remove("eg-add-preset-on");
           });
@@ -1046,14 +1042,6 @@
       results.append(row);
     }
     allowed.slice(0, 100).forEach(appendItem);
-    // 预设的默认模型预先勾选（厂商预设选过的话），省一次查找点击。
-    var presetModel = addDialog ? addDialog.dataset.presetModel : null;
-    if (presetModel) {
-      var presetRow = results.querySelector(
-        '.eg-add-model[data-model-id="' + presetModel + '"]'
-      );
-      if (presetRow) presetRow.click();
-    }
     // 不可添加的模型（超限/参数量未知/非对话）一律不渲染，仅计数。
     if (blocked.length) {
       var more = document.createElement("div");
