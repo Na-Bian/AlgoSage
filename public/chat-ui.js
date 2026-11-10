@@ -301,6 +301,11 @@
       }
       const live = turnInFlight() && b === buttons[buttons.length - 1] &&
         stepName(b).startsWith("思考中") && b.getAttribute("aria-expanded") === "true";
+      // 流式渐变由 data-streaming 属性驱动 CSS 伪元素（见 custom.css）。
+      // 属性挂在正文容器上，React 重渲染会丢，tick 每帧幂等补写。
+      if (body.dataset.streaming !== String(live)) {
+        body.dataset.streaming = String(live);
+      }
       animateReasoningGrowth(body, key, live);
     });
     const button = buttons[buttons.length - 1];
@@ -334,7 +339,14 @@
         reasoningScanDone = true;
       }
     }
-    if (reasoningUserControlled.has(stepKey(button))) return;
+    if (reasoningUserControlled.has(stepKey(button))) {
+      // 用户手动展开/收起过 = 用户掌管展开状态，自动折叠退场；但**自动
+      // 跟随滚动不退场**：用户拖动回看后滑回底部，仍应恢复自动滚动
+      // （此前 userControlled 分支直接 return，把跟随循环也跳过了——
+      // 拖动+滑回底部后不再自动滚动的根因）。
+      followReasoning(body);
+      return;
+    }
     if (reasoningHistoricalNodes.has(stepKey(button))) {
       // 历史步骤：初始挂载时若为展开态（恢复的旧状态）收起一次；之后完全
       // 交还给 Chainlit 与用户——用户点击展开的历史思考必须保持展开。
@@ -413,6 +425,13 @@
       button.click();
       return;
     }
+    followReasoning(body);
+  }
+
+  // 自动跟随滚动：思考正文（及其后兄弟内容）向下增长时，若用户位于底部
+  // 附近则贴底滚动。独立成函数，userControlled 分支也能复用（手动展开后
+  // 拖动回看再滑回底部，仍要恢复自动滚动）。
+  function followReasoning(body) {
     let sib = body;
     while (sib) {
       const fromBottom = sib.scrollHeight - sib.scrollTop - sib.clientHeight;
