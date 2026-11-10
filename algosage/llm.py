@@ -136,25 +136,47 @@ class OpenAICompatibleBackend:
         )
 
     def _create_with_retry(self, kwargs: dict):
-        """发起请求；上游以 400 拒绝且我们附加了 extra_body 时，去掉附加
-        参数立即重试一次。
+        """发起请求；两类 400 自适应重试一次：
 
-        部分兼容端点不接受我们默认附加的私有参数（如为默认关闭思考而加的
-        enable_thinking=false；GLM Coding 端点对这类模型返回 1210「不支持
-        关闭思考」）。审核/分类等调用不携带面板开关，无法靠覆盖规避——
-        模型按自身默认行为输出即可，省略参数是无害回退。
+        - 拒绝 extra_body（GLM Coding 1210「不支持关闭思考」等）：去掉附加
+          参数重试——模型按自身默认行为输出即可，省略参数是无害回退。
+        - 拒绝 max_tokens（「超过模型最大输出」类报错）：各端点对超限行为
+          不一（有的钳制、有的直接 400），且服务端配置的上限可能高于个别
+          模型的真实输出上限。收到这类报错时按 8192 重试一次。
+        其余错误原样抛出。
         """
         try:
             return self.client.chat.completions.create(**kwargs)
         except APIStatusError as error:
-            if getattr(error, "status_code", None) == 400 and kwargs.get("extra_body"):
+            if getattr(error, "status_code", None) != 400:
+                raise
+            body_text = str(getattr(error, "body", "") or "")
+            if kwargs.get("extra_body"):
                 logger.warning(
                     "上游拒绝 extra_body（%s）；去掉附加参数重试一次",
-                    str(getattr(error, "body", ""))[:200],
+                    body_text[:200],
                 )
                 retry_kwargs = {
                     key: value for key, value in kwargs.items() if key != "extra_body"
                 }
+                return self.client.chat.completions.create(**retry_kwargs)
+            token_key = self.settings.token_parameter
+            limit = kwargs.get(token_key)
+            if (
+                isinstance(limit, int)
+                and limit > 8192
+                and any(
+                    marker in body_text
+                    for marker in ("max_tokens", "maximum", "输出上限", "太大", "exceed")
+                )
+            ):
+                logger.warning(
+                    "上游拒绝输出上限 %s（%s）；按 8192 重试一次",
+                    limit,
+                    body_text[:200],
+                )
+                retry_kwargs = dict(kwargs)
+                retry_kwargs[token_key] = 8192
                 return self.client.chat.completions.create(**retry_kwargs)
             raise
 
