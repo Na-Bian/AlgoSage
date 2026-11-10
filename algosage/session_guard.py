@@ -9,6 +9,7 @@ course prototype, not a proof of semantic non-leakage.
 
 from __future__ import annotations
 
+import logging
 import re
 import copy
 import hashlib
@@ -31,6 +32,8 @@ from .content_analysis import (
 )
 from .leakage_guard import fallback_message
 from .solution_semantics import extract_solution_evidence, core_budget_reason
+
+logger = logging.getLogger("algosage.session_guard")
 
 # ---- 可解释的风险模型参数（常量集中，便于消融与调参） ----
 ELEMENT_WEIGHTS: dict[str, float] = {
@@ -538,6 +541,40 @@ class SessionGuard:
             "risk": round(state.risk_score, 4),
             "disclosures": tuple(state.disclosed_elements),
         }
+
+    def record_extra(self, state: RiskState, elements: list[str]) -> list[str]:
+        """回答送达后追加记入要素（内置模型抽取的正则补充）。
+
+        只增不删：调用方传入的要素只会累加风险与已披露集合，与 record()
+        共用同一套权重逻辑。已记入过的要素静默跳过（正则地板已计）。
+        返回实际新增的要素名，供日志与审计展示。"""
+        added: list[str] = []
+        if not elements:
+            return added
+        for element in dict.fromkeys(elements):
+            if element not in ELEMENT_WEIGHTS:
+                continue
+            if element in state.disclosed_elements:
+                continue
+            # 引用校验在抽取器完成；以要素+最近锚点做指纹防重复计分。
+            anchor = state.anchor_texts[-1] if state.anchor_texts else element
+            fingerprint = hashlib.sha256(
+                (element + anchor).encode()
+            ).hexdigest()
+            state.content_fingerprints.append(fingerprint)
+            state.content_fingerprints = state.content_fingerprints[-256:]
+            state.risk_score = min(
+                RISK_CAP, state.risk_score + ELEMENT_WEIGHTS[element]
+            )
+            state.disclosed_elements.append(element)
+            added.append(element)
+        if added:
+            logger.info(
+                "LLM disclosure supplement added=%s risk=%.3f",
+                added,
+                state.risk_score,
+            )
+        return added
 
     # ------------------------------------------------------------------
     def trajectory(self, question_id: str = "") -> list[dict]:

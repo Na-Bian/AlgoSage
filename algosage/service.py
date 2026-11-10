@@ -166,10 +166,11 @@ class TutorService:
         else:
             self.policy_config = ExamPolicy.default()
         # P1：hybrid 模式下注入规则+LLM 混合分类器；LLM 不可用时自动回退正则。
+        # LLM 层走内置策略模型（CLASSIFIER_*），不随学生的 BYOK 模型漂移。
         classifier = None
         if settings.classifier_mode == "hybrid":
             classifier = HybridIntentClassifier(
-                self.backend, settings, self.policy_config
+                self.builtin_classifier_backend(), settings, self.policy_config
             )
         # P2：按配置选择输出审核层（basic / rules / layered）。
         output_guard = make_output_guard(settings, self.backend)
@@ -179,6 +180,11 @@ class TutorService:
             classifier=classifier,
             output_guard=output_guard,
             policy_config=self.policy_config,
+            policy_backend=(
+                self.builtin_classifier_backend()
+                if settings.classifier_mode == "hybrid"
+                else None
+            ),
         )
         if allow_policy_override is None:
             allow_policy_override = _env_flag("SAGE_ALLOW_POLICY_SWITCH")
@@ -664,6 +670,37 @@ class TutorService:
         self._cached_title_tutor = tutor
         return tutor
 
+    def builtin_classifier_backend(self):
+        """内置策略模型（意图分类 LLM 层 + 解法要素抽取）的 backend。
+
+        与学生会话模型解耦：分类延迟与行为不随学生接入的 BYOK 模型漂移。
+        CLASSIFIER_MODEL 未配置时回退主模型配置；不可用时上层自动回落
+        正则分类器（hybrid 既有回退路径）。这里只给 backend，不建 tutor——
+        分类与抽取走各自的小预算调用，不经回合 ledger。"""
+        if getattr(self, "_cached_classifier_backend", None) is not None:
+            return self._cached_classifier_backend
+        classifier_settings = replace(
+            self.settings,
+            model=os.environ.get("CLASSIFIER_MODEL", "").strip()
+            or self.settings.model,
+            base_url=os.environ.get("CLASSIFIER_BASE_URL", "").strip()
+            or self.settings.base_url,
+            api_key=os.environ.get("CLASSIFIER_API_KEY", "").strip()
+            or self.settings.api_key,
+            extra_body={"enable_thinking": False},
+            capabilities=None,
+        )
+        backend = make_backend(classifier_settings)
+        self._cached_classifier_backend = backend
+        return backend
+
+    def _policy_backend_for(self, settings: Settings):
+        """回合 tutor 的要素抽取 backend：hybrid 模式共享内置策略模型，
+        其他模式未启用（抽取跳过，正则地板照常）。"""
+        if settings.classifier_mode == "hybrid":
+            return self.builtin_classifier_backend()
+        return None
+
     def _selected_tutor(self, context: ServiceContext) -> AlgoSageTutor:
         selection = context.provider_selection
         if selection == self.providers.default:
@@ -681,7 +718,11 @@ class TutorService:
                 )
                 backend = make_backend(settings)
                 classifier = (
-                    HybridIntentClassifier(backend, settings, self.policy_config)
+                    HybridIntentClassifier(
+                        self.builtin_classifier_backend(),
+                        settings,
+                        self.policy_config,
+                    )
                     if settings.classifier_mode == "hybrid"
                     else None
                 )
@@ -691,6 +732,7 @@ class TutorService:
                     classifier=classifier,
                     output_guard=make_output_guard(settings, backend),
                     policy_config=self.policy_config,
+                    policy_backend=self._policy_backend_for(settings),
                 )
                 self._custom_tutors[cache_key] = tutor
                 return tutor
@@ -699,7 +741,11 @@ class TutorService:
                 settings = self.providers.resolve(selection)
                 backend = make_backend(settings)
                 classifier = (
-                    HybridIntentClassifier(backend, settings, self.policy_config)
+                    HybridIntentClassifier(
+                        self.builtin_classifier_backend(),
+                        settings,
+                        self.policy_config,
+                    )
                     if settings.classifier_mode == "hybrid"
                     else None
                 )
@@ -709,6 +755,7 @@ class TutorService:
                     classifier=classifier,
                     output_guard=make_output_guard(settings, backend),
                     policy_config=self.policy_config,
+                    policy_backend=self._policy_backend_for(settings),
                 )
             return self._provider_tutors[selection]
 

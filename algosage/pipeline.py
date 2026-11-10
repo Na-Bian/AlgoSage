@@ -1,6 +1,8 @@
 """Trusted policy, bounded generation, full output review and preview/commit."""
 
+import logging
 import re
+import threading
 from dataclasses import replace
 
 from .config import Settings
@@ -19,6 +21,9 @@ from .leakage_guard import (
 )
 from .invocation import generate, turn_ledger, TurnBudgetExceeded
 from .visual_context import missing_image_facts, select_images, with_images
+from .disclosure_extractor import extract_disclosures_llm
+
+logger = logging.getLogger("algosage.pipeline")
 
 _REGEN_FEEDBACK = (
     "你上一条回答被输出审核拦截，原因：{reason}。请重新回答，"
@@ -152,6 +157,7 @@ class AlgoSageTutor:
         output_guard=None,
         policy_config=None,
         prompt_builder=None,
+        policy_backend=None,
     ):
         self.backend = backend
         self.settings = settings
@@ -167,6 +173,8 @@ class AlgoSageTutor:
             else getattr(classifier, "classify", classifier)
         )
         self._prompt_builder = prompt_builder or system_prompt
+        # 内置策略模型（意图分类/要素抽取共用）。None = 未配置，抽取跳过。
+        self.policy_backend = policy_backend
 
     def respond(
         self,
@@ -467,6 +475,11 @@ class AlgoSageTutor:
                 status=audit.status,
             )
         summary = self._record(session_guard, state, request, result, policy, audit)
+        # 内置策略模型补充抽取正则漏掉的解法要素（只增不删）。回答已记
+        # 账，同步跑在后台线程：本次送达不受影响，结果在下一轮生效。
+        self._supplement_disclosures(
+            session_guard, state, audit, request
+        )
         model = generated.model if generated else "unavailable"
         return self._response(
             audit.output,
@@ -480,6 +493,43 @@ class AlgoSageTutor:
             evidence,
             vision_notice=vision_notice,
         )
+
+    def _supplement_disclosures(self, session_guard, state, audit, request) -> None:
+        """回答送达后的 LLM 要素补充抽取（fire-and-forget，绝不抛出）。
+
+        只对已放行的回答执行；抽取结果经引用校验后并入 SessionGuard
+        （record_extra 只增不删）。内置模型不可用/超时即静默跳过——正则
+        地板已在 record() 记账，跳过不会放松任何限制。"""
+        if (
+            session_guard is None
+            or state is None
+            or not audit.approved
+            or audit.reason == "policy_denial"
+            or self.policy_backend is None
+            or not (audit.output or "").strip()
+        ):
+            return
+
+        def run():
+            try:
+                elements, _evidence = extract_disclosures_llm(
+                    self.policy_backend, audit.output,
+                    timeout=min(8.0, self.settings.turn_timeout),
+                )
+                if elements:
+                    session_guard.record_extra(state, elements)
+            except Exception as error:  # noqa: BLE001 - 补充抽取绝不阻塞回合
+                logger.info(
+                    "LLM disclosure supplement skipped error_type=%s",
+                    type(error).__name__,
+                )
+
+        try:
+            threading.Thread(
+                target=run, name="eg-disclosure-supplement", daemon=True
+            ).start()
+        except Exception:  # noqa: BLE001 - 线程创建失败同样静默
+            pass
 
     @staticmethod
     def _response(

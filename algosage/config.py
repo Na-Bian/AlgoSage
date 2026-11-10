@@ -70,6 +70,12 @@ class Settings:
     title_model: str = ""
     title_base_url: str = ""
     title_api_key: str = ""
+    # 内置策略小模型（意图分类 LLM 层 + 解法要素抽取）：与学生会话模型
+    # 解耦——学生接慢/贵模型时分类不必跟随，行为对所有会话一致；正则
+    # 分类器保留为地板与回退。留空 model 时回退主模型配置。
+    classifier_model: str = ""
+    classifier_base_url: str = ""
+    classifier_api_key: str = ""
 
     def __post_init__(self) -> None:
         for name in (
@@ -179,4 +185,7 @@ class Settings:
             title_model=os.environ.get("TITLE_MODEL", "").strip(),
             title_base_url=os.environ.get("TITLE_BASE_URL", "").strip(),
             title_api_key=os.environ.get("TITLE_API_KEY", "").strip(),
+            classifier_model=os.environ.get("CLASSIFIER_MODEL", "").strip(),
+            classifier_base_url=os.environ.get("CLASSIFIER_BASE_URL", "").strip(),
+            classifier_api_key=os.environ.get("CLASSIFIER_API_KEY", "").strip(),
         )
