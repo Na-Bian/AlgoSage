@@ -42,7 +42,14 @@
   }
 
   // 状态集合统一以 step id 为键：id 跨 React 重渲染稳定，DOM 节点不是。
+  // 但流式中的思考行 id 是动态名「思考中 · N 字」——字数每涨一次 id 就变，
+  // 直接用会让用户意图（手动展开/收起）在下次标题更新后全部失效（表现为
+  // 手动展开又被自动收起）。对「思考中 · N 字」截掉尾部字数得到跨字数
+  // 稳定的键；同一时刻只有一行流式思考，无碰撞风险。「思考完成」不归一
+  // （历史多行同名会互相串状态），折叠收尾由 autoFolded 分支按当时 id 处理。
   function stepKey(button) {
+    const name = stepName(button);
+    if (name.startsWith("思考中 · ")) return "step-思考中";
     return button.id;
   }
 
@@ -345,16 +352,24 @@
     const answerStarted =
       document.querySelectorAll('[data-step-type="assistant_message"]').length
         > meta.answersAtStart;
-    const stalled = meta.lastGrowth > 0 && now - meta.stableAt > 3000;
+    // 停滞判定放宽到 12 秒：上游分片间隔波动大（慢模型一次分片可达数秒、
+    // 节流层最长 3 秒才刷一次标题），3 秒会把正常推进的思考误判成停滞
+    // 而提前收起。
+    const stalled =
+      meta.lastGrowth > 0 &&
+      meta.lastGrowth === (meta.prevGrowth ?? null) &&
+      now - meta.stableAt > 12000;
+    meta.prevGrowth = meta.lastGrowth;
     if (reasoningAutoFolded.has(stepKey(button))) {
       // 已自动折叠过的思考：React 重渲染会重建节点并按服务端状态渲染成
       // 展开态——补一次收起，否则回答生成中思考会重新摊开且不再收起。
+      // 用户手动展开过（userControlled）的行不会走到这里（上方已 return）。
       if (button.getAttribute("aria-expanded") !== "false") {
         button.click();
       }
       return;
     }
-    if ((answerStarted || stalled)) {
+    if (answerStarted || stalled) {
       reasoningAutoFolded.add(stepKey(button));
       liveTurnPending = false;
       button.click();
