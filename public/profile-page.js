@@ -123,6 +123,28 @@
   }
 
   window.AlgoSageTheme?.mountFloatingButton();
+  // 「返回对话」回到来源页（打开个人信息前正在看的会话）；没有可信来源
+  // （直接输入地址/新标签打开）才回落到新建对话页。referrer 须与当前
+  // 同源且是对话路径才采用。
+  const backLink = document.querySelector(".ghost-link[href='/']");
+  if (backLink) {
+    try {
+      const refUrl = new URL(document.referrer, location.href);
+      if (
+        refUrl.origin === location.origin &&
+        refUrl.pathname !== location.pathname &&
+        (refUrl.pathname === "/" || /^\/thread\//.test(refUrl.pathname))
+      ) {
+        backLink.href = refUrl.pathname + refUrl.search;
+        backLink.addEventListener("click", function (event) {
+          // 同源回退走 history.back：保留 SPA 会话状态，避免整页重载。
+          event.preventDefault();
+          if (history.length > 1) history.back();
+          else location.href = backLink.href;
+        });
+      }
+    } catch (_) {}
+  }
   avatarInput.addEventListener("change", selectedAvatarFile);
   document.getElementById("change-avatar").addEventListener("click", () => avatarInput.click());
   nicknameInput.addEventListener("input", () => {

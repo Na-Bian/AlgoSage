@@ -194,6 +194,26 @@
   closureConfirm.addEventListener("input", refreshClosureButton);
   confirmClosure.addEventListener("click", closeAccount);
   window.AlgoSageTheme?.mountFloatingButton();
+  // 「返回对话」回到来源页（同源对话路径才采用），走 history.back 保留
+  // SPA 会话状态；无可信来源时保持默认（新建对话页）。
+  const backLink = document.querySelector(".ghost-link[href='/']");
+  if (backLink) {
+    try {
+      const refUrl = new URL(document.referrer, location.href);
+      if (
+        refUrl.origin === location.origin &&
+        refUrl.pathname !== location.pathname &&
+        (refUrl.pathname === "/" || /^\/thread\//.test(refUrl.pathname) || refUrl.pathname === "/profile")
+      ) {
+        backLink.href = refUrl.pathname + refUrl.search;
+        backLink.addEventListener("click", function (event) {
+          event.preventDefault();
+          if (history.length > 1) history.back();
+          else location.href = backLink.href;
+        });
+      }
+    } catch (_) {}
+  }
 
   loadProfile().catch((error) => status(error.message || "安全设置读取失败。", "error"));
 })();

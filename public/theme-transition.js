@@ -42,11 +42,17 @@
   }
 
   function initializeStandalone() {
-    // 独立页面（登录/注册/找回等，html 带 data-theme-default）每次请求都先
-    // 跟随系统主题：不读取浏览器里保存的手动偏好。页面提供悬浮按钮供临时
-    // 切换，选择只写入本地浏览器（登录后由应用内偏好接管），不触碰服务器
-    // 全局配置；系统主题变化时，未被手动覆盖则继续实时跟随。
-    applyPreference("system");
+    // 独立页面初始化分两种：
+    // - html 带 data-theme-persist（个人信息/安全设置等已登录页面）：读取
+    //   浏览器保存的手动偏好，与对话页一致——否则用户在对话页选了暗色、
+    //   进个人信息页却被强制回系统主题，观感割裂。悬浮按钮切换照常写回
+    //   本地偏好。
+    // - 其余（登录/注册/找回，data-theme-default）：每次跟随系统主题，
+    //   不读取保存的偏好；悬浮按钮仅供临时切换（standaloneOverride）。
+    const persist = Boolean(root.dataset.themePersist);
+    const preference = persist ? storedPreference() ?? "system" : "system";
+    standaloneOverride = persist ? storedPreference() : null;
+    applyPreference(preference);
     systemMedia.addEventListener("change", () => applyPreference(standaloneOverride ?? "system"));
     // 本脚本在 <head> 同步执行，body 尚未就绪时等 DOM 挂载完再放按钮。
     if (document.body) {
