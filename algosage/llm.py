@@ -40,6 +40,8 @@ class MockChatBackend:
 
 class OpenAICompatibleBackend:
     _STREAM_CHAR_CAP = 1_000_000
+    # 「思考吃满预算且正文为空」时的一次性紧急上限（模型上下文普遍支持）。
+    _EMPTY_BURST_CEILING = 32_768
 
     def __init__(self, settings: Settings):
         if not settings.api_key:
@@ -181,6 +183,10 @@ class OpenAICompatibleBackend:
         # 上：正文为空，或判定 JSON 被截成半截。辅助调用允许在截断时按所选
         # 模型的输出上限重试一次；回合级预算与停止通道仍然生效。
         escalation_left = 1 if escalate_on_truncate and token_limit < ceiling else 0
+        # 「思考吃满预算且正文为空」的紧急放宽：不依赖 escalate 标志（生成
+        # 调用本来就在模型上限运行，常规升级无处可升），上限取模型上下文的
+        # 安全经验值；仅一次。
+        empty_burst_left = 1
         while True:
             char_cap = min(self._STREAM_CHAR_CAP, max(1, int(token_limit)) * 8)
             # 流式读超时收紧为「字节间最大静默」：上游滴漏式响应（隔很久才
@@ -268,6 +274,26 @@ class OpenAICompatibleBackend:
                     token_limit = ceiling
                     logger.info(
                         "辅助调用输出被截断（finish=length）；放宽至 %s 重试一次",
+                        token_limit,
+                    )
+                    continue
+                if (
+                    finish_reason == "length"
+                    and not text.strip()
+                    and empty_burst_left
+                    and token_limit < self._EMPTY_BURST_CEILING
+                ):
+                    # 思考锁死的模型可能把整个输出预算花在推理上（正文 0 字），
+                    # 此时按模型上限的重试救不回来——上限本来就已用满。放宽到
+                    # 紧急上限（模型上下文允许时）再试一次：思考照旧烧，但正文
+                    # 有空间写完。上游不支持更大值时会以 4xx 拒绝，回落原报错。
+                    empty_burst_left -= 1
+                    token_limit = min(
+                        max(token_limit * 4, self._EMPTY_BURST_CEILING // 2),
+                        self._EMPTY_BURST_CEILING,
+                    )
+                    logger.warning(
+                        "输出预算被思考耗尽（finish=length, text=0）；放宽至 %s 重试一次",
                         token_limit,
                     )
                     continue

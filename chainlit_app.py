@@ -1477,9 +1477,10 @@ async def schedule_title(
     service, context, question, emitter, session, timeout=8
 ):
     """回合开始（思考前）就发起标题任务：内置小模型出标题只需亚秒级，
-    与生成并行，回答送达时侧栏标题已经就位。标题与回答审核解耦——首轮
-    被否决的会话同样有标题。领取规则：常规首轮领取，未命中则补救领取
-    （线程从未成功生成过标题即允许）；已命名线程在 claim 内直接拒绝。"""
+    与生成并行，回答送达时侧栏标题已经就位。标题与回答审核解耦——被
+    否决的会话同样有标题。领取按「话题」：同话题已命名不重复生成；未
+    命名/上次失败/**话题变了**（旧线程问新问题、编辑重发改写首条）都以
+    当前问题重新登记，标题始终跟随最新话题。"""
     if (
         emitter is None
         or not context.principal_id
@@ -1492,10 +1493,7 @@ async def schedule_title(
     thread_id, principal = context.session_id, context.principal_id
     # question 直接参与领取哈希：回答落库前就能登记，标题真正与生成并行。
     if not await store.claim_title(thread_id, principal, question):
-        # 常规首轮领取未命中（线程已有登记等）：线程可能一直没有标题，
-        # 用补救路径再领一次；已命名线程在 retry 内直接拒绝。
-        if not await store.claim_title_retry(thread_id, principal, question):
-            return None
+        return None
 
     async def complete():
         try:
@@ -1507,7 +1505,7 @@ async def schedule_title(
                 principal,
             )
             if (
-                await store.finish_title(thread_id, principal, title)
+                await store.finish_title(thread_id, principal, title, question)
                 and session.thread_id == thread_id
                 and not getattr(session, "to_clear", False)
             ):
