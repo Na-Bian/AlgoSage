@@ -115,6 +115,11 @@ def _safe_thread_metadata(
         if key in settings
         and isinstance(settings[key], (str, bool, int, float, type(None)))
     }
+    # model_params（含辅助等级上限 help_level_cap）只由服务端
+    # update_thread_model_params 写入：本过滤器一律剥离——浏览器元数据
+    # 更新不能注入，也不能覆盖（否则学生选的辅助等级刷新后回到"自动"，
+    # 或被页面输入伪造）。load_thread_settings 的读取走 update 后落库的
+    # 原始 metadata，不经此过滤器，能照常读回。
     return {"chat_settings": allowed} if allowed else None
 
 
@@ -133,10 +138,26 @@ def _merged_thread_metadata(
         return None
     saved = _safe_thread_metadata(existing)
     if saved is None:
+        # existing 可能只含 model_params（过滤器把它剥离成 None）：
+        # 服务端写入的 model_params 必须保留，不能整条丢弃。
+        raw_existing = (existing or {}).get("chat_settings")
+        if isinstance(raw_existing, dict) and isinstance(
+            raw_existing.get("model_params"), dict
+        ):
+            return {"chat_settings": {**incoming["chat_settings"],
+                                      "model_params": raw_existing["model_params"]}}
         return incoming
     settings = {**saved["chat_settings"], **incoming["chat_settings"]}
     if "provider_selection" not in incoming["chat_settings"]:
         settings["provider_selection"] = saved["chat_settings"]["provider_selection"]
+    # model_params（辅助等级上限等）只认服务端写入：existing 的原始
+    # metadata 里由 update_thread_model_params 落库（本过滤器的 saved 副本
+    # 已剥离），incoming 来自浏览器永不采信——从原始 existing 补回保留。
+    raw_existing = (existing or {}).get("chat_settings")
+    if isinstance(raw_existing, dict) and isinstance(
+        raw_existing.get("model_params"), dict
+    ):
+        settings["model_params"] = raw_existing["model_params"]
     return {"chat_settings": settings}
 
 
@@ -1116,8 +1137,17 @@ class ChatDataLayer(BaseDataLayer):
             owner = row["user_identifier"] or row["user_id"]
             if owner != principal_id:
                 raise PermissionError("thread owner mismatch")
-        metadata = _safe_thread_metadata(_decode(row["metadata"], {})) or {}
-        return metadata.get("chat_settings", {})
+        raw = _safe_thread_metadata(_decode(row["metadata"], {})) or {}
+        settings = dict(raw.get("chat_settings", {}))
+        # model_params（辅助等级上限等）由服务端写入，但被
+        # _safe_thread_metadata 剥离（浏览器元数据更新不可信）——读取时
+        # 从原始 metadata 补回。
+        raw_settings = (_decode(row["metadata"], {}) or {}).get("chat_settings")
+        if isinstance(raw_settings, dict) and isinstance(
+            raw_settings.get("model_params"), dict
+        ):
+            settings["model_params"] = raw_settings["model_params"]
+        return settings
 
     async def load_user_app_preferences(self, identifier: str) -> dict:
         with self._lock:
