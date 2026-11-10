@@ -1671,6 +1671,21 @@ body.eg-chat-shell :is(
   gap: 6px;
 }
 
+/* 回合进行中：侧栏当前会话条目的转圈指示。 */
+.eg-sidebar-spinner {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  margin-right: 2px;
+  border: 2px solid hsl(var(--sidebar-primary) / .25);
+  border-top-color: hsl(var(--sidebar-primary));
+  border-radius: 50%;
+  animation: egSidebarSpin 800ms linear infinite;
+}
+@keyframes egSidebarSpin {
+  to { transform: rotate(360deg); }
+}
+
 .eg-sidebar-icon-button {
   width: 40px;
   height: 40px;
@@ -2415,32 +2430,6 @@ body.eg-in-thread #welcome-screen { visibility: hidden; }
    重播表现为持续闪烁，由 JS 按 step id 去重后加本类）。 */
 .eg-reasoning-body.eg-no-reasoning-anim { animation: none; }
 
-/* 思考流式的"新内容淡入"：正文滚动容器末尾的渐变遮罩，由 body 上的
-   data-streaming 属性驱动 ::after 伪元素（sticky 定位在滚动容器底部）。
-   之前用自有哨兵 DOM 节点——React 重渲染替换正文子内容时会把它移除
-   （已实证），渐变时有时无；伪元素挂在容器自身，不受子节点 reconciliation
-   影响。思考结束（属性置 false 移除）渐变即消失。 */
-.eg-reasoning-body { position: relative; }
-.eg-reasoning-body[data-streaming="true"]::after {
-  content: "";
-  position: sticky;
-  bottom: 0;
-  display: block;
-  height: 0;
-  z-index: 2;
-  pointer-events: none;
-}
-.eg-reasoning-body[data-streaming="true"]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 56px;
-  background: linear-gradient(transparent, hsl(var(--background)) 92%);
-  pointer-events: none;
-  z-index: 2;
-}
 @media (prefers-reduced-motion: reduce) {
   .eg-reasoning-body { animation: none !important; }
 }

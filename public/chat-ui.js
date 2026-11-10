@@ -116,6 +116,9 @@
   const reasoningHistoricalCollapsed = new Set();
   const reasoningUserControlled = new Set();
   const reasoningAnimatedIds = new Set();
+  // Step 的 output 由服务端按批次整体更新；按稳定的步骤键追踪文字长度，
+  // 只在实时内容增长时动画末尾文本，不修改 React 管理的 DOM。
+  const reasoningTextLengths = new Map();
   let reasoningFollowPaused = false;
   document.addEventListener(
     "click",
@@ -173,6 +176,7 @@
   let liveTurnTimer = 0;
   function armLiveTurn() {
     liveTurnPending = true;
+    reasoningTextLengths.clear();
     clearTimeout(liveTurnTimer);
     liveTurnTimer = setTimeout(() => { liveTurnPending = false; }, 15 * 60 * 1000);
   }
@@ -219,10 +223,53 @@
     return liveTurnPending;
   }
 
+  // 回合进行中：在侧栏当前会话条目上显示转圈图标（条目链接的 href 与
+  // 当前 URL 的 /thread/<id> 匹配）。回合结束（liveTurnPending 复位）或
+  // 切换会话后由 tick 移除。spinner 是自有元素，不触碰 React 子节点。
+  function syncSidebarSpinner() {
+    const links = document.querySelectorAll('a[href^="/thread/"]');
+    if (!links.length) return;
+    const match = location.pathname.match(/^\/thread\/([^/]+)/);
+    const activeId = match ? decodeURIComponent(match[1]) : "";
+    const streaming = turnInFlight() && activeId;
+    links.forEach((link) => {
+      const isCurrent =
+        streaming &&
+        decodeURIComponent((link.getAttribute("href") || "").replace("/thread/", "")) ===
+          activeId;
+      if (isCurrent && !link.querySelector(".eg-sidebar-spinner")) {
+        const spinner = document.createElement("span");
+        spinner.className = "eg-sidebar-spinner";
+        spinner.setAttribute("aria-hidden", "true");
+        link.prepend(spinner);
+      } else if (!isCurrent && link.querySelector(".eg-sidebar-spinner")) {
+        link.querySelector(".eg-sidebar-spinner").remove();
+      }
+    });
+  }
+
   function reasoningButtons() {
     return [...document.querySelectorAll('button[id^="step-"]')].filter(
       (button) => isReasoningName(stepName(button))
     );
+  }
+
+  function animateReasoningGrowth(body, key, live) {
+    if (!live) return;
+    const length = (body.textContent || "").length;
+    const previous = reasoningTextLengths.get(key);
+    reasoningTextLengths.set(key, length);
+    if (previous === undefined || length <= previous) return;
+    if (document.body.classList.contains("eg-preferences-no-motion") ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const blocks = body.querySelectorAll("p, li, pre, blockquote");
+    const target = blocks[blocks.length - 1];
+    if (!target || typeof target.animate !== "function") return;
+    // 只淡化末尾文本块，避免整段思考内容随每次更新闪烁。
+    target.animate([{ opacity: 0.65 }, { opacity: 1 }], {
+      duration: 220,
+      easing: "ease-out",
+    });
   }
 
   function ensureReasoningExpanded() {
@@ -236,10 +283,7 @@
       reasoningScanDone = true;
     }
     // 多轮历史里每条思考行都要有限高正文样式（与展开状态无关）。正在
-    // 流式输出的正文在其滚动容器末尾放一个自有哨兵元素：粘性定位的渐变
-    // 遮罩让最新浮现的内容呈淡入态、随增长固化——纯 CSS 视觉，不触碰
-    // React 管理的子节点（往 react-markdown 的子列表里插元素会破坏协调，
-    // 曾导致消息树崩溃白屏）。思考结束后遮罩移除。
+    // 流式增长时仅对末尾文本块做短暂淡入，不插入 React 管理的子节点。
     reasoningButtons().forEach((b) => {
       const body = b.parentElement?.nextElementSibling;
       if (!body) return;
@@ -255,15 +299,9 @@
           reasoningAnimatedIds.add(key);
         }
       }
-      const live = turnInFlight() && (decodeURIComponent(b.id.slice(5)) || "").startsWith("思考中");
-      // 流式渐变改由 body 上的 data-streaming 属性驱动 CSS ::after 伪元素
-      // （见 custom.css .eg-reasoning-body[data-streaming="true"]::after）：
-      // 之前用自有哨兵子节点，React 重渲染替换正文子内容时会把它移除
-      // （已实证），tick 补挂的帧间隙里渐变时有时无。属性同样会被重建
-      // 丢掉，但 tick 每帧幂等补写，且伪元素不存在"被移除"问题。
-      if (body.dataset.streaming !== String(live)) {
-        body.dataset.streaming = String(live);
-      }
+      const live = turnInFlight() && b === buttons[buttons.length - 1] &&
+        stepName(b).startsWith("思考中") && b.getAttribute("aria-expanded") === "true";
+      animateReasoningGrowth(body, key, live);
     });
     const button = buttons[buttons.length - 1];
     if (!button) return;
@@ -1299,6 +1337,7 @@
     requestAnimationFrame(() => {
       scheduled = false;
       syncRouteFlag();
+      syncSidebarSpinner();
       enhanceMobileHeader();
       enhanceSidebar();
       enhanceStepStatusIcons();
