@@ -626,7 +626,7 @@
         </div>
         <div data-removed-list></div>
         <div class="eg-add-divider">添加提供商</div>
-        <div class="eg-add-field">厂商预设<span class="eg-add-presets" data-presets><span class="eg-add-presets-loading">加载中…</span></span></div>
+        <div class="eg-add-field">预设<span class="eg-add-presets" data-presets><span class="eg-add-presets-loading">加载中…</span></span></div>
         <label class="eg-add-field">显示名称（可选）<input type="text" data-field="label" placeholder="例如：我的 SiliconFlow" maxlength="40"></label>
         <label class="eg-add-field">Base URL<input type="text" data-field="base_url" placeholder="https://api.siliconflow.cn/v1"></label>
         <label class="eg-add-field">API Key<input type="password" data-field="api_key" placeholder="sk-…" autocomplete="off"></label>
@@ -663,7 +663,7 @@
     loadCatalog().then(function () {
       if (addDialog) renderManagedModels();
     }).catch(function () {});
-    // 厂商预设：点击即预填 Base URL 与模型名，用户只需补 API Key。
+    // 预设：点击即预填 Base URL 与显示名，用户只需补 API Key。
     renderPresetChips();
     var first = addDialog.querySelector('[data-field="label"]');
     if (first) first.focus();
