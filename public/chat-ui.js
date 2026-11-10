@@ -256,13 +256,13 @@
         }
       }
       const live = turnInFlight() && (decodeURIComponent(b.id.slice(5)) || "").startsWith("思考中");
-      const sentinel = body.querySelector(".eg-fade-sentinel");
-      if (live && !sentinel) {
-        const el = document.createElement("div");
-        el.className = "eg-fade-sentinel";
-        body.append(el);
-      } else if (!live && sentinel) {
-        sentinel.remove();
+      // 流式渐变改由 body 上的 data-streaming 属性驱动 CSS ::after 伪元素
+      // （见 custom.css .eg-reasoning-body[data-streaming="true"]::after）：
+      // 之前用自有哨兵子节点，React 重渲染替换正文子内容时会把它移除
+      // （已实证），tick 补挂的帧间隙里渐变时有时无。属性同样会被重建
+      // 丢掉，但 tick 每帧幂等补写，且伪元素不存在"被移除"问题。
+      if (body.dataset.streaming !== String(live)) {
+        body.dataset.streaming = String(live);
       }
     });
     const button = buttons[buttons.length - 1];
