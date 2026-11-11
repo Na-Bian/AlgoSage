@@ -639,16 +639,21 @@
       </div>
     `;
     // Portal 宿主：对话框必须渲染进设置抽屉的 DOM 子树。移动端抽屉是
-    // 带 focus trap 的模态 Radix Dialog——对话框挂在 body 末尾时，点击
-    // 对话框会被 DismissableLayer 判为 "outside" 而立即关闭抽屉（连同
-    // 对话框一起被 React 卸载），表现为移动端点击无响应。进入抽屉子树
-    // 后 outside 判定不再触发；桌面抽屉无 trap，不受影响。
+    // 带 focus trap 的模态 Radix Dialog：抽屉外的元素被整体置为 inert
+    // （不可点击），挂在 body 末尾的对话框因此整棵子树不可交互——移动端
+    // "无法点击"的直接原因。portal 进抽屉后，Radix 的 inert 维护观察器
+    // 只看 body 直接子节点变化、不会重申，portal 时显式清除一次即可。
+    // 桌面抽屉无 trap，inert 本来就不生效，清除是幂等无操作。
     const drawerSurface =
       document.getElementById("chat-settings-sidebar-title")
         ?.closest('[role="dialog"]') ||
       document.getElementById("chat-settings-sidebar-title")?.closest("[data-panel]") ||
       document.body;
     drawerSurface.append(addDialog);
+    addDialog.inert = false;
+    addDialog.querySelectorAll("*").forEach(function (el) {
+      el.inert = false;
+    });
     // 不做"点空白关闭"：填到一半的 Base URL/API Key 不该被一次误点清空。
     // 关闭只走"取消"/"确认"按钮或 Esc。
     addDialog.addEventListener("click", function (event) {
