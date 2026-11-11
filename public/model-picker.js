@@ -641,18 +641,14 @@
         <div class="eg-add-results" hidden></div>
       </div>
     `;
-    // Portal 宿主：对话框必须渲染进设置抽屉的 DOM 子树。移动端抽屉是
-    // 带 focus trap 的模态 Radix Dialog：抽屉外的元素被整体置为 inert
-    // （不可点击），挂在 body 末尾的对话框因此整棵子树不可交互——移动端
-    // "无法点击"的直接原因。portal 进抽屉后，Radix 的 inert 维护观察器
-    // 只看 body 直接子节点变化、不会重申，portal 时显式清除一次即可。
-    // 桌面抽屉无 trap，inert 本来就不生效，清除是幂等无操作。
-    const drawerSurface =
-      document.getElementById("chat-settings-sidebar-title")
-        ?.closest('[role="dialog"]') ||
-      document.getElementById("chat-settings-sidebar-title")?.closest("[data-panel]") ||
-      document.body;
-    drawerSurface.append(addDialog);
+    // 对话框仍挂 body（全屏遮罩 + 居中卡片，视觉不变）。移动端抽屉是
+    // 模态 Radix Dialog：抽屉外元素被整体置为 inert（不可点击），对话框
+    // 因此整棵子树不可交互——这是移动端"无法点击"的根因，portal 进抽屉
+    // 曾试图绕开但 Radix Content 的 transform 会把 fixed 遮罩裁剪成抽屉
+    // 宽度（视觉回归）。这里保持 body 挂载，只显式清除本子树的 inert；
+    // Radix 的 inert 维护观察器只看 body 直接子节点变化，不会重申。
+    // 桌面抽屉无 trap，清除为幂等无操作。
+    document.body.append(addDialog);
     addDialog.inert = false;
     addDialog.querySelectorAll("*").forEach(function (el) {
       el.inert = false;

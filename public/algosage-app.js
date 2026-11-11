@@ -316,7 +316,7 @@ try {
   loadScript("/public/theme-transition.js?v=20261111-menulink-1")
     .then(() => loadScript("/public/account-profile.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/user-preferences.js?v=20261106-draft-clear-3"))
-    .then(() => loadScript("/public/model-picker.js?v=20261111-entryorder-1"))
+    .then(() => loadScript("/public/model-picker.js?v=20261111-bodydlg-1"))
     .then(() => loadScript("/public/chat-ui.js?v=20261111-spinfix-1"))
     .then(() => loadScript("/public/settings-autosave.js?v=20261106-settings-sync-1"))
     .then(() => loadScript("/public/chat-options.js?v=20261111-align2-1"))
