@@ -125,10 +125,12 @@
   function placeLevelPill(pill) {
     // 插到模型选择按钮左侧（同一右组，提交键最右）。模型按钮未挂载时
     // 挂到 composer 的动作行右组末尾，model-picker 挂载时会重新归位。
+    // 右组打上 eg-composer-right 标记：移动端换行后 CSS 用它做右对齐。
     var composer = document.getElementById("message-composer");
     if (!composer) return;
     var actionRow = composer.querySelector(":scope > .flex.items-center.justify-between");
     var rightGroup = actionRow?.querySelector(":scope > .flex.items-center:last-child");
+    if (rightGroup) rightGroup.classList.add("eg-composer-right");
     var submit = document.getElementById("chat-submit");
     var modelBtn = document.querySelector(".eg-model-button");
     if (!rightGroup) return;

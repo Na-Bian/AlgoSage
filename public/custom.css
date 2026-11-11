@@ -2190,8 +2190,10 @@ main div:has(> #messages) { overflow: visible; }
   body.eg-chat-shell #message-composer .eg-option-pills::-webkit-scrollbar {
     display: none;
   }
-  /* 附件占第一行行首；模型/等级/提交键所在的右组换行后推到行尾右对齐。 */
-  body.eg-chat-shell #message-composer :scope > .flex.items-center.justify-between > .flex.items-center:last-child {
+  /* 附件占第一行行首；模型/等级/提交键所在的右组换行后推到行尾右对齐。
+     右组由 chat-options.js 打 eg-composer-right 标记（:last-child 伪类在
+     真实 DOM 里不成立，纯 CSS 选择器不命中）。 */
+  body.eg-chat-shell #message-composer .eg-composer-right {
     margin-left: auto;
   }
   .eg-option-pill { white-space: nowrap; }
