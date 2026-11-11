@@ -2175,7 +2175,7 @@ main div:has(> #messages) { overflow: visible; }
 @media (max-width: 767px) {
   /* 移动端 composer 动作行：宽度不足时整行换行排布，pill 单行文字不折行
      （此前“思考模式/联网搜索” pill 在窄屏被挤成两行瘦条）。换行后 pills
-     占独立一行并允许横向滚动，模型/等级/提交键保持同一行。 */
+     占独立一行并允许横向滚动，模型/等级/提交键保持同一行并靠右对齐。 */
   body.eg-chat-shell #message-composer :scope > .flex.items-center.justify-between,
   body.eg-chat-shell #message-composer .flex.items-center.justify-between {
     flex-wrap: wrap;
@@ -2189,6 +2189,10 @@ main div:has(> #messages) { overflow: visible; }
   }
   body.eg-chat-shell #message-composer .eg-option-pills::-webkit-scrollbar {
     display: none;
+  }
+  /* 附件占第一行行首；模型/等级/提交键所在的右组换行后推到行尾右对齐。 */
+  body.eg-chat-shell #message-composer :scope > .flex.items-center.justify-between > .flex.items-center:last-child {
+    margin-left: auto;
   }
   .eg-option-pill { white-space: nowrap; }
 
