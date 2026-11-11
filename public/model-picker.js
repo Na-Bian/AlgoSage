@@ -638,7 +638,17 @@
         <div class="eg-add-results" hidden></div>
       </div>
     `;
-    document.body.append(addDialog);
+    // Portal 宿主：对话框必须渲染进设置抽屉的 DOM 子树。移动端抽屉是
+    // 带 focus trap 的模态 Radix Dialog——对话框挂在 body 末尾时，点击
+    // 对话框会被 DismissableLayer 判为 "outside" 而立即关闭抽屉（连同
+    // 对话框一起被 React 卸载），表现为移动端点击无响应。进入抽屉子树
+    // 后 outside 判定不再触发；桌面抽屉无 trap，不受影响。
+    const drawerSurface =
+      document.getElementById("chat-settings-sidebar-title")
+        ?.closest('[role="dialog"]') ||
+      document.getElementById("chat-settings-sidebar-title")?.closest("[data-panel]") ||
+      document.body;
+    drawerSurface.append(addDialog);
     // 不做"点空白关闭"：填到一半的 Base URL/API Key 不该被一次误点清空。
     // 关闭只走"取消"/"确认"按钮或 Esc。
     addDialog.addEventListener("click", function (event) {
