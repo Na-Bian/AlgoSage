@@ -175,10 +175,13 @@
       const preference = item.getAttribute("data-eg-theme-option");
       if (!["light", "dark", "system"].includes(preference)) return;
 
-      event.preventDefault();
-      event.stopImmediatePropagation();
+      // 不再拦截 Chainlit 的原生 onClick：此前 stopImmediatePropagation
+      // 绕过了它的 setTheme，html class 由我们直接改——但 Chainlit provider
+      // 的 React 状态不更新，iOS Safari 上曾出现「菜单勾浅色、页面仍暗」
+      // 的撕裂。现在先写本地偏好 + 跑切换动画，再放行原生 onClick——
+      // Chainlit 的 setTheme 写同一值并触发 ZVn effect 重跑，class 与
+      // window.theme 变量全部回到官方链路，两端状态一致。
       setPreference(preference, originFromElement(item));
-      // Close Chainlit's popover explicitly because its own click handler is bypassed.
       const trigger = document.getElementById("theme-toggle");
       if (trigger && trigger.getAttribute("aria-expanded") === "true") {
         requestAnimationFrame(() => trigger.click());

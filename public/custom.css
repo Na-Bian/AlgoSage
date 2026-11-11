@@ -2173,6 +2173,25 @@ main div:has(> #messages) { overflow: visible; }
 /* Match Chainlit's mobile drawer breakpoint. Both tool groups participate in
    the same row, so the collapsed desktop capsule cannot cover the right tools. */
 @media (max-width: 767px) {
+  /* 移动端 composer 动作行：宽度不足时整行换行排布，pill 单行文字不折行
+     （此前“思考模式/联网搜索” pill 在窄屏被挤成两行瘦条）。换行后 pills
+     占独立一行并允许横向滚动，模型/等级/提交键保持同一行。 */
+  body.eg-chat-shell #message-composer :scope > .flex.items-center.justify-between,
+  body.eg-chat-shell #message-composer .flex.items-center.justify-between {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  body.eg-chat-shell #message-composer .eg-option-pills {
+    order: 3;
+    flex: 1 1 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  body.eg-chat-shell #message-composer .eg-option-pills::-webkit-scrollbar {
+    display: none;
+  }
+  .eg-option-pill { white-space: nowrap; }
+
   [data-sidebar="sidebar"][data-mobile="true"]:focus { outline: none; }
   body.eg-chat-shell #eg-collapsed-bar { display: none; }
   body.eg-chat-shell #header {
