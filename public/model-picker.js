@@ -551,7 +551,10 @@
 
   function ensureSettingsAddEntry() {
     if (!document.getElementById("chat-settings-sidebar-title")) return;
-    var label = document.querySelector('aside label[for="model_catalog"]');
+    // 移动端抽屉是 div[role=dialog] 而非 <aside>，选择器不能限定 aside，
+    // 否则移动端永远走"无控件"分支，入口被插到容器首位（跑到默认模型
+    // 控件上方，顺序颠倒）。
+    var label = document.querySelector('label[for="model_catalog"]');
     if (!label) {
       // 无"默认模型"控件（无任何提供商）：入口插到控件滚动容器的首位，
       // 与各控件包装块同级同宽——插在标题旁或外层容器会大出一圈边距。
