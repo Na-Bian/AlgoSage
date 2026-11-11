@@ -174,8 +174,18 @@
   // 把实时回合误判成历史。
   let liveTurnPending = false;
   let liveTurnTimer = 0;
+  // 发起回合时记录所属线程：即使随后切换到别的会话，侧栏 spinner 也要
+  // 挂在正在生成的那个条目上。从「新建对话」发起时 URL 尚无 /thread/<id>，
+  // 置空并回落到当前 URL（发送后 Chainlit 会跳转到新线程）。
+  let liveTurnThreadId = "";
   function armLiveTurn() {
     liveTurnPending = true;
+    const match = location.pathname.match(/^\/thread\/([^/]+)/);
+    try {
+      liveTurnThreadId = match ? decodeURIComponent(match[1]) : "";
+    } catch (_) {
+      liveTurnThreadId = match ? match[1] : "";
+    }
     reasoningTextLengths.clear();
     clearTimeout(liveTurnTimer);
     liveTurnTimer = setTimeout(() => { liveTurnPending = false; }, 15 * 60 * 1000);
@@ -223,20 +233,39 @@
     return liveTurnPending;
   }
 
-  // 回合进行中：在侧栏当前会话条目上显示转圈图标（条目链接的 href 与
-  // 当前 URL 的 /thread/<id> 匹配）。回合结束（liveTurnPending 复位）或
-  // 切换会话后由 tick 移除。spinner 是自有元素，不触碰 React 子节点。
+  // 回合进行中：在侧栏「正在生成的那个会话」条目上显示转圈图标。判定
+  // 依据：
+  // - 线程 id 取 armLiveTurn 时记录的 liveTurnThreadId（切换会话后仍指向
+  //   正在生成的条目）；从「新建对话」发起时为空，回落到当前 URL。
+  // - streaming 还要求输入区的停止按钮可见——turnInFlight 只是"本页发起
+  //   过回合"，回合结束后的 15 分钟兜底窗口里它仍为 true，之前 spinner
+  //   因此在已结束的会话条目上残留成一个椭圆。
+  // spinner 绝对定位覆盖在条目图标上（图标→spinner 的视觉替换），不参与
+  // 条目布局——此前 prepend 进链接会因条目布局被挤成独立的扁椭圆。
+  function composerStopVisible() {
+    return !!document.querySelector(
+      "#message-composer button[aria-label*='停止'], #message-composer button[aria-label*='stop' i]"
+    );
+  }
   function syncSidebarSpinner() {
     const links = document.querySelectorAll('a[href^="/thread/"]');
     if (!links.length) return;
     const match = location.pathname.match(/^\/thread\/([^/]+)/);
-    const activeId = match ? decodeURIComponent(match[1]) : "";
-    const streaming = turnInFlight() && activeId;
+    let activeId = liveTurnThreadId;
+    if (!activeId && match) {
+      try {
+        activeId = decodeURIComponent(match[1]);
+      } catch (_) {
+        activeId = match[1];
+      }
+    }
+    const streaming = turnInFlight() && activeId && composerStopVisible();
     links.forEach((link) => {
-      const isCurrent =
-        streaming &&
-        decodeURIComponent((link.getAttribute("href") || "").replace("/thread/", "")) ===
-          activeId;
+      let linkId = (link.getAttribute("href") || "").replace("/thread/", "");
+      try {
+        linkId = decodeURIComponent(linkId);
+      } catch (_) {}
+      const isCurrent = streaming && linkId === activeId;
       if (isCurrent && !link.querySelector(".eg-sidebar-spinner")) {
         const spinner = document.createElement("span");
         spinner.className = "eg-sidebar-spinner";

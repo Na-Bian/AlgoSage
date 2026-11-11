@@ -1671,16 +1671,23 @@ body.eg-chat-shell :is(
   gap: 6px;
 }
 
-/* 回合进行中：侧栏当前会话条目的转圈指示。 */
+/* 回合进行中：侧栏当前会话条目的转圈指示。绝对定位覆盖在条目左缘的
+   图标上（图标→spinner 的视觉替换），不参与条目布局——此前 prepend 进
+   链接会被条目的纵向布局挤成独立的扁椭圆。:has 给链接加定位锚。 */
+a[href^="/thread/"]:has(> .eg-sidebar-spinner) {
+  position: relative;
+}
 .eg-sidebar-spinner {
-  flex: 0 0 auto;
-  width: 13px;
-  height: 13px;
-  margin-right: 2px;
+  position: absolute;
+  left: 14px;
+  top: calc(50% - 7px);
+  width: 14px;
+  height: 14px;
   border: 2px solid hsl(var(--sidebar-primary) / .25);
   border-top-color: hsl(var(--sidebar-primary));
   border-radius: 50%;
   animation: egSidebarSpin 800ms linear infinite;
+  pointer-events: none;
 }
 @keyframes egSidebarSpin {
   to { transform: rotate(360deg); }
