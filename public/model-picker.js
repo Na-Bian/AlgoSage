@@ -653,6 +653,16 @@
     addDialog.querySelectorAll("*").forEach(function (el) {
       el.inert = false;
     });
+    // 移动端设置抽屉是 Radix 的模态 DismissableLayer。弹窗虽然视觉上
+    // 挂在 body 最外层，但它不在抽屉 Content 子树内；若 pointerdown
+    // 冒泡到抽屉的 outside 监听，抽屉会先被关闭，弹窗里的控件就表现为
+    // “完全点不动”。在弹窗根节点捕获阶段截断这些输入事件，让事件仍能
+    // 到达按钮/输入框本身，但不再被父级抽屉误判为 outside。
+    ["pointerdown", "mousedown", "touchstart"].forEach(function (type) {
+      addDialog.addEventListener(type, function (event) {
+        event.stopPropagation();
+      }, true);
+    });
     // 不做"点空白关闭"：填到一半的 Base URL/API Key 不该被一次误点清空。
     // 关闭只走"取消"/"确认"按钮或 Esc。
     addDialog.addEventListener("click", function (event) {

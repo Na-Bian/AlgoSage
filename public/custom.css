@@ -926,6 +926,10 @@ body.eg-no-models #chat-submit {
   padding: 18px;
   /* 与原生弹窗遮罩一致：纯变暗，不用模糊。 */
   background: rgb(0 0 0 / 80%);
+  /* 移动端设置抽屉的 Radix 模态层可能把 body 的 pointer-events
+     设为 none。弹窗在 body 末尾时必须显式恢复自身的命中测试能力。 */
+  pointer-events: auto;
+  touch-action: auto;
   animation: eg-overlay-in var(--eg-motion-enter) var(--eg-motion-ease) both;
 }
 
