@@ -319,6 +319,29 @@ class OpenAICompatibleBackend:
                         token_limit,
                     )
                     continue
+                if (
+                    finish_reason == "length"
+                    and text.strip()
+                    and empty_burst_left
+                    and token_limit < self._EMPTY_BURST_CEILING
+                ):
+                    # 简短概念题走 concise 上限（如 768）：思考模型的推理同样
+                    # 计入该预算，正文写了个开头就被截断——用户看到半句话
+                    # 戛然而止。与上面空正文的情形同一根源，同样放宽到紧急
+                    # 上限重试（正文非空也要放宽，这是此前遗漏的分支）；放宽
+                    # 后仍截断才按"有内容的截断"照常交付。
+                    empty_burst_left -= 1
+                    token_limit = min(
+                        max(token_limit * 4, self._EMPTY_BURST_CEILING // 2),
+                        self._EMPTY_BURST_CEILING,
+                    )
+                    logger.warning(
+                        "简短题预算被思考耗尽（finish=length, text=%d 字）；"
+                        "放宽至 %s 重试一次",
+                        len(text),
+                        token_limit,
+                    )
+                    continue
                 if finish_reason != "stop":
                     # 触顶截断（finish_reason=length）且正文有内容：思考模型的
                     # reasoning 也计入 completion 预算，正文被截断是常见情况，
