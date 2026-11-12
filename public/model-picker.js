@@ -23,6 +23,8 @@
   var statusElement = null;
   var addDialog = null;
   var query = "";
+  // 本次对话框会话里是否成功注册过模型：决定「确认」是关闭还是拦截引导。
+  var dialogAddedAny = false;
 
   function currentThreadId() {
     if (state.threadId) return state.threadId;
@@ -618,6 +620,7 @@
 
   function openAddDialog() {
     closeAddDialog();
+    dialogAddedAny = false;
     addDialog = document.createElement("div");
     addDialog.className = "eg-add-dialog-backdrop";
     addDialog.innerHTML = `
@@ -675,9 +678,33 @@
     // 确认：关闭对话框，并请服务端重发设置，让面板的"默认模型"列表包含
     // 刚增删的模型。不能借即时保存的提交来触发：没有控件改动时它不会发出
     // 任何请求，列表就停留在旧值，只有刷新页面才更新。
+    // 拦截引导：还没有任何可用模型、且本次没成功添加过时，点「确认」不
+    // 关闭——那正是新用户卡住的地方（添加模型要走"获取列表→点选→添加
+    // 所选"，而确认键看起来像终点）。表单填齐就直接替用户触发获取列表，
+    // 把人带到点选那一步；没填齐则指出缺什么并闪烁对应输入框。
     addDialog.querySelector('[data-action="confirm"]').addEventListener("click", function () {
-      closeAddDialog();
-      requestProviderViewsRefresh();
+      if (dialogAddedAny || hasUsableModels()) {
+        closeAddDialog();
+        requestProviderViewsRefresh();
+        return;
+      }
+      var fields = dialogFields();
+      var discoverButton = addDialog.querySelector('[data-action="discover"]');
+      if (fields.base_url && fields.api_key) {
+        showResultsNotice(
+          "还没有可用的模型。正在获取模型列表，请在下方点选要用的模型，再点「添加所选」。",
+          "warning"
+        );
+        if (discoverButton) flashElement(discoverButton);
+        discoverInDialog();
+      } else {
+        showResultsNotice(
+          "还没有可用的模型。请点选上方预设自动填 Base URL，再填入 API Key，然后点「获取模型列表」。",
+          "warning"
+        );
+        if (!fields.base_url) flashField(addDialog.querySelector('[data-field="base_url"]'));
+        if (!fields.api_key) flashField(addDialog.querySelector('[data-field="api_key"]'));
+      }
     });
     addDialog.querySelector('[data-action="discover"]').addEventListener("click", function () {
       discoverInDialog();
@@ -934,12 +961,15 @@
   async function discoverInDialog() {
     var fields = dialogFields();
     if (!fields.base_url || !fields.api_key) {
-      showResultsNotice("请先填写 Base URL 和 API Key");
+      showResultsNotice("请先填写 Base URL 和 API Key", "warning");
+      if (!fields.base_url) flashField(addDialog.querySelector('[data-field="base_url"]'));
+      if (!fields.api_key) flashField(addDialog.querySelector('[data-field="api_key"]'));
       return;
     }
     var results = addDialog.querySelector(".eg-add-results");
     results.hidden = false;
     results.textContent = "正在获取模型列表…";
+    results.classList.remove("eg-results-warning");
     try {
       var response = await fetch("/models/discover", {
         method: "POST",
@@ -1015,11 +1045,30 @@
     return promise;
   }
 
-  function showResultsNotice(message) {
+  function showResultsNotice(message, tone) {
     if (!addDialog) return;
     var results = addDialog.querySelector(".eg-add-results");
     results.hidden = false;
     results.textContent = message;
+    // warning 用于拦截引导（缺模型/缺字段）：用醒目色调，hint 维持灰字。
+    results.classList.toggle("eg-results-warning", tone === "warning");
+  }
+
+  // 一次性描边脉冲：把用户视线带到该动的控件上（缺失输入框/获取按钮）。
+  function flashElement(el) {
+    if (!el) return;
+    el.classList.remove("eg-flash");
+    // 重排以重触发正在进行的动画（连续点确认时不至于只闪第一次）。
+    void el.offsetWidth;
+    el.classList.add("eg-flash");
+    el.addEventListener("animationend", function handler() {
+      el.classList.remove("eg-flash");
+      el.removeEventListener("animationend", handler);
+    });
+  }
+
+  function flashField(input) {
+    if (input) flashElement(input);
   }
 
   function renderDiscoveredModels(models, fields, limitB) {
@@ -1125,6 +1174,9 @@
         // 全部成功：收起结果区即可——新模型已出现在上方提供商列表中。
         results.hidden = true;
         results.textContent = "";
+        results.classList.remove("eg-results-warning");
+        // 本次会话已成功添加过模型：之后点「确认」按老行为直接关闭。
+        dialogAddedAny = true;
       }
     });
     results.append(confirmButton);
