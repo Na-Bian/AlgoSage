@@ -136,14 +136,14 @@ cot = "full"
 
 # Specify a CSS file that can be used to customize the user interface.
 # The CSS file can be served from the public directory or via an external link.
-custom_css = "/public/custom.css?v=20261113-syslive-1"
+custom_css = "/public/custom.css?v=20261113-tagfix-1"
 
 # Specify additional attributes for a custom CSS file
 # custom_css_attributes = "media=\"print\""
 
 # Specify a JavaScript file that can be used to customize the user interface.
 # The JavaScript file can be served from the public directory.
-custom_js = "/public/algosage-app.js?v=20261113-syslive-1"
+custom_js = "/public/algosage-app.js?v=20261113-tagfix-1"
 
 # The style of alert boxes. Can be "classic" or "modern".
 alert_style = "classic"

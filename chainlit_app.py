@@ -1794,9 +1794,9 @@ def _make_delta_sink(context, stream_out, abort_event):
                         # 超长思考：正文不再全量重发（前端渲染过载白屏的根源），
                         # 完整内容照常随收口补发落库；界面只推进标题字数。
                         step.name = (
-                            f"重新生成中 · {reasoning_len} 字"
+                            f"重新生成中 · {reasoning_len} 字 {stream_out.get('turn_tag') or ''}".strip()
                             if stream_out.get("regen_hint")
-                            else f"思考中 · {reasoning_len} 字"
+                            else f"思考中 · {reasoning_len} 字 {stream_out.get('turn_tag') or ''}".strip()
                         )
                         await step.update()
                     else:
@@ -1804,9 +1804,9 @@ def _make_delta_sink(context, stream_out, abort_event):
                         # 标题带实时思考进度（字数），阶段感清晰：思考仍在推进，
                         # 不是卡住。重生成回合的标题前缀告诉用户这是新的一轮。
                         step.name = (
-                            f"重新生成中 · {reasoning_len} 字"
+                            f"重新生成中 · {reasoning_len} 字 {stream_out.get('turn_tag') or ''}".strip()
                             if stream_out.get("regen_hint")
-                            else f"思考中 · {reasoning_len} 字"
+                            else f"思考中 · {reasoning_len} 字 {stream_out.get('turn_tag') or ''}".strip()
                         )
                         await step.update()
                     stream_out["reasoning"] = reasoning_so_far
@@ -1824,19 +1824,20 @@ def _make_delta_sink(context, stream_out, abort_event):
                     stream_out["reply"] = reply
                 normalized = normalize_math_delimiters(text_so_far)
                 # 正文 token 开始到达 = 本轮思考已结束：立即把芯片标题定格为
-                # 「思考完成」，不再等回合收口（审核阶段可能持续几十秒）。
-                # 重生成回合标题注明是审核后的新一轮（regen_hint），让内容
-                # 从头再来有可理解的解释。
+                # 「思考完成」（带回合尾缀），不再等回合收口（审核阶段可能
+                # 持续几十秒）。重生成回合标题注明是审核后的新一轮
+                # （regen_hint），让内容从头再来有可理解的解释。尾缀保证
+                # 名字镜像节点（id = step-名字）跨回合唯一，不再串内容。
+                tag = stream_out.get("turn_tag") or ""
                 if (
                     text_so_far
                     and step is not None
-                    and getattr(step, "name", "")
-                    not in {"思考完成", "上一轮未通过审核，已重新生成"}
+                    and not getattr(step, "name", "").endswith(tag)
                 ):
                     step.name = (
-                        "上一轮未通过审核，已重新生成"
+                        f"上一轮未通过审核，已重新生成 {tag}".strip()
                         if stream_out.get("regen_hint")
-                        else "思考完成"
+                        else f"思考完成 {tag}".strip()
                     )
                     await step.update()
                     if _turn_watchers.get(thread):
@@ -2484,13 +2485,14 @@ async def _finalize_reasoning_step(stream_out: dict, response) -> None:
         step.output = final_reasoning
         stream_out["reasoning"] = final_reasoning
         changed = True
+    settle_tag = stream_out.get("turn_tag") or ""
     if stream_out.get("regen_hint"):
         # 重生成回合收口：标题注明新的一轮，而非普通「思考完成」。
-        if getattr(step, "name", "") != "上一轮未通过审核，已重新生成":
-            step.name = "上一轮未通过审核，已重新生成"
+        if getattr(step, "name", "") != f"上一轮未通过审核，已重新生成 {settle_tag}".strip():
+            step.name = f"上一轮未通过审核，已重新生成 {settle_tag}".strip()
             changed = True
-    elif getattr(step, "name", "") != "思考完成":
-        step.name = "思考完成"
+    elif getattr(step, "name", "") != f"思考完成 {settle_tag}".strip():
+        step.name = f"思考完成 {settle_tag}".strip()
         changed = True
     if changed:
         await step.update()
@@ -2501,7 +2503,11 @@ async def on_message(message: cl.Message) -> None:
     service = get_service()
     reply = cl.Message(content="")
     started = time.perf_counter()
-    stream_out: dict = {}
+    # 思考芯片收口名带回合尾缀（见 _finalize_reasoning_step）：Chainlit 会
+    # 为每个步骤渲染一个以「名字」为 DOM id 的镜像节点，跨回合同名（如
+    # 「思考完成」）时新旧芯片共享同一 id，React 复用同名旧节点——追问时
+    # 新一轮思考出现在上一轮芯片里正是这个冲突。
+    stream_out: dict = {"turn_tag": f"#{os.urandom(3).hex()}"}
     try:
         question, code, attachments = prepare_message_inputs(
             message.content,

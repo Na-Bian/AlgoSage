@@ -57,6 +57,14 @@ _BRIEF_REQUEST = re.compile(
 
 def response_budget(request, policy, settings, user_max_output_tokens=None):
     question = request.question
+    # 篇幅约束只靠提示词表达，不再压低输出预算：思考模型的 reasoning 计入
+    # 输出上限，concise 预算（旧 768）经常连思考都装不下——正文写个开头
+    # 就被 finish=length 截断（二叉堆半截回答事故的根源）。生成规模由
+    # 「最大输出长度」用户滑块与模型档案上限共同决定，简洁性由提示词引导
+    # （Judge 的 answer_quality 审查仍会拦离题长文）。
+    ceiling = settings.max_output_tokens
+    if isinstance(user_max_output_tokens, (int, float)):
+        ceiling = max(128, min(int(user_max_output_tokens), ceiling))
     detailed = (
         _DETAIL_REQUEST.search(question)
         or any(int(m[1]) >= 400 for m in _REQUESTED_LENGTH.finditer(question))
@@ -65,25 +73,10 @@ def response_budget(request, policy, settings, user_max_output_tokens=None):
             for m in _EXAMPLE_COUNT.finditer(question)
         )
     )
-    simple_concept = (
-        policy.intent == Intent.KNOWLEDGE
-        and len(request.question) <= 200
-        and not request.attachments
-        and not request.existing_code
-    )
-    concise = not detailed and (
-        simple_concept
-        or policy.intent == Intent.HINT
-        or _BRIEF_REQUEST.search(question)
-    )
-    # 学生在设置面板调的「最大输出长度」参与预算（钳制在模型档案上限内，
-    # service.normalize_model_params 已保证）；此前该滑块实际不参与生成。
-    ceiling = settings.max_output_tokens
-    if isinstance(user_max_output_tokens, (int, float)):
-        ceiling = max(128, min(int(user_max_output_tokens), ceiling))
-    if not concise:
+    if detailed:
+        # 明确要求详细展开/长文/多例的提问：不附加简洁引导。
         return ceiling, ""
-    return min(ceiling, settings.concise_max_output_tokens), (
+    return ceiling, (
         "\n回答篇幅：优先服从用户明确的句数和范围要求。一般概念题先直接回答定义和关键区别，"
         "只在用户需要时给一个小例子，通常用3至6句说明；保持必要条件和事实准确，"
         "不额外展开背景、实现教程或未请求的章节。局部调试只给最小修改及原因。"

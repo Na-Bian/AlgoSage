@@ -282,7 +282,9 @@ class UserOutputBudgetTests(unittest.IsolatedAsyncioTestCase):
             128,
         )
 
-    async def test_concise_stays_at_concise_cap(self):
+    async def test_concise_cap_removed_budget_keeps_brief_instruction(self):
+        """回归：concise 输出上限已删除——短概念题不再压低预算（思考模型
+        reasoning 计入预算，768 连思考都装不下），仅保留提示词引导。"""
         from algosage.pipeline import response_budget
         from algosage.schemas import Intent
         from algosage.pipeline import PolicyDecision
@@ -292,7 +294,7 @@ class UserOutputBudgetTests(unittest.IsolatedAsyncioTestCase):
         policy = PolicyDecision(Intent.KNOWLEDGE, 2, "r")
         request = SimpleNamespace(question="什么是栈", attachments=(), existing_code="")
         limit, instruction = response_budget(request, policy, settings)
-        self.assertEqual(limit, 768)
+        self.assertEqual(limit, 32768)
         self.assertIn("回答篇幅", instruction)
 
 

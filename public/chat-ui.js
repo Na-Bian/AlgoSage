@@ -23,8 +23,14 @@
     "security-audit-policy": "安全审计与策略",
     "model-reasoning": "思考过程",
   };
-  // 动态思考标题（服务端实时推送“思考中 · N 字 / 思考完成”）原样保留。
-  const DYNAMIC_REASONING_RE = /^(思考中 · \d+ 字|思考完成)$/;
+  // 动态思考标题（服务端实时推送“思考中 · N 字 / 思考完成”）原样保留；
+  // 收口名可带回合尾缀「 · #xxxxxx」（名字镜像节点的 DOM id = 名字，跨
+  // 回合唯一化防止新旧芯片串内容），显示时由 stripTurnTag 去掉尾缀。
+  const DYNAMIC_REASONING_RE = /^(思考中 · \d+ 字|思考完成)( · #[0-9a-f]{6})?$/;
+  const TURN_TAG_RE = / · #[0-9a-f]{6}$/;
+  function stripTurnTag(name) {
+    return name.replace(TURN_TAG_RE, "");
+  }
 
   // 思考步骤识别：创建时的内部名（model-reasoning）与服务端收口后的动态名
   // （思考中 · N 字 / 思考完成）都是同一条思考行。名字首次更新后就不再是
@@ -48,7 +54,7 @@
   // 稳定的键；同一时刻只有一行流式思考，无碰撞风险。「思考完成」不归一
   // （历史多行同名会互相串状态），折叠收尾由 autoFolded 分支按当时 id 处理。
   function stepKey(button) {
-    const name = stepName(button);
+    const name = stripTurnTag(stepName(button));
     if (name.startsWith("思考中 · ")) return "step-思考中";
     return button.id;
   }
@@ -59,8 +65,9 @@
     document.querySelectorAll('main [id^="step-"]').forEach((button) => {
       const safeName = stepName(button);
       const reasoning = isReasoningName(safeName);
+      // 回合尾缀是给名字镜像节点唯一化用的，不在界面上显示。
       const label = STEP_LABELS[safeName]
-        || (reasoning ? safeName : null);
+        || (reasoning ? stripTurnTag(safeName) : null);
       if (!label) return;
 
       if (button.dataset.egStepLabel !== label) {
@@ -68,6 +75,17 @@
         button.childNodes.forEach((node) => {
           if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
             node.textContent = node.textContent.replace(safeName, label);
+          }
+        });
+      }
+      // 尾缀文本由 Chainlit 直接渲染（text = 名字），replace(safeName,
+      // label) 覆盖不到「已使用 思考完成 · #abc123」里的摘要前缀组合——
+      // 再按尾缀本身做一次精准剔除。
+      if (TURN_TAG_RE.test(safeName)) {
+        const tag = safeName.match(TURN_TAG_RE)[0];
+        button.childNodes.forEach((node) => {
+          if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(tag)) {
+            node.textContent = node.textContent.split(tag).join("");
           }
         });
       }
@@ -355,7 +373,9 @@
     if (!reasoningSeenNodes.has(stepKey(button))) {
       reasoningSeenNodes.add(stepKey(button));
       const firstName = stepName(button);
-      if (turnInFlight() && firstName !== "思考完成") {
+      // 收口名可能带回合尾缀（思考完成 · #abc123）——先剥掉再比对。
+      const baseName = stripTurnTag(firstName);
+      if (turnInFlight() && baseName !== "思考完成") {
         // 本回合正在生成：新出现的思考步骤自动展开并跟随。
         reasoningFollowPaused = false;
       } else if (turnInFlight()) {
@@ -609,7 +629,38 @@
 
     // A mobile drawer has no desktop peer/state or persisted desktop width.
     // Reuse its header controls without replaying the desktop collapse cookie.
-    if (mobile) return true;
+    if (mobile) {
+      // 追问过的体验：移动端抽屉打开时选择历史会话，抽屉仍挡在屏幕上，
+      // 需要再点一次收起。导航到别的会话不会卸载抽屉（与新建对话同因），
+      // 在捕获阶段监听条目点击，点击后代点收起按钮把抽屉关上。
+      if (!sidebar.dataset.egMobileNavBound) {
+        sidebar.dataset.egMobileNavBound = "1";
+        sidebar.addEventListener(
+          "click",
+          (event) => {
+            const link = event.target instanceof Element
+              && event.target.closest('a[href^="/thread/"], a[href="/"]');
+            const trigger = sidebarRefs?.trigger;
+            if (link && trigger && sidebar.dataset.state === "open") {
+              trigger.click();
+            }
+          },
+          true
+        );
+      }
+      // 点遮罩空白（抽屉 content 之外的 overlay）同样收起——与原生
+      // Dialog 习惯一致；Chainlit 移动抽屉此前只有头部收起按钮可关。
+      // overlay 可能晚于首次增强挂载，因此独立于侧栏自身的绑定标记。
+      const overlay = document.querySelector('[data-sidebar="overlay"]');
+      if (overlay && !overlay.dataset.egOverlayBound) {
+        overlay.dataset.egOverlayBound = "1";
+        overlay.addEventListener("click", () => {
+          const trigger = sidebarRefs?.trigger;
+          if (trigger && sidebar.dataset.state === "open") trigger.click();
+        });
+      }
+      return true;
+    }
 
     if (restoreSidebarPreference(group, sourceTrigger)) return false;
 
