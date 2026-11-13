@@ -872,12 +872,14 @@ class ChatDataLayer(BaseDataLayer):
     async def claim_title(
         self, thread_id: str, principal_id: str, question: str | None = None
     ) -> bool:
-        """登记一次标题任务；语义按「话题」而非「首轮」：
+        """登记一次标题任务；一个会话只命名一次：
 
-        - 该话题已成功命名（status=auto 且哈希一致）→ 拒绝（不重复生成）；
-        - 该话题已有任务在途（status=pending 且哈希一致）→ 拒绝（不重复）；
-        - 从未命名 / 上次尝试失败 / **话题变了**（旧线程问新问题、编辑
-          重发改写首条）→ 以当前问题重新登记。标题跟随最新话题。
+        - status=auto（已有 LLM 标题）→ 永远拒绝。标题命名的是会话话题，
+          追问换话题不再改标题（用户要求：不要每次都生成新标题）；
+        - status=pending → 拒绝（已有任务在途，结果未落名前不叠任务）；
+        - status=failed（上次模型/上游失败，无标题）/ 从未命名 → 以当前
+          问题登记。本次生成可携带既有问答上下文（context_text），
+          标题据此概括整个会话。
         question 传入时以它为准（回合开始即可领取，与生成并行）；不传则
         保持旧语义：仅首轮登记一次（INSERT OR IGNORE，历史行存在即拒绝），
         供旧调用与测试使用。"""
@@ -886,19 +888,15 @@ class ChatDataLayer(BaseDataLayer):
                 row = self._thread_row(thread_id)
                 if row is None or row["user_identifier"] != principal_id:
                     return False
+                job = self._conn.execute(
+                    "SELECT status FROM thread_titles WHERE thread_id=?",
+                    (thread_id,),
+                ).fetchone()
+                if job is not None and job["status"] in {"auto", "pending"}:
+                    return False
                 source_hash = self._title_source_hash(
                     {"role": "user", "content": question}
                 )
-                job = self._conn.execute(
-                    "SELECT status, source_hash FROM thread_titles WHERE thread_id=?",
-                    (thread_id,),
-                ).fetchone()
-                if (
-                    job is not None
-                    and job["status"] in {"auto", "pending"}
-                    and job["source_hash"] == source_hash
-                ):
-                    return False
                 cursor = self._conn.execute(
                     "INSERT INTO thread_titles(thread_id,status,source_hash,initial_name) "
                     "VALUES(?, 'pending', ?, ?) "

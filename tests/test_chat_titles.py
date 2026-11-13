@@ -103,34 +103,36 @@ class ChatTitleStoreTests(unittest.IsolatedAsyncioTestCase):
             await self.store.claim_title("t", "alice", "请解释 KMP 中的前缀函数")
         )
 
-    async def test_titled_thread_retitles_on_new_topic(self):
-        """旧线程里问新话题（或编辑重发改写首条）：标题跟随最新话题。"""
+    async def test_titled_thread_never_retitles_on_new_topic(self):
+        """会话已命名（status=auto）后永不再生成：追问换话题不改标题
+        （用户要求：不要每次都生成新标题）。"""
         await self.store.claim_title("t", "alice", "请解释 KMP 中的前缀函数")
         await self.store.finish_title(
             "t", "alice", "KMP 前缀函数", "请解释 KMP 中的前缀函数"
         )
-        # 同话题 → 拒绝；新话题 → 重新登记并改名。
+        # 同话题 → 拒绝；新话题 → 同样拒绝（保留原标题）。
         self.assertFalse(
             await self.store.claim_title("t", "alice", "请解释 KMP 中的前缀函数")
         )
         new_q = "编辑后的提问：请解释最小生成树"
-        self.assertTrue(await self.store.claim_title("t", "alice", new_q))
-        self.assertTrue(await self.store.finish_title("t", "alice", "最小生成树", new_q))
-        self.assertEqual((await self.store.get_thread("t"))["name"], "最小生成树")
+        self.assertFalse(await self.store.claim_title("t", "alice", new_q))
+        self.assertEqual((await self.store.get_thread("t"))["name"], "KMP 前缀函数")
 
-    async def test_stale_title_result_cannot_overwrite_newer_topic(self):
-        """生成期间话题又被改写（再次编辑重发）：旧任务结果按 question
-        比对被拒，不会拿旧问题盖新话题的标题。"""
-        old_q = "请解释 KMP 中的前缀函数"
-        await self.store.claim_title("t", "alice", old_q)
-        # 生成期间用户又改成新话题并重新领取（新一轮任务）。
-        new_q = "编辑后的提问：请解释最小生成树"
-        await self.store.claim_title("t", "alice", new_q)
-        # 旧任务拿着旧话题的问题来落名 → 与登记（新话题）不匹配，被拒。
-        self.assertFalse(await self.store.finish_title("t", "alice", "KMP 前缀函数", old_q))
-        # 新任务正常落名。
-        self.assertTrue(await self.store.finish_title("t", "alice", "最小生成树", new_q))
-        self.assertEqual((await self.store.get_thread("t"))["name"], "最小生成树")
+    async def test_failed_title_can_retry_with_context(self):
+        """上次失败（status=failed，无标题）→ 下一次提问时重新领取并生成，
+        生成材料可包含会话既有问答（context_text）。"""
+        await self.store.claim_title("t", "alice", "请解释 KMP 中的前缀函数")
+        # 模拟模型失败：落名 None → status=failed（无标题）。
+        await self.store.finish_title("t", "alice", None, "请解释 KMP 中的前缀函数")
+        # 下一次提问重新领取成功。
+        self.assertTrue(await self.store.claim_title("t", "alice", "那 BM 算法呢"))
+        self.assertTrue(await self.store.finish_title("t", "alice", "KMP 与 BM 匹配算法", "那 BM 算法呢"))
+        self.assertEqual((await self.store.get_thread("t"))["name"], "KMP 与 BM 匹配算法")
+
+    async def test_pending_title_blocks_new_claims(self):
+        """在途任务（pending）未落名前，追问不叠新任务。"""
+        await self.store.claim_title("t", "alice", "请解释 KMP 中的前缀函数")
+        self.assertFalse(await self.store.claim_title("t", "alice", "那 BM 算法呢"))
 
     async def test_framework_name_arriving_after_claim_is_kept_on_failure(self):
         from chainlit.user import User
@@ -226,6 +228,19 @@ class TitleGenerationTests(unittest.TestCase):
         self.assertNotIn("SECRET_CODE", self.messages[-1]["content"])
         self.assertLess(len(self.messages[-1]["content"]), 700)
 
+    def test_conversation_context_is_included_as_material(self):
+        """追问补标题：context_text（会话既有问答）随材料一起给标题模型，
+        标题概括整个会话话题。"""
+        context = "问：请解释 KMP 中的前缀函数\n答：KMP 前缀函数用于字符串匹配…"
+        self.generate(
+            "KMP 与 BM 匹配算法",
+            "那 BM 算法呢",
+            context_text=context,
+        )
+        data = __import__("json").loads(self.messages[-1]["content"])
+        self.assertIn("请解释 KMP", data["text_to_title"])
+        self.assertIn("（最新提问）那 BM 算法呢", data["text_to_title"])
+
 
 class TitleSchedulingTests(unittest.IsolatedAsyncioTestCase):
     asyncSetUp = ChatTitleStoreTests.asyncSetUp
@@ -240,7 +255,10 @@ class TitleSchedulingTests(unittest.IsolatedAsyncioTestCase):
         import chainlit_app
 
         context = SimpleNamespace(
-            session_id="t", principal_id="alice", provider_selection="default::m"
+            session_id="t",
+            principal_id="alice",
+            provider_selection="default::m",
+            history=[],
         )
         service = SimpleNamespace(settings=Settings(mode="mock"))
         with patch.object(chainlit_app, "get_chat_store", return_value=self.store):

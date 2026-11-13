@@ -1491,9 +1491,9 @@ async def schedule_title(
 ):
     """回合开始（思考前）就发起标题任务：内置小模型出标题只需亚秒级，
     与生成并行，回答送达时侧栏标题已经就位。标题与回答审核解耦——被
-    否决的会话同样有标题。领取按「话题」：同话题已命名不重复生成；未
-    命名/上次失败/**话题变了**（旧线程问新问题、编辑重发改写首条）都以
-    当前问题重新登记，标题始终跟随最新话题。"""
+    否决的会话同样有标题。一个会话只命名一次：已有 LLM 标题（status=
+    auto）永不再生成；只有从未命名/上次失败时才（重新）领取，此时把
+    会话既有的问答一并交给标题模型，标题概括整个会话的话题。"""
     if (
         emitter is None
         or not context.principal_id
@@ -1506,6 +1506,18 @@ async def schedule_title(
     # question 直接参与领取哈希：回答落库前就能登记，标题真正与生成并行。
     if not await store.claim_title(thread_id, principal, question):
         return None
+    # 会话既有问答摘要（追问补标题时概括整个会话）：history 是本线程的
+    # 上下文，此刻含此前各轮的 user/assistant 内容（不含本轮）。
+    context_parts: list[str] = []
+    for m in list(context.history)[-6:]:
+        role = m.get("role")
+        content = str(m.get("content") or "").strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        context_parts.append(
+            ("问：" if role == "user" else "答：") + content[:400]
+        )
+    context_text = "\n".join(context_parts)[:4000]
 
     async def complete():
         try:
@@ -1515,6 +1527,7 @@ async def schedule_title(
                 question,
                 min(20, timeout),
                 principal,
+                context_text,
             )
             if (
                 await store.finish_title(thread_id, principal, title, question)

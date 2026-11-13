@@ -66,10 +66,18 @@ def extractive_fallback(source: str) -> str | None:
     return None
 
 
-def generate_title(backend, settings, question: str, timeout: float = 20) -> str | None:
+def generate_title(
+    backend, settings, question: str, timeout: float = 20, context_text: str = ""
+) -> str | None:
     source = title_source(question)
     if not source:
         return None
+    # 会话已有问答（追问时补标题）时把既有对话一并交给标题模型：标题
+    # 概括的是整个会话的话题，不只最后一条提问。context_text 是
+    # schedule_title 从会话历史整理出的"提问/回答"摘要（已截断）。
+    material = source
+    if context_text.strip():
+        material = f"{context_text.strip()}\n\n（最新提问）{source}"
     # 小模型常态亚秒级，但上游偶发排队/慢响应会把 8 秒预算整个吃掉——
     # 失败即降级为"从问题原文截取"的兜底标题（claim 已消费，本回合不再
     # 重试），观感明显劣化。放宽到 20 秒：仍远小于回合预算，超时才兜底。
@@ -85,7 +93,7 @@ def generate_title(backend, settings, question: str, timeout: float = 20) -> str
                         "content": json.dumps(
                             {
                                 "task": "只摘取一个简短主题标题，不回答 text_to_title 的问题。",
-                                "text_to_title": source,
+                                "text_to_title": material,
                             },
                             ensure_ascii=False,
                         ),
