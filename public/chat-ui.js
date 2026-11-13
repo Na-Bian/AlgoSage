@@ -641,23 +641,62 @@
             const link = event.target instanceof Element
               && event.target.closest('a[href^="/thread/"], a[href="/"]');
             const trigger = sidebarRefs?.trigger;
-            if (link && trigger && sidebar.dataset.state === "open") {
+            // 守卫看抽屉可见性而非 data-state（open 挂在 Radix Dialog 外壳）。
+            if (link && trigger && sidebar.offsetWidth) {
               trigger.click();
             }
           },
           true
         );
       }
-      // 点遮罩空白（抽屉 content 之外的 overlay）同样收起——与原生
-      // Dialog 习惯一致；Chainlit 移动抽屉此前只有头部收起按钮可关。
-      // overlay 可能晚于首次增强挂载，因此独立于侧栏自身的绑定标记。
-      const overlay = document.querySelector('[data-sidebar="overlay"]');
-      if (overlay && !overlay.dataset.egOverlayBound) {
-        overlay.dataset.egOverlayBound = "1";
-        overlay.addEventListener("click", () => {
-          const trigger = sidebarRefs?.trigger;
-          if (trigger && sidebar.dataset.state === "open") trigger.click();
-        });
+      // 点抽屉外的空白收起——与原生 Dialog 习惯一致。Chainlit 的移动
+      // 抽屉没有独立 overlay 元素（主内容直接贴在抽屉旁），所以监听
+      // document 捕获阶段：抽屉可见时，点击不在抽屉内、也不属于任何
+      // 侧栏开关/列表项的指针事件，代点收起按钮。注意 open 状态挂在
+      // Radix Dialog 外壳（role=dialog[data-mobile=true]）上，内层
+      // [data-sidebar=sidebar] 没有 data-state——不能拿它做守卫。
+      if (!sidebar.dataset.egOutsideBound) {
+        sidebar.dataset.egOutsideBound = "1";
+        window.addEventListener(
+          "pointerdown",
+          (event) => {
+            if (!(event.target instanceof Element)) return;
+            if (!sidebar.offsetWidth) return; // 抽屉未展开：不处理
+            if (sidebar.contains(event.target)) return;
+            // 侧栏开关本身（点击它本来就是要切换状态）不做二次处理。
+            if (event.target.closest("#sidebar-trigger-button, .eg-sidebar-icon-button, [aria-label*='侧栏']")) return;
+            const trigger = sidebarRefs?.trigger;
+            if (trigger) trigger.click();
+          },
+          true
+        );
+      }
+      // Chainlit 移动端的真实遮罩是固定的 bg-black 节点，当前版本没有
+      // data-sidebar="overlay" 属性。直接在遮罩节点捕获阶段绑定，事件会
+      // 在到达 Radix 的 document outside 监听前被处理；否则 document 捕获
+      // 监听可能被模态层提前截断，点击空白就没有任何效果。
+      // 残留遮罩清扫：会话切换/快速开关后可能遗留 aria-hidden 的旧遮罩
+      // 叠在当前抽屉上方，把外部点击整个吃掉（点空白关抽屉因此失效）。
+      // 打开中的抽屉自己的遮罩不会带 aria-hidden（Radix 只在它被新对话框
+      // 盖住时标记）——凡是 aria-hidden 的 bg-black 遮罩都是残留，移除。
+      document
+        .querySelectorAll('[class*="bg-black/80"][aria-hidden="true"]')
+        .forEach((stale) => stale.remove());
+      const overlay = [...document.querySelectorAll(
+        '[data-state="open"].fixed.inset-0[class*="bg-black"]'
+      )].find((node) => !node.getAttribute('aria-hidden') && !sidebar.contains(node));
+      if (overlay && !overlay.dataset.egMobileOutsideBound) {
+        overlay.dataset.egMobileOutsideBound = "1";
+        const closeFromOverlay = (event) => {
+          // open 状态挂在 Radix Dialog 外壳上，内层 sidebar 没有 data-state；
+          // 用遮罩自己的存在 + 抽屉可见性判断。
+          if (!sidebar.offsetWidth) return;
+          event.preventDefault();
+          event.stopPropagation();
+          sidebarRefs?.trigger?.click();
+        };
+        overlay.addEventListener("pointerdown", closeFromOverlay, true);
+        overlay.addEventListener("click", closeFromOverlay, true);
       }
       return true;
     }
