@@ -66,11 +66,14 @@ def extractive_fallback(source: str) -> str | None:
     return None
 
 
-def generate_title(backend, settings, question: str, timeout: float = 8) -> str | None:
+def generate_title(backend, settings, question: str, timeout: float = 20) -> str | None:
     source = title_source(question)
     if not source:
         return None
-    limits = replace(settings, max_calls_per_turn=1, turn_timeout=min(8, timeout))
+    # 小模型常态亚秒级，但上游偶发排队/慢响应会把 8 秒预算整个吃掉——
+    # 失败即降级为"从问题原文截取"的兜底标题（claim 已消费，本回合不再
+    # 重试），观感明显劣化。放宽到 20 秒：仍远小于回合预算，超时才兜底。
+    limits = replace(settings, max_calls_per_turn=1, turn_timeout=min(20, timeout))
     with turn_ledger(limits) as ledger:
         try:
             result = generate(

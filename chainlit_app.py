@@ -1509,7 +1509,7 @@ async def schedule_title(
                 service.generate_title,
                 context.provider_selection,
                 question,
-                min(8, timeout),
+                min(20, timeout),
                 principal,
             )
             if (
@@ -1764,6 +1764,10 @@ def _make_delta_sink(context, stream_out, abort_event):
                     prev_len = stream_out.get("reasoning_loop_len") or 0
                     if len(reasoning_so_far) < prev_len:
                         stream_out.pop("reasoning_loop_len", None)
+                        # 推理长度收缩 = 上游重试/安全重生成开了新的一轮：
+                        # 置提示标志，芯片标题改用「重新生成中」，让"内容
+                        # 凭空从头再来"有可理解的解释。
+                        stream_out["regen_hint"] = True
                     stream_out["reasoning_loop_len"] = len(reasoning_so_far)
                     if (
                         not abort_event.is_set()
@@ -1789,13 +1793,21 @@ def _make_delta_sink(context, stream_out, abort_event):
                     if full_text_frozen:
                         # 超长思考：正文不再全量重发（前端渲染过载白屏的根源），
                         # 完整内容照常随收口补发落库；界面只推进标题字数。
-                        step.name = f"思考中 · {reasoning_len} 字"
+                        step.name = (
+                            f"重新生成中 · {reasoning_len} 字"
+                            if stream_out.get("regen_hint")
+                            else f"思考中 · {reasoning_len} 字"
+                        )
                         await step.update()
                     else:
                         step.output = normalize_math_delimiters(reasoning_so_far)
                         # 标题带实时思考进度（字数），阶段感清晰：思考仍在推进，
-                        # 不是卡住。
-                        step.name = f"思考中 · {reasoning_len} 字"
+                        # 不是卡住。重生成回合的标题前缀告诉用户这是新的一轮。
+                        step.name = (
+                            f"重新生成中 · {reasoning_len} 字"
+                            if stream_out.get("regen_hint")
+                            else f"思考中 · {reasoning_len} 字"
+                        )
                         await step.update()
                     stream_out["reasoning"] = reasoning_so_far
                     stream_out["reasoning_last_update"] = now
@@ -1813,12 +1825,19 @@ def _make_delta_sink(context, stream_out, abort_event):
                 normalized = normalize_math_delimiters(text_so_far)
                 # 正文 token 开始到达 = 本轮思考已结束：立即把芯片标题定格为
                 # 「思考完成」，不再等回合收口（审核阶段可能持续几十秒）。
+                # 重生成回合标题注明是审核后的新一轮（regen_hint），让内容
+                # 从头再来有可理解的解释。
                 if (
                     text_so_far
                     and step is not None
-                    and getattr(step, "name", "") != "思考完成"
+                    and getattr(step, "name", "")
+                    not in {"思考完成", "上一轮未通过审核，已重新生成"}
                 ):
-                    step.name = "思考完成"
+                    step.name = (
+                        "上一轮未通过审核，已重新生成"
+                        if stream_out.get("regen_hint")
+                        else "思考完成"
+                    )
                     await step.update()
                     if _turn_watchers.get(thread):
                         await _broadcast_turn_event(
@@ -2465,7 +2484,12 @@ async def _finalize_reasoning_step(stream_out: dict, response) -> None:
         step.output = final_reasoning
         stream_out["reasoning"] = final_reasoning
         changed = True
-    if getattr(step, "name", "") != "思考完成":
+    if stream_out.get("regen_hint"):
+        # 重生成回合收口：标题注明新的一轮，而非普通「思考完成」。
+        if getattr(step, "name", "") != "上一轮未通过审核，已重新生成":
+            step.name = "上一轮未通过审核，已重新生成"
+            changed = True
+    elif getattr(step, "name", "") != "思考完成":
         step.name = "思考完成"
         changed = True
     if changed:

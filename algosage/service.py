@@ -634,7 +634,7 @@ class TutorService:
         self,
         selection: str,
         question: str,
-        timeout: float = 8,
+        timeout: float = 20,
         principal_id: str | None = None,
     ):
         """标题用内置小模型（TITLE_* 配置，缺省 Qwen3.5-4B 档）独立生成，
