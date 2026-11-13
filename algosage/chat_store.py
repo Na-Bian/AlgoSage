@@ -149,7 +149,11 @@ def _merged_thread_metadata(
         return incoming
     settings = {**saved["chat_settings"], **incoming["chat_settings"]}
     if "provider_selection" not in incoming["chat_settings"]:
-        settings["provider_selection"] = saved["chat_settings"]["provider_selection"]
+        # saved 可能整体没有该键（旧线程/清理过的元数据）：缺省为未选择，
+        # 不能让合并直接 KeyError。
+        settings["provider_selection"] = saved["chat_settings"].get(
+            "provider_selection", ""
+        )
     # model_params（辅助等级上限等）只认服务端写入：existing 的原始
     # metadata 里由 update_thread_model_params 落库（本过滤器的 saved 副本
     # 已剥离），incoming 来自浏览器永不采信——从原始 existing 补回保留。

@@ -113,6 +113,10 @@ _turn_watchers: dict[str, set[str]] = {}
 # 当前回合的中断事件（thread_id -> threading.Event）。@cl.on_stop 置位，
 # run_turn 的 worker 线程轮询它以掐断上游流式请求。
 _turn_abort_events: dict[str, threading.Event] = {}
+# socket id -> (thread_id, abort_event)：刷新（unload）触发的 stop 事件到
+# 达时旧 sid 的会话对象可能已被清理，按此表兜底找到回合并中断（见
+# _install_stop_handler）。回合收口时移除。
+_sid_turn_map: dict[str, tuple[str, threading.Event]] = {}
 
 
 def request_turn_abort() -> None:
@@ -1907,6 +1911,14 @@ async def run_turn(
     _turn_abort_events[context_id()] = abort_event
     _turn_streams[context_id()] = stream_out
     _turn_watchers.pop(context_id(), None)
+    # sid → 回合登记：页面刷新（unload）也会 emit "stop"，此刻旧 sid 的
+    # WebsocketSession 可能已被连接清理移除——按 sid 查会话会拿不到任何
+    # 上下文而直接忽略，worker 线程（to_thread 不可强杀）于是继续把整轮
+    # 生成跑完并落库，刷新回来的页面就看到"思考继续并给出最终回答"。
+    # 这里登记 sid → (thread, abort)，stop 处理器在会话查不到时兜底中断。
+    _sid_turn_map[getattr(cl.context.session, "id", "")] = (
+        context_id(), abort_event
+    )
     # 回合级看门狗：上游"滴漏式"响应（隔很久才来一个字节）会同时绕过
     # 流式读超时与逐事件截止检查，让回合无限期挂起并占住账号级预算锁、
     # 静默阻塞该账号后续所有回合。到点强制置位中断事件，流式循环在下一个
@@ -2009,6 +2021,7 @@ async def run_turn(
     # 回合主体已结束（无论成败）：撤销看门狗，避免它在交付阶段误触发中断
     # （迟到的置位只会影响下一个回合，而下一回合会创建全新的中断事件）。
     turn_watchdog.cancel()
+    _sid_turn_map.pop(getattr(cl.context.session, "id", ""), None)
     return response
 
 @cl.on_stop
@@ -2041,6 +2054,23 @@ def _install_stop_handler() -> None:
     async def stop(sid):
         session = WebsocketSession.get(sid)
         if not session:
+            # 会话已被连接清理移除（刷新 unload 的 stop 常迟到）：按 sid 登记的
+            # 回合兜底中断——worker 线程（to_thread）必须被 abort 掐断，否则
+            # 整轮生成跑完并落库，刷新后的页面看到"停止无效、回答还在"。
+            entry = _sid_turn_map.pop(sid, None)
+            if entry is not None:
+                thread_id, event = entry
+                event.set()
+                stream_out = _turn_streams.get(thread_id)
+                if stream_out is not None:
+                    stream_out["closed"] = True
+                    try:
+                        await _cleanup_cancelled_turn(stream_out)
+                    except Exception:  # noqa: BLE001 - 兜底清理失败不影响主流程
+                        pass
+                    if _turn_streams.get(thread_id) is stream_out:
+                        _turn_streams.pop(thread_id, None)
+                    await _push_thread_to_watchers(thread_id, stream_out, failed=True)
             return
         init_ws_context(session)
         # 前端在页面刷新/切换会话时也会 emit "stop"（unload 前的清理），
