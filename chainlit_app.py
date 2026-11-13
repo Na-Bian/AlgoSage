@@ -1521,7 +1521,7 @@ async def schedule_title(
 
     async def complete():
         try:
-            title = await asyncio.to_thread(
+            title, origin = await asyncio.to_thread(
                 service.generate_title,
                 context.provider_selection,
                 question,
@@ -1530,7 +1530,9 @@ async def schedule_title(
                 context_text,
             )
             if (
-                await store.finish_title(thread_id, principal, title, question)
+                await store.finish_title(
+                    thread_id, principal, title, question, origin
+                )
                 and session.thread_id == thread_id
                 and not getattr(session, "to_clear", False)
             ):

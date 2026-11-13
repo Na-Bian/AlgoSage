@@ -134,6 +134,29 @@ class ChatTitleStoreTests(unittest.IsolatedAsyncioTestCase):
         await self.store.claim_title("t", "alice", "请解释 KMP 中的前缀函数")
         self.assertFalse(await self.store.claim_title("t", "alice", "那 BM 算法呢"))
 
+    async def test_extractive_fallback_title_is_retried_next_turn(self):
+        """回归：兜底标题（原文截取，origin=extractive）不是 LLM 命名——
+        它先顶上显示，但下次提问时允许带会话上下文重新生成并替换。"""
+        await self.store.claim_title("t", "alice", "请解释 KMP 中的前缀函数")
+        # 模型失败 → 兜底截取落名：状态 extractive，标题已显示。
+        self.assertTrue(
+            await self.store.finish_title(
+                "t", "alice", "KMP 中的前缀函数", "请解释 KMP 中的前缀函数",
+                origin="extractive",
+            )
+        )
+        self.assertEqual((await self.store.get_thread("t"))["name"], "KMP 中的前缀函数")
+        # 下一次提问：允许重新领取（区别于 auto 的拒绝）。
+        self.assertTrue(await self.store.claim_title("t", "alice", "那 BM 算法呢"))
+        # LLM 命名成功 → auto，替换兜底标题且不再变。
+        self.assertTrue(
+            await self.store.finish_title(
+                "t", "alice", "KMP 与 BM 匹配算法", "那 BM 算法呢", origin="model"
+            )
+        )
+        self.assertEqual((await self.store.get_thread("t"))["name"], "KMP 与 BM 匹配算法")
+        self.assertFalse(await self.store.claim_title("t", "alice", "又换话题"))
+
     async def test_framework_name_arriving_after_claim_is_kept_on_failure(self):
         from chainlit.user import User
 
@@ -166,7 +189,25 @@ class TitleGenerationTests(unittest.TestCase):
         with turn_ledger(Settings(mode="mock")) as parent:
             result = generate_title(Backend(), Settings(mode="mock"), question, **kwargs)
         self.assertEqual(parent.calls, [])
-        return result
+        # 返回 (title, origin)：origin ∈ {"model", "extractive"}，用于
+        # finish_title 区分 LLM 命名与兜底命名（兜底可被下次重生成）。
+        title, origin = result
+        self.assertIn(origin, {"model", "extractive"})
+        return title
+
+    def generate_full(self, output, question="请解释 KMP 中的前缀函数", **kwargs):
+        """同 generate，但返回 (title, origin) 原始元组。"""
+        from algosage.chat_titles import generate_title
+        from algosage.invocation import turn_ledger
+
+        class Backend:
+            def generate_with_options(inner, messages, **options):
+                if isinstance(output, Exception):
+                    raise output
+                return LLMResult(output, "controlled", 12, 6)
+
+        with turn_ledger(Settings(mode="mock")):
+            return generate_title(Backend(), Settings(mode="mock"), question, **kwargs)
 
     def test_short_extractive_title_and_bounded_nonstreaming_call(self):
         self.assertEqual(self.generate("KMP 前缀函数"), "KMP 前缀函数")

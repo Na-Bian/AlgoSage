@@ -68,7 +68,11 @@ def extractive_fallback(source: str) -> str | None:
 
 def generate_title(
     backend, settings, question: str, timeout: float = 20, context_text: str = ""
-) -> str | None:
+) -> tuple[str, str] | None:
+    """返回 (title, origin)：origin="model" 表示 LLM 命名（status=auto，
+    不再重生成）；origin="extractive" 表示模型失败后的原文截取兜底
+    （status=extractive，下次提问带会话上下文重新生成）。None = 无可命名
+    文本。"""
     source = title_source(question)
     if not source:
         return None
@@ -107,15 +111,15 @@ def generate_title(
             title = valid_title(result.text, source)
             if title:
                 logger.info("Title outcome=model_accepted")
-                return title
+                return title, "model"
             logger.info("Title outcome=extractive_fallback reason=invalid_candidate")
-            return extractive_fallback(source)
+            return extractive_fallback(source), "extractive"
         except (
             Exception
         ) as error:  # noqa: BLE001 - optional title failures must not affect chat
             logger.info("Title generation skipped error_type=%s", type(error).__name__)
             logger.info("Title outcome=extractive_fallback reason=provider_error")
-            return extractive_fallback(source)
+            return extractive_fallback(source), "extractive"
         finally:
             logger.info(
                 "Title usage calls=%s input_tokens=%s output_tokens=%s",

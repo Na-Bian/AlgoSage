@@ -642,7 +642,8 @@ class TutorService:
         与学生会话选择的模型无关：BYOK 模型可能是昂贵/慢速的大模型， auxiliary
         任务不应跟随；也可保证 BYOK 会话同样有标题。context_text 是会话
         既有的问答摘要——追问时补标题按整个会话的话题概括，不只看最后
-        一条提问。"""
+        一条提问。返回 (title, origin)，origin 区分 LLM 命名与兜底截取
+        （兜底标题下次提问可带上下文重新生成）。"""
         from .chat_titles import generate_title
 
         tutor = self._title_tutor()

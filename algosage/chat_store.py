@@ -872,14 +872,15 @@ class ChatDataLayer(BaseDataLayer):
     async def claim_title(
         self, thread_id: str, principal_id: str, question: str | None = None
     ) -> bool:
-        """登记一次标题任务；一个会话只命名一次：
+        """登记一次标题任务；一个会话只做一次 LLM 命名：
 
         - status=auto（已有 LLM 标题）→ 永远拒绝。标题命名的是会话话题，
           追问换话题不再改标题（用户要求：不要每次都生成新标题）；
         - status=pending → 拒绝（已有任务在途，结果未落名前不叠任务）；
-        - status=failed（上次模型/上游失败，无标题）/ 从未命名 → 以当前
-          问题登记。本次生成可携带既有问答上下文（context_text），
-          标题据此概括整个会话。
+        - status=extractive（当前标题是模型失败时的原文截取兜底）→ 允许
+          重新领取：下次提问时带会话既有问答重新生成，替换兜底标题；
+        - status=failed（上次失败且无标题）/ 从未命名 → 以当前问题登记。
+          生成可携带既有问答上下文（context_text），标题概括整个会话。
         question 传入时以它为准（回合开始即可领取，与生成并行）；不传则
         保持旧语义：仅首轮登记一次（INSERT OR IGNORE，历史行存在即拒绝），
         供旧调用与测试使用。"""
@@ -925,7 +926,12 @@ class ChatDataLayer(BaseDataLayer):
         principal_id: str,
         title: str | None,
         question: str | None = None,
+        origin: str = "model",
     ) -> bool:
+        """落名一个标题结果。origin="model" 是 LLM 命名 → status=auto（本
+        会话最终标题，不再重生成）；origin="extractive" 是模型失败后的
+        原文截取兜底 → status=extractive：标题先顶上（界面立即有名字），
+        下次提问时 claim_title 允许带会话上下文重新生成。"""
         with self._lock:
             job = self._conn.execute(
                 "SELECT * FROM thread_titles WHERE thread_id=?", (thread_id,)
@@ -961,9 +967,15 @@ class ChatDataLayer(BaseDataLayer):
                 self._conn.execute(
                     "UPDATE threads SET name=? WHERE id=?", (title, thread_id)
                 )
+            if not valid:
+                status = "failed"
+            elif origin == "model":
+                status = "auto"
+            else:
+                status = "extractive"
             self._conn.execute(
                 "UPDATE thread_titles SET status=? WHERE thread_id=?",
-                ("auto" if valid else "failed", thread_id),
+                (status, thread_id),
             )
             self._conn.commit()
             return bool(valid)
