@@ -1071,8 +1071,12 @@ try:  # pragma: no cover - exercised through the running Chainlit server
                         context,
                         {**context.model_params, "help_level_cap": cap},
                     )
-                    await asyncio.to_thread(
-                        get_chat_store().update_thread_model_params,
+                    # update_thread_model_params 是 async 方法：asyncio.to_thread
+                    # 对它只会创建一个从未 await 的协程对象（err 日志
+                    # "was never awaited"），等级上限因此从未落库——学生选择的
+                    # L1 刷新即丢、生成也拿不到上限（测试报告 D01/D02）。
+                    # async 方法直接 await。
+                    await get_chat_store().update_thread_model_params(
                         thread_id,
                         current_user.identifier,
                         cap,
@@ -2115,6 +2119,48 @@ def authenticated_principal_id() -> str | None:
     return identifier if isinstance(identifier, str) and identifier.strip() else None
 
 
+# 无围栏代码的启发式特征：语句行（分号/花括号/控制流/类型声明/赋值返回）。
+_UNFENCED_CODE_LINE = re.compile(
+    r"(;\s*$|"
+    r"[{}]\s*$|"
+    r"\b(for|while|if|else|elif|switch|case|do)\s*\(|"
+    r"\b(return|break|continue)\b|"
+    r"\b(int|long|float|double|char|bool|void|string|auto|var|let|const|def)\b\s+[A-Za-z_]\w*\s*(=|\())"
+)
+# 明显不是代码的行：自然语言问句、中文叙述。
+_UNFENCED_NON_CODE = re.compile(r"[。！？；：\"“”「」]")
+
+
+def _unfenced_code_block(text: str) -> str | None:
+    """提取无 Markdown 围栏的粘贴代码（D03）。
+
+    条件保守：连续 ≥3 行且 ≥2/3 的行带代码特征（分号/花括号/控制流/
+    类型声明），才认定为代码块——避免把普通叙述（含个别英文标识符）
+    误拆成代码。返回规范化后的代码文本；无匹配返回 None。"""
+    lines = text.splitlines()
+    best_start, best_len = None, 0
+    run_start, run_lines = None, []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped and _UNFENCED_CODE_LINE.search(stripped) and not (
+            _UNFENCED_NON_CODE.search(stripped) and len(stripped) > 40
+        ):
+            if run_start is None:
+                run_start = i
+            run_lines.append(line)
+        else:
+            if run_start is not None and len(run_lines) >= 3 and len(run_lines) * 3 >= (i - run_start) * 2:
+                if len(run_lines) > best_len:
+                    best_start, best_len = run_start, len(run_lines)
+            run_start, run_lines = None, []
+    if run_start is not None and len(run_lines) >= 3 and len(run_lines) * 3 >= (len(lines) - run_start) * 2:
+        if len(run_lines) > best_len:
+            best_start, best_len = run_start, len(run_lines)
+    if best_start is None:
+        return None
+    return "\n".join(lines[best_start:best_start + best_len]).strip()
+
+
 def split_question_and_code(message: str) -> tuple[str, str]:
     """把用户消息中的围栏代码块拆为 (问题, 已有代码)。
 
@@ -2122,13 +2168,21 @@ def split_question_and_code(message: str) -> tuple[str, str]:
     分类器判定意图，本函数不做任何安全判断）。
     """
     blocks = [b.strip() for b in _FENCE.findall(message) if b.strip()]
-    if not blocks:
-        return message.strip(), ""
-    code = "\n\n".join(blocks)[-10000:]
-    question = _FENCE.sub("", message).strip()
-    if not question:
-        question = "请基于我粘贴的代码提供辅导。"
-    return question, code
+    if blocks:
+        code = "\n\n".join(blocks)[-10000:]
+        question = _FENCE.sub("", message).strip()
+        if not question:
+            question = "请基于我粘贴的代码提供辅导。"
+        return question, code
+    # 无围栏：学生常直接粘贴代码（D03）。启发式识别连续代码行块，
+    # 与问题文本分离；识别不到则整条消息仍按问题处理。
+    block = _unfenced_code_block(message)
+    if block and len(block) < len(message.strip()):
+        question = message.strip().replace(block, "").strip()
+        return (question or "请基于我粘贴的代码提供辅导。"), block[:10000]
+    if block:
+        return "请基于我粘贴的代码提供辅导。", block[:10000]
+    return message.strip(), ""
 
 
 def prepare_message_inputs(
