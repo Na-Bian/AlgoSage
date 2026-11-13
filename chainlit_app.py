@@ -1765,9 +1765,21 @@ def _make_delta_sink(context, stream_out, abort_event):
                     if len(reasoning_so_far) < prev_len:
                         stream_out.pop("reasoning_loop_len", None)
                         # 推理长度收缩 = 上游重试/安全重生成开了新的一轮：
-                        # 置提示标志，芯片标题改用「重新生成中」，让"内容
-                        # 凭空从头再来"有可理解的解释。
+                        # 置提示标志（芯片标题改用「重新生成中」让用户理解
+                        # 内容从头再来），并把上一轮的思考芯片从界面与数据库
+                        # 移除——它是被否决草稿的推理，留着只会堆叠成一列
+                        # "重新生成"芯片，让人误以为在循环重试。
                         stream_out["regen_hint"] = True
+                        stale = stream_out.pop("reasoning_step", None)
+                        if stale is not None:
+                            steps = [s for s in stream_out.get("stale_reasoning_steps", []) if s is not stale]
+                            steps.append(stale)
+                            stream_out["stale_reasoning_steps"] = steps
+                            try:
+                                await stale.remove()
+                                stream_out["stale_removed"] = True
+                            except Exception:  # noqa: BLE001 - 清理失败不影响回合
+                                pass
                     stream_out["reasoning_loop_len"] = len(reasoning_so_far)
                     if (
                         not abort_event.is_set()
@@ -2347,6 +2359,11 @@ async def _cleanup_failed_turn_steps(stream_out: dict) -> None:
     reasoning = stream_out.get("reasoning_step")
     if reasoning is not None:
         steps.append(reasoning)
+    # 重生成中被移除的上一轮芯片（stale_reasoning_steps）也要兜底：主路径
+    # 的 stale.remove() 失败时这里再清一次，避免孤儿残留。
+    steps.extend(
+        s for s in stream_out.get("stale_reasoning_steps", []) if s is not None
+    )
     steps.extend(s for s in stream_out.get("turn_steps", []) if s is not None)
     if not steps:
         return
