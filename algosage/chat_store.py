@@ -567,14 +567,21 @@ class ChatDataLayer(BaseDataLayer):
             )
             self._conn.commit()
 
-    async def get_image_elements_for(self, for_id: str) -> list[dict]:
-        """图片元素（按 for_id 归属消息）：编辑重发只携带文字（Chainlit
-        edit 协议限制），原消息的图片从这里重新附带。"""
+    async def get_image_elements_for(
+        self, thread_id: str, for_id: str
+    ) -> list[dict]:
+        """读取当前会话中某条消息的图片元素。
+
+        编辑重发只携带文字（Chainlit edit 协议限制），原消息的图片从这里
+        重新附带。thread_id 是必要的权限边界：for_id 来自客户端消息对象，
+        不能单独作为跨会话资源查询条件。
+        """
         with self._lock:
             rows = self._conn.execute(
                 "SELECT name, mime, storage_path, size_bytes FROM elements "
-                "WHERE for_id = ? AND type = 'image' ORDER BY created_at ASC, id ASC",
-                (for_id,),
+                "WHERE thread_id = ? AND for_id = ? AND type = 'image' "
+                "ORDER BY created_at ASC, id ASC",
+                (thread_id, for_id),
             ).fetchall()
         return [dict(row) for row in rows]
 

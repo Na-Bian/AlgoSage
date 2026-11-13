@@ -2545,7 +2545,7 @@ async def _cleanup_cancelled_turn(stream_out: dict) -> None:
     stream_out.pop("review_step", None)
 
 
-async def _load_original_image_attachments(for_id: str) -> tuple:
+async def _load_original_image_attachments(for_id: str, thread_id: str | None = None) -> tuple:
     """编辑重发只携带文字（Chainlit edit 协议只传 message.output）：原消息
     的图片附件从元素存储读回，保证编辑文字不会丢图。文件缺失/损坏时逐个
     跳过，不阻塞编辑重发。"""
@@ -2556,7 +2556,9 @@ async def _load_original_image_attachments(for_id: str) -> tuple:
         _image_data_url,
     )
 
-    rows = await get_chat_store().get_image_elements_for(for_id)
+    rows = await get_chat_store().get_image_elements_for(
+        thread_id or context_id(), for_id
+    )
     prepared: list[AttachmentPayload] = []
     for row in rows[:MAX_FILES]:
         path = Path(str(row.get("storage_path") or ""))
@@ -2635,7 +2637,7 @@ async def on_message(message: cl.Message) -> None:
         if not any(item.kind == "image" for item in attachments):
             try:
                 attachments = attachments + await _load_original_image_attachments(
-                    message.id
+                    message.id, context_id()
                 )
             except Exception as error:  # noqa: BLE001 - 重带失败不影响编辑重发
                 logger.info(
