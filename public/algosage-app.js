@@ -313,7 +313,7 @@ try {
     });
   }
 
-  loadScript("/public/theme-transition.js?v=20261111-menulink-1")
+  loadScript("/public/theme-transition.js?v=20261113-syslive-1")
     .then(() => loadScript("/public/account-profile.js?v=20261026-refresh-all-1"))
     .then(() => loadScript("/public/user-preferences.js?v=20261106-draft-clear-3"))
     .then(() => loadScript("/public/model-picker.js?v=20261112-confirm-guide-1"))

@@ -53,13 +53,37 @@
     const preference = persist ? storedPreference() ?? "system" : "system";
     standaloneOverride = persist ? storedPreference() : null;
     applyPreference(preference);
-    systemMedia.addEventListener("change", () => applyPreference(standaloneOverride ?? "system"));
     // 本脚本在 <head> 同步执行，body 尚未就绪时等 DOM 挂载完再放按钮。
     if (document.body) {
       mountFloatingButton();
     } else {
       document.addEventListener("DOMContentLoaded", mountFloatingButton, { once: true });
     }
+  }
+
+  // 跟随系统主题的实时响应：系统深浅切换（prefers-color-scheme change）
+  // 时，若当前偏好是「跟随系统」（或独立页的临时跟随），无需刷新即重应用
+  // 主题。Chainlit 的 provider 只在挂载时读 localStorage 并应用一次，本身
+  // 不监听系统切换——刷新才会生效正是这个缺口；对话页此前也没注册过任何
+  // 监听（initializeStandalone 只在 standalone 页跑）。监听器在所有页面
+  // 统一挂载；Chainlit 菜单勾选态本来就是「跟随系统」，与 DOM 同步语义
+  // 一致，不会出现撕裂。
+  function bindSystemThemeChange() {
+    systemMedia.addEventListener("change", () => {
+      if (transitionBusy) return;
+      const preference = storedPreference();
+      const followsSystem =
+        standaloneOverride == null &&
+        (preference === "system" ||
+          (!root.dataset.themePersist && preference === null && root.dataset.themeDefault));
+      if (!followsSystem) return;
+      const nextDark = shouldUseDark(preference ?? "system");
+      if (nextDark === root.classList.contains("dark")) return;
+      setPreference("system", {
+        x: window.innerWidth / 2,
+        y: 0,
+      });
+    });
   }
 
   function originFromElement(element) {
@@ -215,4 +239,5 @@
 
   if (root.dataset.themeDefault) initializeStandalone();
   bindChainlitMenu();
+  bindSystemThemeChange();
 })();
