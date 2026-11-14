@@ -738,12 +738,11 @@
     return true;
   }
 
-  /* 分段收起：Chainlit 的 peer 类翻转是瞬时布局变化（main 单帧跳到全宽，
-     文字瞬移）。先把 --eg-sidebar-width-user 过渡到 0——gap 已改为
-     in-flow，其 width 过渡逐帧驱动 main 平滑重排——等动画完成后再触发
-     原 trigger.click() 完成 peer 状态翻转（此刻抽屉已无宽度，翻转无任何
-     视觉变化）。展开方向天然平滑（宽度 0→N 过渡即 main 平滑回位），
-     不需要分段。 */
+  /* 收起/展开观感动画：main 的 peer 类翻转是瞬时布局变化（文字会瞬移）。
+     收起：先给抽屉播放 300ms 滑出淡出动画（eg-sidebar-out），动画结束时
+     抽屉已不可见，此刻翻转 peer 状态——布局瞬时变化发生在不可见的元素
+     上，无瞬移感。展开：立即翻转 + 播放滑入淡入动画（eg-sidebar-in），
+     抽屉从左侧滑回。位置/宽度逻辑（含 staged 时代的宽度恢复与自愈）保留。 */
   let stagedCollapseBusy = false;
   function stagedSidebarCollapse() {
     const trigger = sidebarRefs?.trigger;
@@ -753,29 +752,27 @@
     if (!collapsed) {
       if (stagedCollapseBusy) return;
       stagedCollapseBusy = true;
-      const root = document.documentElement;
-      const current = getComputedStyle(document.querySelector("[class*='group/sidebar-wrapper']"))
-        .getPropertyValue("--sidebar-width").trim();
-      root.style.setProperty("--eg-sidebar-width-user", current === "0px" ? "18rem" : current);
-      // 强制布局后把宽度过渡到 0（width 过渡已由 CSS 提供）。
-      void document.body.offsetWidth;
-      requestAnimationFrame(() => {
-        root.style.setProperty("--eg-sidebar-width-user", "0px");
-        window.setTimeout(() => {
-          trigger.click();
-          stagedCollapseBusy = false;
-        }, 330);
-      });
+      const sidebar = document.querySelector('[data-sidebar="sidebar"]');
+      document.body.classList.add("eg-sidebar-collapse-anim");
+      window.setTimeout(() => {
+        document.body.classList.remove("eg-sidebar-collapse-anim");
+        trigger.click();
+        stagedCollapseBusy = false;
+      }, 300);
     } else {
-      // 展开：恢复用户宽度（cookie 值或默认 288），立即翻转 peer 状态——
-      // 0 → 宽度的过渡由 CSS 自然驱动，main 平滑回位。cookie 缺失时把
-      // 恢复值写回，保证刷新后宽度一致。
+      // 展开：恢复用户宽度（cookie 值或默认 288），翻转 peer 状态并播放
+      // 滑入动画。cookie 缺失时把恢复值写回，保证刷新后宽度一致。
       const saved = storedSidebarWidth() ?? 288;
       if (!storedSidebarWidth()) persistSidebarWidth(saved);
       document.documentElement.style.setProperty(
         "--eg-sidebar-width-user", `${saved}px`
       );
       trigger.click();
+      document.body.classList.add("eg-sidebar-open-anim");
+      window.setTimeout(
+        () => document.body.classList.remove("eg-sidebar-open-anim"),
+        320
+      );
     }
   }
 

@@ -1602,26 +1602,25 @@ body.eg-sidebar-collapsed[class*="group/sidebar-wrapper"],
 body.eg-sidebar-collapsed [class*="group/sidebar-wrapper"] {
   --sidebar-width: 0px !important;
 }
-/* 折叠收尾：占位 gap 平移出布局流（margin 可过渡），等效宽度收缩。
-   关键：gap 原生是 fixed 定位——宽度过渡不影响 main 的 flex 布局，
-   main 由 peer-data 类切换瞬时跳宽（文字瞬移的根源）。改为 in-flow
-   （position: static）后，gap 成为 wrapper 的真实 flex 项，其 width
-   过渡逐帧驱动 main 重排，文字随动画平滑重排。 */
-/* gap 容器在本 Chainlit 构建里没有 data-sidebar="gap" 属性——按结构
-   定位：[data-sidebar=sidebar] 的直接父节点（.fixed.inset-y-0.w-[--sidebar-width]）。 */
-body.eg-sidebar-collapsed div:has(> [data-sidebar="sidebar"]) {
-  margin-left: calc(-1 * var(--eg-sidebar-width-user, 18rem)) !important;
+/* 折叠/展开观感：main 的 peer 类翻转是瞬时布局变化（无法 CSS 过渡），
+   文字瞬移感来自「先瞬间让位、抽屉再滑走」。反过来做：翻转前先把抽屉
+   内容向左滑出并淡出（transform/opacity 可过渡），翻转瞬间抽屉已不可
+   见，视觉上就是「抽屉先收、内容后到」，无瞬移。展开反向：翻转后抽屉
+   从左侧滑入淡入。 */
+body.eg-sidebar-collapse-anim [data-sidebar="sidebar"] {
+  animation: eg-sidebar-out 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
-body.eg-sidebar-collapsed div:has(> [data-sidebar="sidebar"]) > [data-sidebar="sidebar"] {
-  width: 0 !important;
-  overflow: hidden;
+@keyframes eg-sidebar-out {
+  to { opacity: 0; transform: translateX(-40px); }
 }
-body.eg-chat-shell div:has(> [data-sidebar="sidebar"]) {
-  position: static !important;
-  transition:
-    margin-left 300ms cubic-bezier(0.4, 0, 0.2, 1),
-    width 300ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+body.eg-sidebar-open-anim [data-sidebar="sidebar"] {
+  animation: eg-sidebar-in 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+@keyframes eg-sidebar-in {
+  from { opacity: 0; transform: translateX(-40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
 [class*="group/sidebar-wrapper"] [data-sidebar="gap"],
 [class*="group/sidebar-wrapper"] [data-sidebar="sidebar"] {
   transition:
