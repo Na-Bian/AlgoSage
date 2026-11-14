@@ -738,12 +738,11 @@
     return true;
   }
 
-  /* 收起/展开观感动画：main 的 peer 类翻转是瞬时布局变化（文字会瞬移）。
-     收起：先给抽屉播放 300ms 滑出淡出动画（eg-sidebar-out），动画结束时
-     抽屉已不可见，此刻翻转 peer 状态——布局瞬时变化发生在不可见的元素
-     上，无瞬移感。展开：立即翻转 + 播放滑入淡入动画（eg-sidebar-in），
-     抽屉从左侧滑回。位置/宽度逻辑（含 staged 时代的宽度恢复与自愈）保留。 */
+  /* 收起/展开观感动画：两条路径都在点击时同时启动内容与布局过渡。
+     收起时主区域宽度立即开始收缩，侧栏内容同步滑出淡出；展开时主区域
+     与侧栏同步展开。位置/宽度逻辑（含 staged 时代的宽度恢复与自愈）保留。 */
   let stagedCollapseBusy = false;
+  let stagedCollapseTimer = null;
   function stagedSidebarCollapse() {
     const trigger = sidebarRefs?.trigger;
     if (!trigger) return;
@@ -752,16 +751,35 @@
     if (!collapsed) {
       if (stagedCollapseBusy) return;
       stagedCollapseBusy = true;
-      const sidebar = document.querySelector('[data-sidebar="sidebar"]');
       document.body.classList.add("eg-sidebar-collapse-anim");
-      window.setTimeout(() => {
+      if (stagedCollapseTimer) window.clearTimeout(stagedCollapseTimer);
+      // Keep the desktop flex slot at its current width when Chainlit flips
+      // data-state. The native state change otherwise makes the peer wrapper
+      // width 0 in the same frame, so main jumps left before its child width
+      // transition has a chance to run.
+      document.body.classList.add("eg-sidebar-layout-hold");
+      // Start the native layout transition immediately. The hold class keeps
+      // the old flex width during the state flip. Force that width to be
+      // committed before switching to zero in the same event, so main and the
+      // sidebar begin moving together instead of waiting for another frame.
+      group?.getBoundingClientRect();
+      trigger.click();
+      document.body.classList.add("eg-sidebar-layout-shrink");
+      stagedCollapseBusy = false;
+      stagedCollapseTimer = window.setTimeout(() => {
         document.body.classList.remove("eg-sidebar-collapse-anim");
-        trigger.click();
-        stagedCollapseBusy = false;
-      }, 300);
+        document.body.classList.remove("eg-sidebar-layout-hold", "eg-sidebar-layout-shrink");
+        stagedCollapseTimer = null;
+      }, 340);
     } else {
       // 展开：恢复用户宽度（cookie 值或默认 288），翻转 peer 状态并播放
       // 滑入动画。cookie 缺失时把恢复值写回，保证刷新后宽度一致。
+      if (stagedCollapseTimer) {
+        window.clearTimeout(stagedCollapseTimer);
+        stagedCollapseTimer = null;
+      }
+      document.body.classList.remove("eg-sidebar-collapse-anim");
+      document.body.classList.remove("eg-sidebar-layout-hold", "eg-sidebar-layout-shrink");
       const saved = storedSidebarWidth() ?? 288;
       if (!storedSidebarWidth()) persistSidebarWidth(saved);
       document.documentElement.style.setProperty(
@@ -801,6 +819,12 @@
   const SIDEBAR_MAX_PX = 420;
   const SIDEBAR_WIDTH_COOKIE = "eg-sidebar-width";
 
+  // 指针 x → 目标宽度：统一钳制，宽度与手柄位置共用同一逻辑（拖到边界
+  // 后两者都「顶住」，不再出现手柄与侧栏边缘分离的预览）。
+  function clampSidebarClientX(clientX) {
+    return Math.min(SIDEBAR_MAX_PX, Math.max(SIDEBAR_MIN_PX, Math.round(clientX)));
+  }
+
   function storedSidebarWidth() {
     const match = document.cookie.match(
       new RegExp(`(?:^|;\\s*)${SIDEBAR_WIDTH_COOKIE}=(\\d+)(?:;|$)`)
@@ -826,10 +850,7 @@
       event.preventDefault();
       document.body.classList.add("eg-sidebar-resizing");
       const move = (e) => {
-        const width = Math.min(
-          SIDEBAR_MAX_PX,
-          Math.max(SIDEBAR_MIN_PX, Math.round(e.clientX))
-        );
+        const width = clampSidebarClientX(e.clientX);
         document.documentElement.style.setProperty(
           "--eg-sidebar-width-user",
           `${width}px`
@@ -839,10 +860,7 @@
         document.body.classList.remove("eg-sidebar-resizing");
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
-        const width = Math.min(
-          SIDEBAR_MAX_PX,
-          Math.max(SIDEBAR_MIN_PX, Math.round(e.clientX))
-        );
+        const width = clampSidebarClientX(e.clientX);
         persistSidebarWidth(width);
         // 松手后播放一次收尾过渡（300ms）让宽度平滑落到最终值。
         document.body.classList.add("eg-sidebar-animating");
@@ -885,12 +903,13 @@
       });
       window.addEventListener("resize", position);
       // 拖拽期间侧栏宽度是逐帧更新的（CSS var 在 documentElement 上，不
-      // 会触发 group 的属性观察）——拖拽时直接跟随指针。
+      // 会触发 group 的属性观察）——拖拽时直接跟随指针。跟随位置用同一
+      // 钳制：到边界后手柄顶住侧栏边缘，与宽度一致，不产生分离预览。
       window.addEventListener(
         "pointermove",
         (event) => {
           if (!document.body.classList.contains("eg-sidebar-resizing")) return;
-          resizer.style.left = `${Math.round(event.clientX) - 5}px`;
+          resizer.style.left = `${clampSidebarClientX(event.clientX) - 5}px`;
         },
         true
       );
