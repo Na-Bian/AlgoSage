@@ -2160,6 +2160,22 @@ body.eg-deleting main {
   line-height: .95rem !important;
 }
 
+/* 历史会话的免责声明由 ChatFooter 独立渲染，不经过 welcome-screen；
+   与欢迎态共用字号，并把输入区整体轻微下移。 */
+body.eg-chat-shell.eg-in-thread #message-composer,
+body.eg-chat-shell.eg-in-thread #message-composer + .watermark {
+  transform: translateY(12px);
+}
+
+body.eg-chat-shell.eg-in-thread #message-composer + .watermark .prose {
+  font-size: .68rem !important;
+  line-height: .95rem !important;
+}
+
+body.eg-chat-shell.eg-in-thread #message-composer + .watermark .prose > div {
+  line-height: .95rem !important;
+}
+
 /* Foreground roles shared across the two composer locations and the toolbar. */
 body.eg-chat-shell :is(#upload-button, #readme-button, #chat-settings-header-button, #theme-toggle) {
   color: var(--color-icon) !important;
