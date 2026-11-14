@@ -767,13 +767,33 @@
         }, 330);
       });
     } else {
-      // 展开：恢复用户宽度（cookie 值或默认），立即翻转 peer 状态——
-      // 0 → 宽度的过渡由 CSS 自然驱动，main 平滑回位。
+      // 展开：恢复用户宽度（cookie 值或默认 288），立即翻转 peer 状态——
+      // 0 → 宽度的过渡由 CSS 自然驱动，main 平滑回位。cookie 缺失时把
+      // 恢复值写回，保证刷新后宽度一致。
       const saved = storedSidebarWidth() ?? 288;
+      if (!storedSidebarWidth()) persistSidebarWidth(saved);
       document.documentElement.style.setProperty(
         "--eg-sidebar-width-user", `${saved}px`
       );
       trigger.click();
+    }
+  }
+
+  /* 自愈守卫：宽度变量卡在 0px 且抽屉处于展开态（staged 收起被中途打断、
+     或展开路径异常）时，抽屉「存在但不可见」——没有折叠 bar、没有可点
+     的展开按钮，界面看起来侧栏整个消失了。每次侧栏增强时检查并把宽度
+     恢复到 cookie 值（或默认 288）。 */
+  function healSidebarWidth() {
+    if (document.body.classList.contains("eg-sidebar-collapsed")) return;
+    const sidebar = document.querySelector('[data-sidebar="sidebar"]');
+    if (!sidebar || !sidebar.offsetWidth) return;
+    const wrapper = document.querySelector("[class*='group/sidebar-wrapper']");
+    const current = getComputedStyle(wrapper).getPropertyValue("--sidebar-width").trim();
+    if (current === "0px" || current === "") {
+      const saved = storedSidebarWidth() ?? 288;
+      document.documentElement.style.setProperty(
+        "--eg-sidebar-width-user", `${saved}px`
+      );
     }
   }
 
@@ -1616,6 +1636,7 @@
       syncSidebarSpinner();
       enhanceMobileHeader();
       enhanceSidebar();
+      healSidebarWidth();
       enhanceStepStatusIcons();
       translateStepLabels();
       enhanceWelcome();
