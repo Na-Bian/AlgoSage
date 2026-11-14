@@ -292,8 +292,8 @@ main div:has(> #welcome-screen) {
   align-content: center;
   justify-items: center;
   row-gap: 30px;
-  /* 欢迎态保持原有垂直居中；历史会话底部输入区单独调整。 */
-  padding-block: clamp(18px, 3dvh, 32px) 0;
+  /* 欢迎态按 Logo + 输入框整体居中；历史会话输入区单独调整。 */
+  padding-block: clamp(16px, 2dvh, 28px) clamp(28px, 7dvh, 88px);
   transform: none;
 }
 
