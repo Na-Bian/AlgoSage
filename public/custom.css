@@ -293,7 +293,7 @@ main div:has(> #welcome-screen) {
   justify-items: center;
   row-gap: 30px;
   /* 底部留白只保留安全间距，让欢迎态输入区与免责声明更贴近页面底部。 */
-  padding-block: clamp(16px, 2dvh, 28px) clamp(10px, 2dvh, 22px);
+  padding-block: clamp(18px, 3dvh, 32px) 0;
 }
 
 #welcome-screen.eg-empty-welcome::before {
@@ -2153,7 +2153,8 @@ body.eg-deleting main {
 #welcome-screen::after {
   margin-top: -18px !important;
   color: var(--color-text-tertiary) !important;
-  font-size: .74rem !important;
+  font-size: .68rem !important;
+  line-height: .95rem !important;
 }
 
 /* Foreground roles shared across the two composer locations and the toolbar. */
