@@ -236,6 +236,12 @@ class TitleGenerationTests(unittest.TestCase):
         self.assertEqual(self.generate(answer, question), "KMP 前缀函数")
         self.assertEqual(self.calls, 1)
 
+    def test_long_how_to_question_gets_bounded_extractive_title(self):
+        question = "如何推导欧几里得算法的时间复杂度，重点分析为什么余数会按常数比例快速缩小"
+        title, origin = self.generate_full(RuntimeError("title provider unavailable"), question)
+        self.assertEqual(origin, "extractive")
+        self.assertEqual(title, "欧几里得算法的时间复杂度")
+
     def test_naming_task_is_explicit_in_final_message_and_source_is_data(self):
         import json
 

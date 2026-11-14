@@ -26,8 +26,11 @@
   // 动态思考标题（服务端实时推送“思考中 · N 字 / 思考完成”）原样保留；
   // 收口名可带回合尾缀「 · #xxxxxx」（名字镜像节点的 DOM id = 名字，跨
   // 回合唯一化防止新旧芯片串内容），显示时由 stripTurnTag 去掉尾缀。
-  const DYNAMIC_REASONING_RE = /^(思考中 · \d+ 字|思考完成)( · #[0-9a-f]{6})?$/;
-  const TURN_TAG_RE = / · #[0-9a-f]{6}$/;
+  // 服务端回合尾缀当前形如「思考中 · 2340 字 #1d41c4」；兼容旧版
+  // 带中点的「思考中 · 2340 字 · #1d41c4」格式，避免实时标题更新后
+  // 思考步骤不再被识别，自动展开随之失效。
+  const DYNAMIC_REASONING_RE = /^(思考中 · \d+ 字|重新生成中 · \d+ 字|思考完成|上一轮未通过审核，已重新生成)(?:\s+(?:·\s+)?#[0-9a-f]{6})?$/;
+  const TURN_TAG_RE = /\s+(?:·\s+)?#[0-9a-f]{6}$/;
   function stripTurnTag(name) {
     return name.replace(TURN_TAG_RE, "");
   }
@@ -55,7 +58,7 @@
   // （历史多行同名会互相串状态），折叠收尾由 autoFolded 分支按当时 id 处理。
   function stepKey(button) {
     const name = stripTurnTag(stepName(button));
-    if (name.startsWith("思考中 · ")) return "step-思考中";
+    if (name.startsWith("思考中 · ") || name.startsWith("重新生成中 · ")) return "step-思考中";
     return button.id;
   }
 
