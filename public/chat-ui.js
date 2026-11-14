@@ -850,16 +850,30 @@
           () => document.body.classList.remove("eg-sidebar-animating"),
           320
         );
+        // 对位到手柄到侧栏真实右缘（收尾过渡结束后再校一次）。
+        window.setTimeout(position, 330);
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     });
     document.body.append(resizer);
     const position = () => {
-      const collapsed = group.dataset.state === "collapsed";
-      const width = storedSidebarWidth() ?? 288;
-      resizer.style.display = collapsed ? "none" : "block";
-      resizer.style.left = `${collapsed ? 0 : width - 5}px`;
+      // 每次调用都重新查询侧栏节点：mount 发生在登录前时闭包会持有已
+      // 分离的旧节点（rect 永远为 0，手柄卡死在屏幕左缘）。
+      const liveSidebar = document.querySelector('[data-sidebar="sidebar"]');
+      if (!liveSidebar) return;
+      const liveGroup = liveSidebar.closest(".group.peer");
+      const collapsed = liveGroup?.dataset.state === "collapsed";
+      const edge = Math.round(liveSidebar.getBoundingClientRect().right || 0);
+      resizer.style.display = collapsed || !edge ? "none" : "block";
+      resizer.style.left = `${collapsed || !edge ? 0 : edge - 5}px`;
+      // RO 跟随当前侧栏节点（节点可能在会话切换时被 React 重建）。
+      if (resizer.__roTarget !== liveSidebar) {
+        resizer.__ro?.disconnect();
+        resizer.__ro = new ResizeObserver(position);
+        resizer.__ro.observe(liveSidebar);
+        resizer.__roTarget = liveSidebar;
+      }
     };
     position();
     if (!resizer.dataset.egRepositionBound) {
@@ -870,6 +884,16 @@
         attributeFilter: ["data-state", "style"],
       });
       window.addEventListener("resize", position);
+      // 拖拽期间侧栏宽度是逐帧更新的（CSS var 在 documentElement 上，不
+      // 会触发 group 的属性观察）——拖拽时直接跟随指针。
+      window.addEventListener(
+        "pointermove",
+        (event) => {
+          if (!document.body.classList.contains("eg-sidebar-resizing")) return;
+          resizer.style.left = `${Math.round(event.clientX) - 5}px`;
+        },
+        true
+      );
     }
     // 恢复保存的宽度（初始 288 = 18rem）。
     const saved = storedSidebarWidth();
