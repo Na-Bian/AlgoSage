@@ -294,6 +294,9 @@ main div:has(> #welcome-screen) {
   row-gap: 30px;
   /* 底部留白只保留安全间距，让欢迎态输入区与免责声明更贴近页面底部。 */
   padding-block: clamp(18px, 3dvh, 32px) 0;
+  /* align-content 居中会抵消单纯 padding 调整；用明确的位移让欢迎态
+     输入区和免责声明整体向下移动，桌面与移动端保持同一视觉基准。 */
+  transform: translateY(clamp(24px, 3.5dvh, 34px));
 }
 
 #welcome-screen.eg-empty-welcome::before {
