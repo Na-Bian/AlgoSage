@@ -66,6 +66,11 @@
     // 有内容的步骤渲染成可展开的 button，生成中尚无内容的步骤渲染成
     // 同 id 的 <p>（“使用中 …”）；两种都要把内部名换成中文。
     document.querySelectorAll('main [id^="step-"]').forEach((button) => {
+      const textNodes = (visit) => {
+        const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) visit(node);
+      };
       const safeName = stepName(button);
       const reasoning = isReasoningName(safeName);
       // 回合尾缀是给名字镜像节点唯一化用的，不在界面上显示。
@@ -75,8 +80,8 @@
 
       if (button.dataset.egStepLabel !== label) {
         button.dataset.egStepLabel = label;
-        button.childNodes.forEach((node) => {
-          if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+        textNodes((node) => {
+          if (node.textContent.trim()) {
             node.textContent = node.textContent.replace(safeName, label);
           }
         });
@@ -86,8 +91,8 @@
       // 再按尾缀本身做一次精准剔除。
       if (TURN_TAG_RE.test(safeName)) {
         const tag = safeName.match(TURN_TAG_RE)[0];
-        button.childNodes.forEach((node) => {
-          if (node.nodeType === Node.TEXT_NODE && node.textContent.includes(tag)) {
+        textNodes((node) => {
+          if (node.textContent.includes(tag)) {
             node.textContent = node.textContent.split(tag).join("");
           }
         });
@@ -95,10 +100,7 @@
       // 流式中间态/React 局部渲染可能不给步骤标题文本节点（replace 无从
       // 命中，界面上只剩图标和箭头的空白芯片）。没有可见文本时注入一个
       // label 文本节点（置于最前，不触碰 React 管理的其他子节点）。
-      const hasVisibleText = Array.from(button.childNodes).some(
-        (node) =>
-          node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
-      );
+      const hasVisibleText = (button.textContent || "").trim().length > 0;
       if (!hasVisibleText) {
         const text = document.createTextNode(label);
         button.insertBefore(text, button.firstChild);
