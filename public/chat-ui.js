@@ -638,6 +638,9 @@
         sidebar.addEventListener(
           "click",
           (event) => {
+            // 三点菜单位于历史项的 <a> 内部，但它不是会话导航；否则
+            // 打开菜单时会误触发侧栏收起，后续重命名弹窗会被一起卸载。
+            if (event.target instanceof Element && event.target.closest("#thread-options")) return;
             const link = event.target instanceof Element
               && event.target.closest('a[href^="/thread/"], a[href="/"]');
             const trigger = sidebarRefs?.trigger;
@@ -663,6 +666,14 @@
             if (!(event.target instanceof Element)) return;
             if (!sidebar.offsetWidth) return; // 抽屉未展开：不处理
             if (sidebar.contains(event.target)) return;
+            // Radix 的会话菜单、重命名弹窗等内容通过 Portal 挂到侧栏外，
+            // 但它们仍属于当前侧栏交互。不能把这些事件当成空白点击，
+            // 否则菜单打开后抽屉会被立即收起，重命名窗口会闪退。
+            if (event.target.closest(
+              '[role="menu"], [data-radix-menu-content], [data-radix-dropdown-menu-content], '
+                + '[data-radix-popper-content-wrapper], [data-radix-dialog-content], '
+                + '[data-radix-alert-dialog-content]'
+            )) return;
             // 侧栏开关本身（点击它本来就是要切换状态）不做二次处理。
             if (event.target.closest("#sidebar-trigger-button, .eg-sidebar-icon-button, [aria-label*='侧栏']")) return;
             const trigger = sidebarRefs?.trigger;
