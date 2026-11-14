@@ -723,7 +723,95 @@
       collapsedBar.classList.toggle("eg-sidebar-collapsed", collapsed);
       collapsedBar.setAttribute("aria-hidden", String(!collapsed));
     }
+    mountSidebarResizer(group);
     return true;
+  }
+
+  /* 桌面端侧栏宽度拖拽：右缘 10px 热区（eg-sidebar-resizer）拖动调整
+     --eg-sidebar-width-user（220–420px），写 cookie 跨刷新恢复；拖拽时
+     body.eg-sidebar-resizing 关闭宽度过渡以即时跟手，松开恢复动画。 */
+  const SIDEBAR_MIN_PX = 220;
+  const SIDEBAR_MAX_PX = 420;
+  const SIDEBAR_WIDTH_COOKIE = "eg-sidebar-width";
+
+  function storedSidebarWidth() {
+    const match = document.cookie.match(
+      new RegExp(`(?:^|;\\s*)${SIDEBAR_WIDTH_COOKIE}=(\\d+)(?:;|$)`)
+    );
+    if (!match) return null;
+    const value = parseInt(match[1], 10);
+    if (Number.isNaN(value)) return null;
+    return Math.min(SIDEBAR_MAX_PX, Math.max(SIDEBAR_MIN_PX, value));
+  }
+
+  function persistSidebarWidth(px) {
+    document.cookie = `${SIDEBAR_WIDTH_COOKIE}=${px}; path=/; max-age=31536000; samesite=strict`;
+  }
+
+  function mountSidebarResizer(group) {
+    if (document.getElementById("eg-sidebar-resizer")) return;
+    const resizer = document.createElement("div");
+    resizer.id = "eg-sidebar-resizer";
+    resizer.className = "eg-sidebar-resizer";
+    resizer.setAttribute("aria-hidden", "true");
+    resizer.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      document.body.classList.add("eg-sidebar-resizing");
+      const move = (e) => {
+        const width = Math.min(
+          SIDEBAR_MAX_PX,
+          Math.max(SIDEBAR_MIN_PX, Math.round(e.clientX))
+        );
+        document.documentElement.style.setProperty(
+          "--eg-sidebar-width-user",
+          `${width}px`
+        );
+      };
+      const up = (e) => {
+        document.body.classList.remove("eg-sidebar-resizing");
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        const width = Math.min(
+          SIDEBAR_MAX_PX,
+          Math.max(SIDEBAR_MIN_PX, Math.round(e.clientX))
+        );
+        persistSidebarWidth(width);
+        // 松手后播放一次收尾过渡（300ms）让宽度平滑落到最终值。
+        document.body.classList.add("eg-sidebar-animating");
+        window.setTimeout(
+          () => document.body.classList.remove("eg-sidebar-animating"),
+          320
+        );
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    });
+    document.body.append(resizer);
+    const position = () => {
+      const collapsed = group.dataset.state === "collapsed";
+      const width = storedSidebarWidth() ?? 288;
+      resizer.style.display = collapsed ? "none" : "block";
+      resizer.style.left = `${collapsed ? 0 : width - 5}px`;
+    };
+    position();
+    if (!resizer.dataset.egRepositionBound) {
+      resizer.dataset.egRepositionBound = "1";
+      // 状态/宽度变化时重新对位；直接挂在 body 子树观察上代价可忽略。
+      new MutationObserver(position).observe(group, {
+        attributes: true,
+        attributeFilter: ["data-state", "style"],
+      });
+      window.addEventListener("resize", position);
+    }
+    // 恢复保存的宽度（初始 288 = 18rem）。
+    const saved = storedSidebarWidth();
+    if (saved && saved !== 288) {
+      document.documentElement.style.setProperty(
+        "--eg-sidebar-width-user",
+        `${saved}px`
+      );
+    }
   }
 
   function buildCollapsedBar() {

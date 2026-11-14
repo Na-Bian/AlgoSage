@@ -1589,6 +1589,49 @@ button[data-sidebar="rail"]::after {
   pointer-events: none !important;
 }
 
+/* 侧栏宽度：用户可拖拽调整（默认 18rem，220–420px 之间），由 chat-ui 的
+   拖拽手柄写入 --eg-sidebar-width-user；两个方向用同一时长（300ms ease），
+   展开与收起的观感一致（Chainlit 内置 ease-linear 无 duration，默认
+   150ms 且文字重排瞬时完成，收起显得比展开快得多）。 */
+[class*="group/sidebar-wrapper"] {
+  --sidebar-width: var(--eg-sidebar-width-user, 18rem) !important;
+}
+[class*="group/sidebar-wrapper"] [data-sidebar="gap"],
+[class*="group/sidebar-wrapper"] [data-sidebar="sidebar"] {
+  transition:
+    width 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    left 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    right 300ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+/* 拖拽进行中关闭过渡，跟随手柄即时反馈。 */
+body.eg-sidebar-resizing [data-sidebar="gap"],
+body.eg-sidebar-resizing [data-sidebar="sidebar"] {
+  transition: none !important;
+}
+.eg-sidebar-resizer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  z-index: 45;
+  cursor: col-resize;
+  background: transparent;
+}
+.eg-sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 4px;
+  width: 2px;
+  background: transparent;
+  transition: background 160ms ease;
+}
+.eg-sidebar-resizer:hover::after,
+body.eg-sidebar-resizing .eg-sidebar-resizer::after {
+  background: hsl(var(--sidebar-border));
+}
+
 [data-sidebar="header"] {
   min-height: 64px;
   padding: 10px 12px !important;

@@ -1761,6 +1761,9 @@ def _make_delta_sink(context, stream_out, abort_event):
     # 字数以轻量事件继续呈现。
     REASONING_UPDATE_INTERVAL = 0.6
     REASONING_FULL_TEXT_CAP = 12_000
+    # 超长思考的尾部窗口：超过 FULL_TEXT_CAP 后只实时推最近 N 字（加截断
+    # 提示），直播不中断；载荷有界，前端渲染代价恒定。
+    REASONING_TAIL_WINDOW = 4_000
     REASONING_UPDATE_TIERS = ((5_000, 0.6), (20_000, 1.5), (float("inf"), 3.0))
 
     def reasoning_interval(length: int) -> float:
@@ -1825,25 +1828,31 @@ def _make_delta_sink(context, stream_out, abort_event):
                     and reasoning_so_far != stream_out.get("reasoning", "")
                     and now - last >= reasoning_interval(reasoning_len)
                 ):
+                    # 超长思考：不再全量重发（前端渲染过载白屏的根源），改为
+                    # 「尾部窗口」流式——只推最后 REASONING_TAIL_WINDOW 字加
+                    # 截断提示，直播不中断、载荷有界；完整内容照常随收口补
+                    # 发落库（刷新后可读全文）。
                     if full_text_frozen:
-                        # 超长思考：正文不再全量重发（前端渲染过载白屏的根源），
-                        # 完整内容照常随收口补发落库；界面只推进标题字数。
-                        step.name = (
-                            f"重新生成中 · {reasoning_len} 字 {stream_out.get('turn_tag') or ''}".strip()
-                            if stream_out.get("regen_hint")
-                            else f"思考中 · {reasoning_len} 字 {stream_out.get('turn_tag') or ''}".strip()
+                        tail = reasoning_so_far[-REASONING_TAIL_WINDOW:]
+                        # 从行首截起，避免半行开头。
+                        nl = tail.find("\n")
+                        if nl != -1 and nl < len(tail) - 1:
+                            tail = tail[nl + 1:]
+                        step.output = (
+                            f"（思考较长，仅实时展示最近 {REASONING_TAIL_WINDOW} 字；"
+                            "回答结束后可查看完整内容）\n\n"
+                            + normalize_math_delimiters(tail)
                         )
-                        await step.update()
                     else:
                         step.output = normalize_math_delimiters(reasoning_so_far)
-                        # 标题带实时思考进度（字数），阶段感清晰：思考仍在推进，
-                        # 不是卡住。重生成回合的标题前缀告诉用户这是新的一轮。
-                        step.name = (
-                            f"重新生成中 · {reasoning_len} 字 {stream_out.get('turn_tag') or ''}".strip()
-                            if stream_out.get("regen_hint")
-                            else f"思考中 · {reasoning_len} 字 {stream_out.get('turn_tag') or ''}".strip()
-                        )
-                        await step.update()
+                    # 标题带实时思考进度（字数），阶段感清晰：思考仍在推进，
+                    # 不是卡住。重生成回合的标题前缀告诉用户这是新的一轮。
+                    step.name = (
+                        f"重新生成中 · {reasoning_len} 字 {stream_out.get('turn_tag') or ''}".strip()
+                        if stream_out.get("regen_hint")
+                        else f"思考中 · {reasoning_len} 字 {stream_out.get('turn_tag') or ''}".strip()
+                    )
+                    await step.update()
                     stream_out["reasoning"] = reasoning_so_far
                     stream_out["reasoning_last_update"] = now
                     # 广播给回合进行中刷新过的页面。冻结模式下正文保持最后
