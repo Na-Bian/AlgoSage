@@ -566,7 +566,7 @@
       const collapseControl = makeIconControl(
       !mobile && group.dataset.state === "collapsed" ? "展开侧栏" : "收起侧栏",
       SIDEBAR_ICONS.panel,
-      () => sidebarRefs?.trigger.click()
+      () => stagedSidebarCollapse()
     );
       if (refsChanged) {
       sidebarRefs = {
@@ -713,18 +713,68 @@
     }
 
     const collapsed = group.dataset.state === "collapsed";
-    document.body.classList.toggle("eg-sidebar-collapsed", collapsed);
+    // 收起方向：等一帧再加 collapsed 类。Chainlit 的 peer 类翻转与我们的
+    // 类在同一次样式重算中生效时，布局没有「旧宽度」作过渡起点，main 会
+    // 单帧跳到全宽（文字瞬移）。先让展开态布局稳定一帧，再让宽度/margin
+    // 过渡从 380 平滑起步。
+    if (collapsed) {
+      requestAnimationFrame(() => {
+        document.body.classList.add("eg-sidebar-collapsed");
+        if (collapsedBar) collapsedBar.classList.add("eg-sidebar-collapsed");
+      });
+    } else {
+      document.body.classList.remove("eg-sidebar-collapsed");
+      if (collapsedBar) collapsedBar.classList.remove("eg-sidebar-collapsed");
+    }
     if (collapsedBar) {
       if (!collapsed && collapsedBar.contains(document.activeElement)) {
         document.activeElement.blur();
       }
       collapsedBar.id = "eg-collapsed-bar";
       collapsedBar.className = "eg-collapsed-bar";
-      collapsedBar.classList.toggle("eg-sidebar-collapsed", collapsed);
       collapsedBar.setAttribute("aria-hidden", String(!collapsed));
     }
     mountSidebarResizer(group);
     return true;
+  }
+
+  /* 分段收起：Chainlit 的 peer 类翻转是瞬时布局变化（main 单帧跳到全宽，
+     文字瞬移）。先把 --eg-sidebar-width-user 过渡到 0——gap 已改为
+     in-flow，其 width 过渡逐帧驱动 main 平滑重排——等动画完成后再触发
+     原 trigger.click() 完成 peer 状态翻转（此刻抽屉已无宽度，翻转无任何
+     视觉变化）。展开方向天然平滑（宽度 0→N 过渡即 main 平滑回位），
+     不需要分段。 */
+  let stagedCollapseBusy = false;
+  function stagedSidebarCollapse() {
+    const trigger = sidebarRefs?.trigger;
+    if (!trigger) return;
+    const group = document.querySelector('[data-sidebar="sidebar"]')?.closest(".group.peer");
+    const collapsed = group?.dataset.state === "collapsed";
+    if (!collapsed) {
+      if (stagedCollapseBusy) return;
+      stagedCollapseBusy = true;
+      const root = document.documentElement;
+      const current = getComputedStyle(document.querySelector("[class*='group/sidebar-wrapper']"))
+        .getPropertyValue("--sidebar-width").trim();
+      root.style.setProperty("--eg-sidebar-width-user", current === "0px" ? "18rem" : current);
+      // 强制布局后把宽度过渡到 0（width 过渡已由 CSS 提供）。
+      void document.body.offsetWidth;
+      requestAnimationFrame(() => {
+        root.style.setProperty("--eg-sidebar-width-user", "0px");
+        window.setTimeout(() => {
+          trigger.click();
+          stagedCollapseBusy = false;
+        }, 330);
+      });
+    } else {
+      // 展开：恢复用户宽度（cookie 值或默认），立即翻转 peer 状态——
+      // 0 → 宽度的过渡由 CSS 自然驱动，main 平滑回位。
+      const saved = storedSidebarWidth() ?? 288;
+      document.documentElement.style.setProperty(
+        "--eg-sidebar-width-user", `${saved}px`
+      );
+      trigger.click();
+    }
   }
 
   /* 桌面端侧栏宽度拖拽：右缘 10px 热区（eg-sidebar-resizer）拖动调整
