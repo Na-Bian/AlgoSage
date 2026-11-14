@@ -677,7 +677,7 @@
             if (event.target.closest(
               '[role="menu"], [data-radix-menu-content], [data-radix-dropdown-menu-content], '
                 + '[data-radix-popper-content-wrapper], [data-radix-dialog-content], '
-                + '[data-radix-alert-dialog-content]'
+                + '[data-radix-alert-dialog-content], [role="dialog"]'
             )) return;
             // 侧栏开关本身（点击它本来就是要切换状态）不做二次处理。
             if (event.target.closest("#sidebar-trigger-button, .eg-sidebar-icon-button, [aria-label*='侧栏']")) return;

@@ -151,6 +151,42 @@
   margin-bottom: 16px;
 }
 
+/* 重命名对话在桌面与移动端共用同一张居中表面；Radix 默认的
+   w-full + sm:rounded-lg 会让手机端变成贴边无圆角的另一套样式。 */
+[role="dialog"]:has(input#name) {
+  width: min(512px, calc(100vw - 32px)) !important;
+  max-width: calc(100vw - 32px) !important;
+  border: 1px solid var(--color-border-default, hsl(var(--border))) !important;
+  border-radius: 18px !important;
+  background: var(--color-bg-surface, hsl(var(--background))) !important;
+  box-shadow: var(--eg-shadow-3) !important;
+  padding: 22px !important;
+}
+
+[role="dialog"]:has(input#name) > div:first-child {
+  text-align: left !important;
+}
+
+@media (max-width: 640px) {
+  [role="dialog"]:has(input#name) {
+    gap: 14px !important;
+    padding: 20px !important;
+  }
+
+  [role="dialog"]:has(input#name) > div.my-6 {
+    margin-top: 8px !important;
+    margin-bottom: 4px !important;
+  }
+
+  [role="dialog"]:has(input#name) input#name {
+    height: 48px !important;
+  }
+
+  [role="dialog"]:has(input#name) > div.flex.flex-col-reverse {
+    gap: 8px !important;
+  }
+}
+
 /* 个人信息弹窗沿用应用变量和动效，深浅主题由 CSS 变量自然切换。 */
 #eg-profile-overlay {
   position: fixed;
@@ -256,7 +292,8 @@ main div:has(> #welcome-screen) {
   align-content: center;
   justify-items: center;
   row-gap: 30px;
-  padding-block: clamp(16px, 2dvh, 28px) clamp(28px, 7dvh, 88px);
+  /* 底部留白只保留安全间距，让欢迎态输入区与免责声明更贴近页面底部。 */
+  padding-block: clamp(16px, 2dvh, 28px) clamp(10px, 2dvh, 22px);
 }
 
 #welcome-screen.eg-empty-welcome::before {
