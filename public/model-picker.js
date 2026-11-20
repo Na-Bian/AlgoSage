@@ -432,7 +432,8 @@
     renderMenu();
     // renderMenu 之后列表高度才确定；下一帧按实际高度重新定位。
     requestAnimationFrame(menuPosition);
-    searchInput?.focus();
+    // 不自动聚焦搜索框：移动端 focus 会立刻弹出软键盘，挡住大半模型列表。
+    // 桌面端保留原有行为（键盘流依赖焦点在搜索框，输入即筛选）。
   }
 
   function setStatus(message, isError) {
